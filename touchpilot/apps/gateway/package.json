@@ -1,0 +1,7 @@
+{
+  "name": "@touchpilot/gateway",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Model gateway and API proxy for TouchPilot."
+}
