@@ -329,32 +329,41 @@ h1 {
   outline-offset: 2px;
 }
 
-.debug-readout {
+.debug-readout,
+.capture-readout {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 12px 0 0;
 }
 
-.debug-readout div {
+.capture-readout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.debug-readout div,
+.capture-readout div {
   min-height: 48px;
   border-radius: 10px;
   padding: 8px;
   background: rgba(255, 255, 255, 0.06);
 }
 
-.debug-readout dt {
+.debug-readout dt,
+.capture-readout dt {
   color: rgba(255, 255, 255, 0.46);
   font-size: 0.66rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.debug-readout dd {
+.debug-readout dd,
+.capture-readout dd {
   margin: 2px 0 0;
   color: rgba(255, 255, 255, 0.82);
   font-size: 0.78rem;
   font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
 .assistant-puck:focus-visible {

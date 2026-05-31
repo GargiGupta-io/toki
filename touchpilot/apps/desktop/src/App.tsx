@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { CaptureMetadata } from "@touchpilot/shared";
 import "./App.css";
 
 type OverlayState = "idle" | "listening" | "thinking" | "guiding" | "paused" | "error";
@@ -126,10 +128,12 @@ function StepBubble({ target }: { target: typeof testTarget }) {
 function DebugPanel({
   currentState,
   target,
+  captureMetadata,
   onStateChange,
 }: {
   currentState: OverlayState;
   target: typeof testTarget;
+  captureMetadata: CaptureMetadata | null;
   onStateChange: (state: OverlayState) => void;
 }) {
   return (
@@ -171,14 +175,60 @@ function DebugPanel({
           </dd>
         </div>
       </dl>
+
+      <dl className="capture-readout">
+        <div>
+          <dt>Display</dt>
+          <dd>
+            {captureMetadata
+              ? `${captureMetadata.display.width} x ${captureMetadata.display.height}`
+              : "Waiting"}
+          </dd>
+        </div>
+        <div>
+          <dt>Scale</dt>
+          <dd>{captureMetadata?.display.scaleFactor ?? "Waiting"}</dd>
+        </div>
+        <div>
+          <dt>Cursor</dt>
+          <dd>
+            {captureMetadata?.cursor
+              ? `${captureMetadata.cursor.x}, ${captureMetadata.cursor.y}`
+              : "Unknown"}
+          </dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>{captureMetadata?.source ?? "Waiting"}</dd>
+        </div>
+        <div>
+          <dt>Window</dt>
+          <dd>{captureMetadata?.activeWindow?.title ?? "Unknown"}</dd>
+        </div>
+        <div>
+          <dt>Captured</dt>
+          <dd>{captureMetadata?.capturedAt ?? "Waiting"}</dd>
+        </div>
+      </dl>
     </section>
   );
 }
 
 function App() {
   const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
+  const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const meta = stateMeta[overlayState];
   const isPaused = overlayState === "paused";
+
+  useEffect(() => {
+    async function loadCaptureMetadata() {
+      setCaptureMetadata(await invoke<CaptureMetadata>("capture_metadata"));
+    }
+
+    loadCaptureMetadata().catch(() => {
+      setOverlayState("error");
+    });
+  }, []);
 
   function pauseGuidance() {
     setOverlayState("paused");
@@ -247,6 +297,7 @@ function App() {
       <DebugPanel
         currentState={overlayState}
         target={testTarget}
+        captureMetadata={captureMetadata}
         onStateChange={setOverlayState}
       />
     </main>
