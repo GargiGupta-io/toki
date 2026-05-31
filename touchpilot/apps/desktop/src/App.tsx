@@ -277,6 +277,16 @@ function DebugPanel({
           <dd>{screenshotCapture?.imageBase64 ? "Present" : "Missing"}</dd>
         </div>
       </dl>
+
+      {screenshotCapture?.imageBase64 && (
+        <figure className="screenshot-preview">
+          <img
+            src={`data:image/${screenshotCapture.format};base64,${screenshotCapture.imageBase64}`}
+            alt="Latest debug screenshot capture"
+          />
+          <figcaption>Debug screenshot preview</figcaption>
+        </figure>
+      )}
     </section>
   );
 }
