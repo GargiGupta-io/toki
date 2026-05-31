@@ -44,6 +44,28 @@ pub struct CaptureMetadata {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ScreenshotFormat {
+    Png,
+    Jpeg,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotCapture {
+    pub source: CaptureSource,
+    pub display: DisplayContext,
+    pub cursor: Option<CursorContext>,
+    pub active_window: Option<ActiveWindowContext>,
+    pub captured_at: String,
+    pub format: ScreenshotFormat,
+    pub byte_length: u32,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub image_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CalibrationStatus {
     Unknown,
     NeedsCheck,
