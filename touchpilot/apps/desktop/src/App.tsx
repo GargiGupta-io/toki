@@ -16,6 +16,7 @@ const testTarget = {
   y: 360,
   width: 112,
   height: 48,
+  instruction: "Click Export to continue this workflow.",
 };
 
 const stateMeta: Record<OverlayState, OverlayStateMeta> = {
@@ -95,6 +96,24 @@ function PointerRing({ target }: { target: typeof testTarget }) {
   );
 }
 
+function StepBubble({ target }: { target: typeof testTarget }) {
+  return (
+    <aside
+      className="step-bubble"
+      style={{
+        left: target.x + target.width / 2 + 22,
+        top: target.y - target.height / 2,
+      }}
+      aria-label={`Guidance step for ${target.label}`}
+    >
+      <span className="bubble-anchor" aria-hidden="true" />
+      <p className="eyebrow">Step 1</p>
+      <h3>{target.label}</h3>
+      <p>{target.instruction}</p>
+    </aside>
+  );
+}
+
 function App() {
   const meta = stateMeta[overlayState];
 
@@ -127,6 +146,7 @@ function App() {
       </section>
 
       <PointerRing target={testTarget} />
+      <StepBubble target={testTarget} />
       <AssistantPuck state={overlayState} />
     </main>
   );
