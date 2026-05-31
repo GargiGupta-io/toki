@@ -1,3 +1,4 @@
+import { useState } from "react";
 import "./App.css";
 
 type OverlayState = "idle" | "listening" | "thinking" | "guiding" | "paused" | "error";
@@ -9,7 +10,6 @@ type OverlayStateMeta = {
   tone: "neutral" | "active" | "paused" | "error";
 };
 
-const overlayState: OverlayState = "idle";
 const testTarget = {
   label: "Export",
   x: 640,
@@ -115,7 +115,21 @@ function StepBubble({ target }: { target: typeof testTarget }) {
 }
 
 function App() {
+  const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
   const meta = stateMeta[overlayState];
+  const isPaused = overlayState === "paused";
+
+  function pauseGuidance() {
+    setOverlayState("paused");
+  }
+
+  function resumeGuidance() {
+    setOverlayState("guiding");
+  }
+
+  function stopGuidance() {
+    setOverlayState("idle");
+  }
 
   return (
     <main
@@ -142,11 +156,32 @@ function App() {
           <p className="eyebrow">Next step</p>
           <h2>{meta.title}</h2>
           <p>{meta.description}</p>
+
+          <div className="control-row" aria-label="Overlay controls">
+            <button
+              className="control-button"
+              type="button"
+              onClick={isPaused ? resumeGuidance : pauseGuidance}
+            >
+              {isPaused ? "Resume" : "Pause"}
+            </button>
+            <button
+              className="control-button control-button-secondary"
+              type="button"
+              onClick={stopGuidance}
+            >
+              Stop
+            </button>
+          </div>
         </div>
       </section>
 
-      <PointerRing target={testTarget} />
-      <StepBubble target={testTarget} />
+      {overlayState !== "idle" && (
+        <>
+          <PointerRing target={testTarget} />
+          <StepBubble target={testTarget} />
+        </>
+      )}
       <AssistantPuck state={overlayState} />
     </main>
   );

@@ -152,6 +152,45 @@ h1 {
   color: rgba(255, 255, 255, 0.72);
 }
 
+.control-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.control-button {
+  min-width: 84px;
+  min-height: 38px;
+  border: 1px solid rgba(117, 244, 215, 0.42);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: rgba(117, 244, 215, 0.16);
+  color: #ddfff7;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.control-button:hover {
+  background: rgba(117, 244, 215, 0.24);
+}
+
+.control-button:focus-visible {
+  outline: 3px solid rgba(117, 244, 215, 0.86);
+  outline-offset: 3px;
+}
+
+.control-button-secondary {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.control-button-secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
 .pointer-target {
   position: absolute;
   display: grid;
