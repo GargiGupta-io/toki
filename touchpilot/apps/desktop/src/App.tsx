@@ -10,6 +10,13 @@ type OverlayStateMeta = {
 };
 
 const overlayState: OverlayState = "idle";
+const testTarget = {
+  label: "Export",
+  x: 640,
+  y: 360,
+  width: 112,
+  height: 48,
+};
 
 const stateMeta: Record<OverlayState, OverlayStateMeta> = {
   idle: {
@@ -70,6 +77,24 @@ function AssistantPuck({ state }: { state: OverlayState }) {
   );
 }
 
+function PointerRing({ target }: { target: typeof testTarget }) {
+  return (
+    <div
+      className="pointer-target"
+      style={{
+        left: target.x,
+        top: target.y,
+        width: target.width,
+        height: target.height,
+      }}
+      aria-label={`Target marker for ${target.label}`}
+    >
+      <span className="pointer-pulse" aria-hidden="true" />
+      <span className="pointer-crosshair" aria-hidden="true" />
+    </div>
+  );
+}
+
 function App() {
   const meta = stateMeta[overlayState];
 
@@ -89,7 +114,9 @@ function App() {
       <section className="guidance-surface" aria-label="Current guidance">
         <div className="surface-header">
           <span className="state-pill">{meta.label}</span>
-          <span className="coordinate-readout">Target: 640, 360</span>
+          <span className="coordinate-readout">
+            Target: {testTarget.x}, {testTarget.y}
+          </span>
         </div>
 
         <div className="instruction-panel">
@@ -99,6 +126,7 @@ function App() {
         </div>
       </section>
 
+      <PointerRing target={testTarget} />
       <AssistantPuck state={overlayState} />
     </main>
   );
