@@ -1,0 +1,19 @@
+{
+  "name": "touchpilot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cross-platform AI screen guide with overlay, voice, and gesture control.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run desktop:build",
+    "check": "npm run typecheck && npm run rust:check",
+    "typecheck": "npm --workspace @touchpilot/desktop run typecheck && npm --workspace @touchpilot/shared run typecheck && npm --workspace @touchpilot/ai run typecheck && npm --workspace @touchpilot/ui run typecheck && npm --workspace @touchpilot/evals run typecheck && npm --workspace @touchpilot/design run typecheck",
+    "rust:check": "cargo check --workspace",
+    "rust:fmt": "cargo fmt --all",
+    "desktop:dev": "npm --workspace @touchpilot/desktop run tauri dev",
+    "desktop:build": "npm --workspace @touchpilot/desktop run tauri build"
+  }
+}
