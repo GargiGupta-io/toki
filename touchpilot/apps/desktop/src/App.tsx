@@ -1,5 +1,18 @@
 import "./App.css";
 
+function AssistantPuck() {
+  return (
+    <button className="assistant-puck" type="button" aria-label="Open TouchPilot">
+      <span className="puck-orbit" aria-hidden="true" />
+      <span className="puck-core">TP</span>
+      <span className="puck-status">
+        <span className="puck-status-dot" aria-hidden="true" />
+        Idle
+      </span>
+    </button>
+  );
+}
+
 function App() {
   return (
     <main className="overlay-shell" aria-label="TouchPilot overlay prototype">
@@ -26,6 +39,8 @@ function App() {
           </p>
         </div>
       </section>
+
+      <AssistantPuck />
     </main>
   );
 }

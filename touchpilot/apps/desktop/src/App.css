@@ -141,3 +141,97 @@ h1 {
   margin-bottom: 0;
   color: rgba(255, 255, 255, 0.72);
 }
+
+.assistant-puck {
+  position: absolute;
+  right: 32px;
+  bottom: 226px;
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.assistant-puck:focus-visible {
+  outline: 3px solid rgba(117, 244, 215, 0.9);
+  outline-offset: 6px;
+}
+
+.puck-orbit {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(117, 244, 215, 0.36);
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(117, 244, 215, 0.16), transparent 58%),
+    rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 0 0 10px rgba(117, 244, 215, 0.06),
+    0 20px 70px rgba(0, 0, 0, 0.4);
+  animation: puck-pulse 2.8s ease-in-out infinite;
+  z-index: -1;
+}
+
+.puck-core {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06)),
+    rgba(14, 18, 24, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.puck-status {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  min-width: 62px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 0 9px;
+  background: rgba(10, 13, 18, 0.82);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.puck-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #75f4d7;
+  box-shadow: 0 0 14px rgba(117, 244, 215, 0.9);
+}
+
+@keyframes puck-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.88;
+  }
+
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
