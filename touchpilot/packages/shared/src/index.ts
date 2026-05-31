@@ -81,6 +81,47 @@ export type ScreenContext = {
   activeWindow?: ActiveWindowContext;
 };
 
+export type ScreenshotFormat = "png" | "jpeg";
+
+export type CaptureSource = "full_screen" | "active_display" | "active_window" | "region";
+
+export type CaptureMetadata = {
+  source: CaptureSource;
+  display: DisplayContext;
+  cursor?: CursorContext;
+  activeWindow?: ActiveWindowContext;
+  capturedAt: string;
+};
+
+export type ScreenshotMetadata = CaptureMetadata & {
+  format: ScreenshotFormat;
+  byteLength: number;
+  imageWidth: number;
+  imageHeight: number;
+};
+
+export type ScreenshotCapture = ScreenshotMetadata & {
+  imageBase64: string;
+};
+
+export type CalibrationStatus =
+  | "unknown"
+  | "needs_check"
+  | "aligned"
+  | "scale_mismatch"
+  | "origin_mismatch";
+
+export type CoordinateCalibration = {
+  status: CalibrationStatus;
+  overlayWidth: number;
+  overlayHeight: number;
+  displayWidth: number;
+  displayHeight: number;
+  scaleFactor: number;
+  checkedAt?: string;
+  notes?: string;
+};
+
 export type UiElementSource = "vision" | "ocr" | "accessibility" | "dom";
 
 export type UiElement = {
