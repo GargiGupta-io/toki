@@ -129,12 +129,16 @@ function DebugPanel({
   currentState,
   target,
   captureMetadata,
+  isRefreshingCapture,
   onStateChange,
+  onRefreshCapture,
 }: {
   currentState: OverlayState;
   target: typeof testTarget;
   captureMetadata: CaptureMetadata | null;
+  isRefreshingCapture: boolean;
   onStateChange: (state: OverlayState) => void;
+  onRefreshCapture: () => void;
 }) {
   return (
     <section className="debug-panel" aria-label="Overlay debug controls">
@@ -142,6 +146,15 @@ function DebugPanel({
         <p className="eyebrow">Debug</p>
         <h2>Overlay test controls</h2>
       </div>
+
+      <button
+        className="capture-refresh-button"
+        type="button"
+        onClick={onRefreshCapture}
+        disabled={isRefreshingCapture}
+      >
+        {isRefreshingCapture ? "Refreshing capture" : "Refresh capture"}
+      </button>
 
       <div className="debug-grid" role="group" aria-label="Set overlay state">
         {overlayStates.map((state) => (
@@ -217,17 +230,24 @@ function DebugPanel({
 function App() {
   const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
+  const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const meta = stateMeta[overlayState];
   const isPaused = overlayState === "paused";
 
-  useEffect(() => {
-    async function loadCaptureMetadata() {
-      setCaptureMetadata(await invoke<CaptureMetadata>("capture_metadata"));
-    }
+  async function refreshCaptureMetadata() {
+    setIsRefreshingCapture(true);
 
-    loadCaptureMetadata().catch(() => {
+    try {
+      setCaptureMetadata(await invoke<CaptureMetadata>("capture_metadata"));
+    } catch {
       setOverlayState("error");
-    });
+    } finally {
+      setIsRefreshingCapture(false);
+    }
+  }
+
+  useEffect(() => {
+    refreshCaptureMetadata();
   }, []);
 
   function pauseGuidance() {
@@ -298,7 +318,9 @@ function App() {
         currentState={overlayState}
         target={testTarget}
         captureMetadata={captureMetadata}
+        isRefreshingCapture={isRefreshingCapture}
         onStateChange={setOverlayState}
+        onRefreshCapture={refreshCaptureMetadata}
       />
     </main>
   );

@@ -299,6 +299,35 @@ h1 {
   line-height: 1.2;
 }
 
+.capture-refresh-button {
+  width: 100%;
+  min-height: 36px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(117, 244, 215, 0.36);
+  border-radius: 12px;
+  padding: 0 12px;
+  background: rgba(117, 244, 215, 0.12);
+  color: #ddfff7;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.capture-refresh-button:hover:not(:disabled) {
+  background: rgba(117, 244, 215, 0.2);
+}
+
+.capture-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.capture-refresh-button:focus-visible {
+  outline: 3px solid rgba(117, 244, 215, 0.82);
+  outline-offset: 2px;
+}
+
 .debug-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
