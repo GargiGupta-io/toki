@@ -3842,6 +3842,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "touchpilot-capture",
 ]
 
 [[package]]
