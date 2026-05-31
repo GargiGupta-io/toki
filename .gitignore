@@ -1,0 +1,15 @@
+node_modules/
+target/
+dist/
+.tauri/
+.vite/
+
+*.log
+*.tmp
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db
