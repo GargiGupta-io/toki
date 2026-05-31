@@ -1,25 +1,10 @@
 use touchpilot_capture::{
-    capture_primary_display, ActiveWindowContext, CaptureMetadata, CaptureSource, CursorContext,
-    DisplayContext, ScreenshotCapture,
+    capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
 };
 
 #[tauri::command]
-fn capture_metadata() -> CaptureMetadata {
-    CaptureMetadata {
-        source: CaptureSource::ActiveDisplay,
-        display: DisplayContext {
-            id: "primary".to_string(),
-            width: 1180,
-            height: 760,
-            scale_factor: 1.0,
-        },
-        cursor: Some(CursorContext { x: 640.0, y: 360.0 }),
-        active_window: Some(ActiveWindowContext {
-            title: Some("TouchPilot".to_string()),
-            app_name: Some("TouchPilot".to_string()),
-        }),
-        captured_at: "placeholder".to_string(),
-    }
+fn capture_metadata() -> Result<CaptureMetadata, String> {
+    capture_primary_display_metadata().map_err(|error| error.to_string())
 }
 
 #[tauri::command]

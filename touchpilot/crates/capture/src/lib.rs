@@ -119,12 +119,32 @@ pub fn module_name() -> &'static str {
     "capture"
 }
 
+pub fn capture_primary_display_metadata() -> Result<CaptureMetadata, CaptureError> {
+    let screens = Screen::all().map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    let screen = screens.into_iter().next().ok_or(CaptureError::NoDisplay)?;
+    let display_info = screen.display_info;
+
+    Ok(CaptureMetadata {
+        source: CaptureSource::ActiveDisplay,
+        display: DisplayContext {
+            id: display_info.id.to_string(),
+            width: display_info.width,
+            height: display_info.height,
+            scale_factor: f64::from(display_info.scale_factor),
+        },
+        cursor: None,
+        active_window: None,
+        captured_at: Utc::now().to_rfc3339(),
+    })
+}
+
 pub fn capture_primary_display() -> Result<ScreenshotCapture, CaptureError> {
     let screens = Screen::all().map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
     let screen = screens.into_iter().next().ok_or(CaptureError::NoDisplay)?;
     let image = screen
         .capture()
         .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    let display_info = screen.display_info;
 
     let width = image.width();
     let height = image.height();
@@ -143,10 +163,10 @@ pub fn capture_primary_display() -> Result<ScreenshotCapture, CaptureError> {
     Ok(ScreenshotCapture {
         source: CaptureSource::ActiveDisplay,
         display: DisplayContext {
-            id: "primary".to_string(),
-            width,
-            height,
-            scale_factor: 1.0,
+            id: display_info.id.to_string(),
+            width: display_info.width,
+            height: display_info.height,
+            scale_factor: f64::from(display_info.scale_factor),
         },
         cursor: None,
         active_window: None,
