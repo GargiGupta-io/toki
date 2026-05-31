@@ -1,49 +1,31 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <main className="overlay-shell" aria-label="TouchPilot overlay prototype">
+      <section className="status-rail" aria-label="Assistant status">
+        <div className="brand-mark">TP</div>
+        <div>
+          <p className="eyebrow">TouchPilot</p>
+          <h1>Overlay prototype</h1>
+        </div>
+      </section>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      <section className="guidance-surface" aria-label="Current guidance">
+        <div className="surface-header">
+          <span className="state-pill">Idle</span>
+          <span className="coordinate-readout">Target: 640, 360</span>
+        </div>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+        <div className="instruction-panel">
+          <p className="eyebrow">Next step</p>
+          <h2>Ready to guide the current screen.</h2>
+          <p>
+            The assistant puck, pointer ring, step bubble, and debug controls
+            will be layered into this shell during Phase 2.
+          </p>
+        </div>
+      </section>
     </main>
   );
 }
