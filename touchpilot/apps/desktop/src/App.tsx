@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { CaptureMetadata } from "@touchpilot/shared";
+import type { CaptureMetadata, CoordinateCalibration } from "@touchpilot/shared";
 import "./App.css";
 
 type OverlayState = "idle" | "listening" | "thinking" | "guiding" | "paused" | "error";
@@ -129,6 +129,7 @@ function DebugPanel({
   currentState,
   target,
   captureMetadata,
+  calibration,
   isRefreshingCapture,
   onStateChange,
   onRefreshCapture,
@@ -136,6 +137,7 @@ function DebugPanel({
   currentState: OverlayState;
   target: typeof testTarget;
   captureMetadata: CaptureMetadata | null;
+  calibration: CoordinateCalibration;
   isRefreshingCapture: boolean;
   onStateChange: (state: OverlayState) => void;
   onRefreshCapture: () => void;
@@ -223,8 +225,66 @@ function DebugPanel({
           <dd>{captureMetadata?.capturedAt ?? "Waiting"}</dd>
         </div>
       </dl>
+
+      <dl className="calibration-readout">
+        <div>
+          <dt>Calibration</dt>
+          <dd>{calibration.status}</dd>
+        </div>
+        <div>
+          <dt>Overlay</dt>
+          <dd>
+            {calibration.overlayWidth} x {calibration.overlayHeight}
+          </dd>
+        </div>
+        <div>
+          <dt>Display</dt>
+          <dd>
+            {calibration.displayWidth} x {calibration.displayHeight}
+          </dd>
+        </div>
+        <div>
+          <dt>Notes</dt>
+          <dd>{calibration.notes ?? "No notes"}</dd>
+        </div>
+      </dl>
     </section>
   );
+}
+
+function getCalibration(captureMetadata: CaptureMetadata | null): CoordinateCalibration {
+  const overlayWidth = window.innerWidth;
+  const overlayHeight = window.innerHeight;
+  const displayWidth = captureMetadata?.display.width ?? 0;
+  const displayHeight = captureMetadata?.display.height ?? 0;
+  const scaleFactor = captureMetadata?.display.scaleFactor ?? 1;
+
+  if (!captureMetadata) {
+    return {
+      status: "unknown",
+      overlayWidth,
+      overlayHeight,
+      displayWidth,
+      displayHeight,
+      scaleFactor,
+      notes: "Waiting for capture metadata.",
+    };
+  }
+
+  const sizeMatches = overlayWidth === displayWidth && overlayHeight === displayHeight;
+
+  return {
+    status: sizeMatches ? "aligned" : "needs_check",
+    overlayWidth,
+    overlayHeight,
+    displayWidth,
+    displayHeight,
+    scaleFactor,
+    checkedAt: new Date().toISOString(),
+    notes: sizeMatches
+      ? "Overlay viewport matches captured display dimensions."
+      : "Overlay viewport differs from captured display dimensions.",
+  };
 }
 
 function App() {
@@ -233,6 +293,7 @@ function App() {
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const meta = stateMeta[overlayState];
   const isPaused = overlayState === "paused";
+  const calibration = getCalibration(captureMetadata);
 
   async function refreshCaptureMetadata() {
     setIsRefreshingCapture(true);
@@ -318,6 +379,7 @@ function App() {
         currentState={overlayState}
         target={testTarget}
         captureMetadata={captureMetadata}
+        calibration={calibration}
         isRefreshingCapture={isRefreshingCapture}
         onStateChange={setOverlayState}
         onRefreshCapture={refreshCaptureMetadata}
