@@ -3829,6 +3829,9 @@ version = "0.1.0"
 [[package]]
 name = "touchpilot-capture"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "touchpilot-desktop"
