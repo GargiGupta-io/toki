@@ -266,7 +266,7 @@ h1 {
 .assistant-puck {
   position: absolute;
   right: 32px;
-  bottom: 226px;
+  bottom: 286px;
   width: 96px;
   height: 96px;
   display: grid;
@@ -277,6 +277,84 @@ h1 {
   color: #ffffff;
   cursor: pointer;
   isolation: isolate;
+}
+
+.debug-panel {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: min(360px, calc(100vw - 48px));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(9, 12, 17, 0.72);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(16px);
+}
+
+.debug-panel h2 {
+  margin: 2px 0 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.debug-state-button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.72);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.debug-state-button[data-active="true"] {
+  border-color: rgba(117, 244, 215, 0.54);
+  background: rgba(117, 244, 215, 0.18);
+  color: #ddfff7;
+}
+
+.debug-state-button:focus-visible {
+  outline: 3px solid rgba(117, 244, 215, 0.82);
+  outline-offset: 2px;
+}
+
+.debug-readout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.debug-readout div {
+  min-height: 48px;
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.debug-readout dt {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.debug-readout dd {
+  margin: 2px 0 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .assistant-puck:focus-visible {

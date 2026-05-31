@@ -10,6 +10,15 @@ type OverlayStateMeta = {
   tone: "neutral" | "active" | "paused" | "error";
 };
 
+const overlayStates: OverlayState[] = [
+  "idle",
+  "listening",
+  "thinking",
+  "guiding",
+  "paused",
+  "error",
+];
+
 const testTarget = {
   label: "Export",
   x: 640,
@@ -114,6 +123,58 @@ function StepBubble({ target }: { target: typeof testTarget }) {
   );
 }
 
+function DebugPanel({
+  currentState,
+  target,
+  onStateChange,
+}: {
+  currentState: OverlayState;
+  target: typeof testTarget;
+  onStateChange: (state: OverlayState) => void;
+}) {
+  return (
+    <section className="debug-panel" aria-label="Overlay debug controls">
+      <div>
+        <p className="eyebrow">Debug</p>
+        <h2>Overlay test controls</h2>
+      </div>
+
+      <div className="debug-grid" role="group" aria-label="Set overlay state">
+        {overlayStates.map((state) => (
+          <button
+            className="debug-state-button"
+            data-active={state === currentState}
+            key={state}
+            type="button"
+            onClick={() => onStateChange(state)}
+          >
+            {stateMeta[state].label}
+          </button>
+        ))}
+      </div>
+
+      <dl className="debug-readout">
+        <div>
+          <dt>Target</dt>
+          <dd>{target.label}</dd>
+        </div>
+        <div>
+          <dt>X/Y</dt>
+          <dd>
+            {target.x}, {target.y}
+          </dd>
+        </div>
+        <div>
+          <dt>Size</dt>
+          <dd>
+            {target.width} x {target.height}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function App() {
   const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
   const meta = stateMeta[overlayState];
@@ -183,6 +244,11 @@ function App() {
         </>
       )}
       <AssistantPuck state={overlayState} />
+      <DebugPanel
+        currentState={overlayState}
+        target={testTarget}
+        onStateChange={setOverlayState}
+      />
     </main>
   );
 }
