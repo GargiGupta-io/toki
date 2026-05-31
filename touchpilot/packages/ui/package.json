@@ -1,0 +1,10 @@
+{
+  "name": "@touchpilot/ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared React UI components for the TouchPilot desktop overlay.",
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  }
+}

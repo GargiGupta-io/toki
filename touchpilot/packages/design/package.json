@@ -1,0 +1,10 @@
+{
+  "name": "@touchpilot/design",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Design tokens, motion rules, and visual system primitives for TouchPilot.",
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@touchpilot/evals",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Evaluation harness for screen-target accuracy and risk classification.",
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  }
+}

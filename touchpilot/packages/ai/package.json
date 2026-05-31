@@ -1,0 +1,10 @@
+{
+  "name": "@touchpilot/ai",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "AI provider clients, prompts, and response schemas for TouchPilot.",
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  }
+}
