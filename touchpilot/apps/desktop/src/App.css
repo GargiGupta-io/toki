@@ -121,6 +121,16 @@ h1 {
   background: #75f4d7;
 }
 
+.is-paused .state-pill {
+  color: #191306;
+  background: #ffd36d;
+}
+
+.is-error .state-pill {
+  color: #23080b;
+  background: #ff8a9a;
+}
+
 .coordinate-readout {
   color: rgba(255, 255, 255, 0.72);
   background: rgba(255, 255, 255, 0.08);
@@ -221,6 +231,31 @@ h1 {
   border-radius: 50%;
   background: #75f4d7;
   box-shadow: 0 0 14px rgba(117, 244, 215, 0.9);
+}
+
+.assistant-puck.is-paused .puck-orbit {
+  border-color: rgba(255, 211, 109, 0.38);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 211, 109, 0.14), transparent 58%),
+    rgba(255, 255, 255, 0.06);
+  animation-play-state: paused;
+}
+
+.assistant-puck.is-paused .puck-status-dot {
+  background: #ffd36d;
+  box-shadow: 0 0 14px rgba(255, 211, 109, 0.85);
+}
+
+.assistant-puck.is-error .puck-orbit {
+  border-color: rgba(255, 138, 154, 0.42);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 138, 154, 0.16), transparent 58%),
+    rgba(255, 255, 255, 0.06);
+}
+
+.assistant-puck.is-error .puck-status-dot {
+  background: #ff8a9a;
+  box-shadow: 0 0 14px rgba(255, 138, 154, 0.9);
 }
 
 @keyframes puck-pulse {
