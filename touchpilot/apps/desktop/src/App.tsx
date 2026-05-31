@@ -135,6 +135,7 @@ function DebugPanel({
   captureMetadata,
   screenshotCapture,
   calibration,
+  captureError,
   isRefreshingCapture,
   onStateChange,
   onRefreshCapture,
@@ -144,6 +145,7 @@ function DebugPanel({
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
   calibration: CoordinateCalibration;
+  captureError: string | null;
   isRefreshingCapture: boolean;
   onStateChange: (state: OverlayState) => void;
   onRefreshCapture: () => void;
@@ -163,6 +165,11 @@ function DebugPanel({
       >
         {isRefreshingCapture ? "Refreshing capture" : "Refresh capture"}
       </button>
+
+      <div className="capture-status" data-status={captureError ? "error" : "ok"}>
+        <span>{captureError ? "Capture error" : "Capture ready"}</span>
+        <p>{captureError ?? "Latest capture request completed without errors."}</p>
+      </div>
 
       <div className="debug-grid" role="group" aria-label="Set overlay state">
         {overlayStates.map((state) => (
@@ -330,6 +337,7 @@ function App() {
   const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const meta = stateMeta[overlayState];
   const isPaused = overlayState === "paused";
@@ -337,6 +345,7 @@ function App() {
 
   async function refreshCaptureMetadata() {
     setIsRefreshingCapture(true);
+    setCaptureError(null);
 
     try {
       const [metadata, screenshot] = await Promise.all([
@@ -346,7 +355,9 @@ function App() {
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setCaptureError(message);
       setOverlayState("error");
     } finally {
       setIsRefreshingCapture(false);
@@ -427,6 +438,7 @@ function App() {
         captureMetadata={captureMetadata}
         screenshotCapture={screenshotCapture}
         calibration={calibration}
+        captureError={captureError}
         isRefreshingCapture={isRefreshingCapture}
         onStateChange={setOverlayState}
         onRefreshCapture={refreshCaptureMetadata}
