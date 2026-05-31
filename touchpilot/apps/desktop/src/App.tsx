@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { CaptureMetadata, CoordinateCalibration } from "@touchpilot/shared";
+import type {
+  CaptureMetadata,
+  CoordinateCalibration,
+  ScreenshotCapture,
+} from "@touchpilot/shared";
 import "./App.css";
 
 type OverlayState = "idle" | "listening" | "thinking" | "guiding" | "paused" | "error";
@@ -129,6 +133,7 @@ function DebugPanel({
   currentState,
   target,
   captureMetadata,
+  screenshotCapture,
   calibration,
   isRefreshingCapture,
   onStateChange,
@@ -137,6 +142,7 @@ function DebugPanel({
   currentState: OverlayState;
   target: typeof testTarget;
   captureMetadata: CaptureMetadata | null;
+  screenshotCapture: ScreenshotCapture | null;
   calibration: CoordinateCalibration;
   isRefreshingCapture: boolean;
   onStateChange: (state: OverlayState) => void;
@@ -248,6 +254,29 @@ function DebugPanel({
           <dd>{calibration.notes ?? "No notes"}</dd>
         </div>
       </dl>
+
+      <dl className="screenshot-readout">
+        <div>
+          <dt>Shot size</dt>
+          <dd>
+            {screenshotCapture
+              ? `${screenshotCapture.imageWidth} x ${screenshotCapture.imageHeight}`
+              : "Waiting"}
+          </dd>
+        </div>
+        <div>
+          <dt>Bytes</dt>
+          <dd>{screenshotCapture?.byteLength ?? "Waiting"}</dd>
+        </div>
+        <div>
+          <dt>Format</dt>
+          <dd>{screenshotCapture?.format ?? "Waiting"}</dd>
+        </div>
+        <div>
+          <dt>Image data</dt>
+          <dd>{screenshotCapture?.imageBase64 ? "Present" : "Missing"}</dd>
+        </div>
+      </dl>
     </section>
   );
 }
@@ -290,6 +319,7 @@ function getCalibration(captureMetadata: CaptureMetadata | null): CoordinateCali
 function App() {
   const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
+  const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const meta = stateMeta[overlayState];
   const isPaused = overlayState === "paused";
@@ -299,7 +329,13 @@ function App() {
     setIsRefreshingCapture(true);
 
     try {
-      setCaptureMetadata(await invoke<CaptureMetadata>("capture_metadata"));
+      const [metadata, screenshot] = await Promise.all([
+        invoke<CaptureMetadata>("capture_metadata"),
+        invoke<ScreenshotCapture>("capture_screenshot"),
+      ]);
+
+      setCaptureMetadata(metadata);
+      setScreenshotCapture(screenshot);
     } catch {
       setOverlayState("error");
     } finally {
@@ -379,6 +415,7 @@ function App() {
         currentState={overlayState}
         target={testTarget}
         captureMetadata={captureMetadata}
+        screenshotCapture={screenshotCapture}
         calibration={calibration}
         isRefreshingCapture={isRefreshingCapture}
         onStateChange={setOverlayState}

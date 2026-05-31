@@ -360,7 +360,8 @@ h1 {
 
 .debug-readout,
 .capture-readout,
-.calibration-readout {
+.calibration-readout,
+.screenshot-readout {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -368,13 +369,15 @@ h1 {
 }
 
 .capture-readout,
-.calibration-readout {
+.calibration-readout,
+.screenshot-readout {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .debug-readout div,
 .capture-readout div,
-.calibration-readout div {
+.calibration-readout div,
+.screenshot-readout div {
   min-height: 48px;
   border-radius: 10px;
   padding: 8px;
@@ -383,7 +386,8 @@ h1 {
 
 .debug-readout dt,
 .capture-readout dt,
-.calibration-readout dt {
+.calibration-readout dt,
+.screenshot-readout dt {
   color: rgba(255, 255, 255, 0.46);
   font-size: 0.66rem;
   font-weight: 800;
@@ -392,7 +396,8 @@ h1 {
 
 .debug-readout dd,
 .capture-readout dd,
-.calibration-readout dd {
+.calibration-readout dd,
+.screenshot-readout dd {
   margin: 2px 0 0;
   color: rgba(255, 255, 255, 0.82);
   font-size: 0.78rem;
