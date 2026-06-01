@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { GuidanceResult, RiskClass } from "@touchpilot/shared";
-import { createMockGuidance, validateGuidanceResult } from "./index";
+import { createMockGuidance, createRiskyMockGuidance, validateGuidanceResult } from "./index";
 
 const validResult: GuidanceResult = {
   mode: "guide",
@@ -48,6 +48,28 @@ test("createMockGuidance returns valid guidance centered on the display", () => 
   assert.deepEqual(validation.issues, []);
   assert.equal(result.step?.target?.x, 720);
   assert.equal(result.step?.target?.y, 450);
+});
+
+test("createRiskyMockGuidance returns valid confirmation-gated guidance", () => {
+  const result = createRiskyMockGuidance({
+    goal: "Help me understand the payment action.",
+    screen: {
+      display: {
+        id: "display-1",
+        width: 1440,
+        height: 900,
+        scaleFactor: 1,
+      },
+    },
+  });
+
+  const validation = validateGuidanceResult(result);
+
+  assert.equal(validation.valid, true);
+  assert.deepEqual(validation.issues, []);
+  assert.equal(result.step?.target?.label, "Pay now");
+  assert.equal(result.step?.risk, "payment");
+  assert.equal(result.step?.requiresConfirmation, true);
 });
 
 test("validateGuidanceResult rejects missing guidance", () => {

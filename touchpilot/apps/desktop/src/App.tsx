@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { createMockGuidance, validateGuidanceResult } from "@touchpilot/ai";
+import {
+  createMockGuidance,
+  createRiskyMockGuidance,
+  validateGuidanceResult,
+} from "@touchpilot/ai";
 import type {
   CaptureMetadata,
   CoordinateCalibration,
@@ -15,6 +19,8 @@ import type {
 import "./App.css";
 
 type OverlayState = "idle" | "listening" | "thinking" | "guiding" | "paused" | "error";
+
+type GuidanceFixture = "safe" | "risky";
 
 type OverlayStateMeta = {
   label: string;
@@ -165,11 +171,13 @@ function DebugPanel({
   screenshotCapture,
   guidanceRequest,
   guidanceResult,
+  guidanceFixture,
   calibration,
   guidanceIssues,
   captureError,
   isRefreshingCapture,
   onStateChange,
+  onGuidanceFixtureChange,
   onRefreshCapture,
 }: {
   currentState: OverlayState;
@@ -178,11 +186,13 @@ function DebugPanel({
   screenshotCapture: ScreenshotCapture | null;
   guidanceRequest: GuidanceRequest | null;
   guidanceResult: GuidanceResult | null;
+  guidanceFixture: GuidanceFixture;
   calibration: CoordinateCalibration;
   guidanceIssues: GuidanceValidationIssue[];
   captureError: string | null;
   isRefreshingCapture: boolean;
   onStateChange: (state: OverlayState) => void;
+  onGuidanceFixtureChange: (fixture: GuidanceFixture) => void;
   onRefreshCapture: () => void;
 }) {
   return (
@@ -200,6 +210,28 @@ function DebugPanel({
       >
         {isRefreshingCapture ? "Refreshing capture" : "Refresh capture"}
       </button>
+
+      <div className="fixture-switcher" aria-label="Guidance QA fixture">
+        <span>Guidance fixture</span>
+        <div>
+          <button
+            className="fixture-button"
+            data-active={guidanceFixture === "safe"}
+            type="button"
+            onClick={() => onGuidanceFixtureChange("safe")}
+          >
+            Safe
+          </button>
+          <button
+            className="fixture-button"
+            data-active={guidanceFixture === "risky"}
+            type="button"
+            onClick={() => onGuidanceFixtureChange("risky")}
+          >
+            Risky
+          </button>
+        </div>
+      </div>
 
       <div className="capture-status" data-status={captureError ? "error" : "ok"}>
         <span>{captureError ? "Capture error" : "Capture ready"}</span>
@@ -474,6 +506,7 @@ function getScreenshotMetadata(screenshot: ScreenshotCapture): ScreenshotMetadat
 
 function App() {
   const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
+  const [guidanceFixture, setGuidanceFixture] = useState<GuidanceFixture>("safe");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
@@ -515,7 +548,10 @@ function App() {
         },
         previousStep: guidanceResult?.step ?? null,
       };
-      const nextGuidance = createMockGuidance(nextGuidanceRequest);
+      const nextGuidance =
+        guidanceFixture === "risky"
+          ? createRiskyMockGuidance(nextGuidanceRequest)
+          : createMockGuidance(nextGuidanceRequest);
       const validation = validateGuidanceResult(nextGuidance);
 
       setGuidanceRequest(nextGuidanceRequest);
@@ -606,11 +642,13 @@ function App() {
         screenshotCapture={screenshotCapture}
         guidanceRequest={guidanceRequest}
         guidanceResult={guidanceResult}
+        guidanceFixture={guidanceFixture}
         calibration={calibration}
         guidanceIssues={guidanceIssues}
         captureError={captureError}
         isRefreshingCapture={isRefreshingCapture}
         onStateChange={setOverlayState}
+        onGuidanceFixtureChange={setGuidanceFixture}
         onRefreshCapture={refreshCaptureMetadata}
       />
     </main>

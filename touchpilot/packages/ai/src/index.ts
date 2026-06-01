@@ -53,6 +53,31 @@ export function createMockGuidance(request: GuidanceRequest): GuidanceResult {
   };
 }
 
+export function createRiskyMockGuidance(request: GuidanceRequest): GuidanceResult {
+  const targetWidth = 138;
+  const targetHeight = 44;
+  const x = Math.round(request.screen.display.width / 2);
+  const y = Math.round(request.screen.display.height / 2 + 86);
+
+  return {
+    mode: "guide",
+    summary: `Risky mock guidance for: ${request.goal}`,
+    step: {
+      instruction: "Review this payment action, then confirm before continuing.",
+      target: {
+        label: "Pay now",
+        x,
+        y,
+        width: targetWidth,
+        height: targetHeight,
+      },
+      confidence: 0.76,
+      risk: "payment",
+      requiresConfirmation: true,
+    },
+  };
+}
+
 export function validateGuidanceResult(
   result: GuidanceResult | null | undefined,
 ): GuidanceValidationResult {

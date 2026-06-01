@@ -364,6 +364,59 @@ h1 {
   outline-offset: 2px;
 }
 
+.fixture-switcher {
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.fixture-switcher > span {
+  display: block;
+  margin-bottom: 7px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.fixture-switcher > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fixture-button {
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.72);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.fixture-button[data-active="true"] {
+  border-color: rgba(255, 211, 109, 0.5);
+  background: rgba(255, 211, 109, 0.14);
+  color: #ffe4a3;
+}
+
+.fixture-button:first-child[data-active="true"] {
+  border-color: rgba(117, 244, 215, 0.5);
+  background: rgba(117, 244, 215, 0.16);
+  color: #ddfff7;
+}
+
+.fixture-button:focus-visible {
+  outline: 3px solid rgba(117, 244, 215, 0.78);
+  outline-offset: 2px;
+}
+
 .capture-status {
   min-height: 54px;
   margin-bottom: 12px;
