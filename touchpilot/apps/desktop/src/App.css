@@ -489,6 +489,7 @@ h1 {
 .debug-readout,
 .capture-readout,
 .calibration-readout,
+.viewport-readout,
 .screenshot-readout,
 .guidance-request-readout,
 .guidance-risk-readout {
@@ -500,6 +501,7 @@ h1 {
 
 .capture-readout,
 .calibration-readout,
+.viewport-readout,
 .screenshot-readout,
 .guidance-request-readout,
 .guidance-risk-readout {
@@ -509,6 +511,7 @@ h1 {
 .debug-readout div,
 .capture-readout div,
 .calibration-readout div,
+.viewport-readout div,
 .screenshot-readout div,
 .guidance-request-readout div,
 .guidance-risk-readout div {
@@ -521,6 +524,7 @@ h1 {
 .debug-readout dt,
 .capture-readout dt,
 .calibration-readout dt,
+.viewport-readout dt,
 .screenshot-readout dt,
 .guidance-request-readout dt,
 .guidance-risk-readout dt {
@@ -533,6 +537,7 @@ h1 {
 .debug-readout dd,
 .capture-readout dd,
 .calibration-readout dd,
+.viewport-readout dd,
 .screenshot-readout dd,
 .guidance-request-readout dd,
 .guidance-risk-readout dd {

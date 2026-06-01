@@ -23,6 +23,13 @@ type OverlayState = "idle" | "listening" | "thinking" | "guiding" | "paused" | "
 
 type GuidanceFixture = "safe" | "risky" | "invalid";
 
+type ViewportMetrics = {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+  updatedAt: string;
+};
+
 type OverlayStateMeta = {
   label: string;
   title: string;
@@ -175,6 +182,7 @@ function DebugPanel({
   guidanceResult,
   guidanceFixture,
   calibration,
+  viewport,
   guidanceIssues,
   captureError,
   isRefreshingCapture,
@@ -191,6 +199,7 @@ function DebugPanel({
   guidanceResult: GuidanceResult | null;
   guidanceFixture: GuidanceFixture;
   calibration: CoordinateCalibration;
+  viewport: ViewportMetrics;
   guidanceIssues: GuidanceValidationIssue[];
   captureError: string | null;
   isRefreshingCapture: boolean;
@@ -336,6 +345,33 @@ function DebugPanel({
         </div>
       </dl>
 
+      <dl className="viewport-readout">
+        <div>
+          <dt>Viewport</dt>
+          <dd>
+            {viewport.width} x {viewport.height}
+          </dd>
+        </div>
+        <div>
+          <dt>DPR</dt>
+          <dd>{viewport.devicePixelRatio}</dd>
+        </div>
+        <div>
+          <dt>Delta</dt>
+          <dd>
+            {captureMetadata
+              ? `${viewport.width - captureMetadata.display.width}, ${
+                  viewport.height - captureMetadata.display.height
+                }`
+              : "Waiting"}
+          </dd>
+        </div>
+        <div>
+          <dt>Resized</dt>
+          <dd>{viewport.updatedAt}</dd>
+        </div>
+      </dl>
+
       <dl className="screenshot-readout">
         <div>
           <dt>Shot size</dt>
@@ -462,9 +498,21 @@ function DebugPanel({
   );
 }
 
-function getCalibration(captureMetadata: CaptureMetadata | null): CoordinateCalibration {
-  const overlayWidth = window.innerWidth;
-  const overlayHeight = window.innerHeight;
+function getViewportMetrics(): ViewportMetrics {
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function getCalibration(
+  captureMetadata: CaptureMetadata | null,
+  viewport: ViewportMetrics,
+): CoordinateCalibration {
+  const overlayWidth = viewport.width;
+  const overlayHeight = viewport.height;
   const displayWidth = captureMetadata?.display.width ?? 0;
   const displayHeight = captureMetadata?.display.height ?? 0;
   const scaleFactor = captureMetadata?.display.scaleFactor ?? 1;
@@ -482,18 +530,22 @@ function getCalibration(captureMetadata: CaptureMetadata | null): CoordinateCali
   }
 
   const sizeMatches = overlayWidth === displayWidth && overlayHeight === displayHeight;
+  const scaleMatches = Math.abs(viewport.devicePixelRatio - scaleFactor) < 0.01;
 
   return {
-    status: sizeMatches ? "aligned" : "needs_check",
+    status: sizeMatches && scaleMatches ? "aligned" : "needs_check",
     overlayWidth,
     overlayHeight,
     displayWidth,
     displayHeight,
     scaleFactor,
     checkedAt: new Date().toISOString(),
-    notes: sizeMatches
-      ? "Overlay viewport matches captured display dimensions."
-      : "Overlay viewport differs from captured display dimensions.",
+    notes:
+      sizeMatches && scaleMatches
+        ? "Overlay viewport matches captured display dimensions and scale."
+        : `Overlay/display mismatch. Delta ${overlayWidth - displayWidth}, ${
+            overlayHeight - displayHeight
+          }; DPR ${viewport.devicePixelRatio} vs capture scale ${scaleFactor}.`,
   };
 }
 
@@ -521,9 +573,10 @@ function App() {
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
+  const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const meta = stateMeta[overlayState];
   const isPaused = overlayState === "paused";
-  const calibration = getCalibration(captureMetadata);
+  const calibration = getCalibration(captureMetadata, viewport);
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep = activeStep?.target != null ? activeStep : null;
   const acceptedTarget = acceptedStep?.target ?? null;
@@ -560,7 +613,7 @@ function App() {
           display: metadata.display,
           capture: metadata,
           screenshot: getScreenshotMetadata(screenshot),
-          calibration: getCalibration(metadata),
+          calibration: getCalibration(metadata, viewport),
         },
         previousStep: guidanceResult?.step ?? null,
       };
@@ -590,6 +643,18 @@ function App() {
 
   useEffect(() => {
     refreshCaptureMetadata();
+  }, []);
+
+  useEffect(() => {
+    function handleResize() {
+      setViewport(getViewportMetrics());
+    }
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   function pauseGuidance() {
@@ -668,6 +733,7 @@ function App() {
         guidanceResult={guidanceResult}
         guidanceFixture={guidanceFixture}
         calibration={calibration}
+        viewport={viewport}
         guidanceIssues={guidanceIssues}
         captureError={captureError}
         isRefreshingCapture={isRefreshingCapture}
