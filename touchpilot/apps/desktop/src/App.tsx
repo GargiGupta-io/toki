@@ -5,6 +5,8 @@ import type {
   CaptureMetadata,
   CoordinateCalibration,
   GuidanceResult,
+  GuidanceStep,
+  TargetBox,
   ScreenshotCapture,
 } from "@touchpilot/shared";
 import "./App.css";
@@ -34,6 +36,10 @@ const testTarget = {
   width: 112,
   height: 48,
   instruction: "Click Export to continue this workflow.",
+};
+
+type RenderedGuidanceTarget = TargetBox & {
+  instruction: string;
 };
 
 const stateMeta: Record<OverlayState, OverlayStateMeta> = {
@@ -95,7 +101,7 @@ function AssistantPuck({ state }: { state: OverlayState }) {
   );
 }
 
-function PointerRing({ target }: { target: typeof testTarget }) {
+function PointerRing({ target }: { target: TargetBox }) {
   return (
     <div
       className="pointer-target"
@@ -113,7 +119,13 @@ function PointerRing({ target }: { target: typeof testTarget }) {
   );
 }
 
-function StepBubble({ target }: { target: typeof testTarget }) {
+function StepBubble({
+  step,
+  target,
+}: {
+  step: GuidanceStep | null;
+  target: RenderedGuidanceTarget;
+}) {
   return (
     <aside
       className="step-bubble"
@@ -126,7 +138,7 @@ function StepBubble({ target }: { target: typeof testTarget }) {
       <span className="bubble-anchor" aria-hidden="true" />
       <p className="eyebrow">Step 1</p>
       <h3>{target.label}</h3>
-      <p>{target.instruction}</p>
+      <p>{step?.instruction ?? target.instruction}</p>
     </aside>
   );
 }
@@ -143,7 +155,7 @@ function DebugPanel({
   onRefreshCapture,
 }: {
   currentState: OverlayState;
-  target: typeof testTarget;
+  target: RenderedGuidanceTarget;
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
   calibration: CoordinateCalibration;
@@ -345,6 +357,14 @@ function App() {
   const meta = stateMeta[overlayState];
   const isPaused = overlayState === "paused";
   const calibration = getCalibration(captureMetadata);
+  const activeStep = guidanceResult?.step ?? null;
+  const activeTarget: RenderedGuidanceTarget =
+    activeStep?.target != null
+      ? {
+          ...activeStep.target,
+          instruction: activeStep.instruction,
+        }
+      : testTarget;
 
   async function refreshCaptureMetadata() {
     setIsRefreshingCapture(true);
@@ -442,14 +462,14 @@ function App() {
 
       {overlayState !== "idle" && (
         <>
-          <PointerRing target={testTarget} />
-          <StepBubble target={testTarget} />
+          <PointerRing target={activeTarget} />
+          <StepBubble step={activeStep} target={activeTarget} />
         </>
       )}
       <AssistantPuck state={overlayState} />
       <DebugPanel
         currentState={overlayState}
-        target={testTarget}
+        target={activeTarget}
         captureMetadata={captureMetadata}
         screenshotCapture={screenshotCapture}
         calibration={calibration}
