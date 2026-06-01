@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { GuidanceResult, RiskClass } from "@touchpilot/shared";
-import { createMockGuidance, createRiskyMockGuidance, validateGuidanceResult } from "./index";
+import {
+  createInvalidMockGuidance,
+  createMockGuidance,
+  createRiskyMockGuidance,
+  validateGuidanceResult,
+} from "./index";
 
 const validResult: GuidanceResult = {
   mode: "guide",
@@ -70,6 +75,33 @@ test("createRiskyMockGuidance returns valid confirmation-gated guidance", () => 
   assert.equal(result.step?.target?.label, "Pay now");
   assert.equal(result.step?.risk, "payment");
   assert.equal(result.step?.requiresConfirmation, true);
+});
+
+test("createInvalidMockGuidance returns a rejected QA fixture", () => {
+  const result = createInvalidMockGuidance({
+    goal: "Force a rejected guidance state.",
+    screen: {
+      display: {
+        id: "display-1",
+        width: 1440,
+        height: 900,
+        scaleFactor: 1,
+      },
+    },
+  });
+
+  const validation = validateGuidanceResult(result);
+
+  assert.equal(validation.valid, false);
+  assert.deepEqual(
+    validation.issues.map((issue) => issue.path),
+    [
+      "step.confidence",
+      "step.requiresConfirmation",
+      "step.target.x",
+      "step.target",
+    ],
+  );
 });
 
 test("validateGuidanceResult rejects missing guidance", () => {

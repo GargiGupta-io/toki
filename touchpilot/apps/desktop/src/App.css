@@ -383,7 +383,7 @@ h1 {
 
 .fixture-switcher > div {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -410,6 +410,12 @@ h1 {
   border-color: rgba(117, 244, 215, 0.5);
   background: rgba(117, 244, 215, 0.16);
   color: #ddfff7;
+}
+
+.fixture-button:last-child[data-active="true"] {
+  border-color: rgba(255, 138, 154, 0.5);
+  background: rgba(255, 138, 154, 0.14);
+  color: #ffd6dc;
 }
 
 .fixture-button:focus-visible {

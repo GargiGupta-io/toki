@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  createInvalidMockGuidance,
   createMockGuidance,
   createRiskyMockGuidance,
   validateGuidanceResult,
@@ -20,7 +21,7 @@ import "./App.css";
 
 type OverlayState = "idle" | "listening" | "thinking" | "guiding" | "paused" | "error";
 
-type GuidanceFixture = "safe" | "risky";
+type GuidanceFixture = "safe" | "risky" | "invalid";
 
 type OverlayStateMeta = {
   label: string;
@@ -229,6 +230,14 @@ function DebugPanel({
             onClick={() => onGuidanceFixtureChange("risky")}
           >
             Risky
+          </button>
+          <button
+            className="fixture-button"
+            data-active={guidanceFixture === "invalid"}
+            type="button"
+            onClick={() => onGuidanceFixtureChange("invalid")}
+          >
+            Invalid
           </button>
         </div>
       </div>
@@ -549,9 +558,11 @@ function App() {
         previousStep: guidanceResult?.step ?? null,
       };
       const nextGuidance =
-        guidanceFixture === "risky"
-          ? createRiskyMockGuidance(nextGuidanceRequest)
-          : createMockGuidance(nextGuidanceRequest);
+        guidanceFixture === "invalid"
+          ? createInvalidMockGuidance(nextGuidanceRequest)
+          : guidanceFixture === "risky"
+            ? createRiskyMockGuidance(nextGuidanceRequest)
+            : createMockGuidance(nextGuidanceRequest);
       const validation = validateGuidanceResult(nextGuidance);
 
       setGuidanceRequest(nextGuidanceRequest);

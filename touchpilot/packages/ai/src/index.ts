@@ -78,6 +78,26 @@ export function createRiskyMockGuidance(request: GuidanceRequest): GuidanceResul
   };
 }
 
+export function createInvalidMockGuidance(request: GuidanceRequest): GuidanceResult {
+  return {
+    mode: "guide",
+    summary: `Invalid mock guidance for: ${request.goal}`,
+    step: {
+      instruction: "This intentionally invalid fixture should be rejected.",
+      target: {
+        label: "Broken target",
+        x: Number.NaN,
+        y: Math.round(request.screen.display.height / 2),
+        width: 0,
+        height: 44,
+      },
+      confidence: 1.4,
+      risk: "payment",
+      requiresConfirmation: false,
+    },
+  };
+}
+
 export function validateGuidanceResult(
   result: GuidanceResult | null | undefined,
 ): GuidanceValidationResult {
