@@ -125,10 +125,15 @@ function PointerRing({ target }: { target: TargetBox }) {
 function StepBubble({
   step,
   target,
+  guidance,
 }: {
   step: GuidanceStep | null;
   target: RenderedGuidanceTarget;
+  guidance: GuidanceResult | null;
 }) {
+  const risk = guidance?.step?.risk ?? "safe_navigation";
+  const requiresConfirmation = guidance?.step?.requiresConfirmation ?? false;
+
   return (
     <aside
       className="step-bubble"
@@ -142,6 +147,13 @@ function StepBubble({
       <p className="eyebrow">Step 1</p>
       <h3>{target.label}</h3>
       <p>{step?.instruction ?? target.instruction}</p>
+      <div
+        className="risk-strip"
+        data-confirmation={requiresConfirmation ? "required" : "not-required"}
+      >
+        <span>{risk}</span>
+        <strong>{requiresConfirmation ? "Confirm first" : "No confirmation"}</strong>
+      </div>
     </aside>
   );
 }
@@ -152,6 +164,7 @@ function DebugPanel({
   captureMetadata,
   screenshotCapture,
   guidanceRequest,
+  guidanceResult,
   calibration,
   guidanceIssues,
   captureError,
@@ -164,6 +177,7 @@ function DebugPanel({
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
   guidanceRequest: GuidanceRequest | null;
+  guidanceResult: GuidanceResult | null;
   calibration: CoordinateCalibration;
   guidanceIssues: GuidanceValidationIssue[];
   captureError: string | null;
@@ -328,6 +342,60 @@ function DebugPanel({
           <dd>{guidanceRequest?.previousStep?.target?.label ?? "None"}</dd>
         </div>
       </dl>
+
+      <dl className="guidance-risk-readout">
+        <div>
+          <dt>Risk</dt>
+          <dd>{guidanceResult?.step?.risk ?? "Waiting"}</dd>
+        </div>
+        <div>
+          <dt>Confirm</dt>
+          <dd>{guidanceResult?.step?.requiresConfirmation ? "Required" : "Not required"}</dd>
+        </div>
+        <div>
+          <dt>Confidence</dt>
+          <dd>
+            {guidanceResult?.step
+              ? `${Math.round(guidanceResult.step.confidence * 100)}%`
+              : "Waiting"}
+          </dd>
+        </div>
+        <div>
+          <dt>Mode</dt>
+          <dd>{guidanceResult?.mode ?? "Waiting"}</dd>
+        </div>
+      </dl>
+
+      {guidanceResult?.step?.requiresConfirmation && (
+        <div className="confirmation-warning" role="status">
+          <span>Confirmation required</span>
+          <p>This guidance touches a risky action and must be approved before execution.</p>
+        </div>
+      )}
+
+      {!guidanceResult?.step?.requiresConfirmation && guidanceResult && (
+        <div className="confirmation-ready" role="status">
+          <span>Safe navigation</span>
+          <p>This guidance can be shown without a confirmation gate.</p>
+        </div>
+      )}
+
+      <div className="confirmation-actions" aria-label="Confirmation controls">
+        <button
+          className="confirmation-button"
+          type="button"
+          disabled={!guidanceResult?.step?.requiresConfirmation}
+        >
+          Confirm
+        </button>
+        <button
+          className="confirmation-button confirmation-button-secondary"
+          type="button"
+          disabled={!guidanceResult?.step?.requiresConfirmation}
+        >
+          Decline
+        </button>
+      </div>
 
       {guidanceIssues.length > 0 && (
         <div className="guidance-issues" role="status">
@@ -527,7 +595,7 @@ function App() {
       {overlayState !== "idle" && (
         <>
           <PointerRing target={activeTarget} />
-          <StepBubble step={activeStep} target={activeTarget} />
+          <StepBubble step={activeStep} target={activeTarget} guidance={guidanceResult} />
         </>
       )}
       <AssistantPuck state={overlayState} />
@@ -537,6 +605,7 @@ function App() {
         captureMetadata={captureMetadata}
         screenshotCapture={screenshotCapture}
         guidanceRequest={guidanceRequest}
+        guidanceResult={guidanceResult}
         calibration={calibration}
         guidanceIssues={guidanceIssues}
         captureError={captureError}

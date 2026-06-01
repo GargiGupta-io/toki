@@ -255,12 +255,48 @@ h1 {
   line-height: 1.15;
 }
 
-.step-bubble p:last-child {
+.step-bubble > p:not(.eyebrow) {
   position: relative;
   margin-bottom: 0;
   color: rgba(255, 255, 255, 0.72);
   font-size: 0.88rem;
   line-height: 1.35;
+}
+
+.risk-strip {
+  position: relative;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid rgba(117, 244, 215, 0.26);
+  border-radius: 10px;
+  padding: 0 9px;
+  background: rgba(117, 244, 215, 0.09);
+}
+
+.risk-strip[data-confirmation="required"] {
+  border-color: rgba(255, 211, 109, 0.42);
+  background: rgba(255, 211, 109, 0.12);
+}
+
+.risk-strip span,
+.risk-strip strong {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.risk-strip strong {
+  color: #ddfff7;
+}
+
+.risk-strip[data-confirmation="required"] strong {
+  color: #ffe4a3;
 }
 
 .assistant-puck {
@@ -395,7 +431,8 @@ h1 {
 .capture-readout,
 .calibration-readout,
 .screenshot-readout,
-.guidance-request-readout {
+.guidance-request-readout,
+.guidance-risk-readout {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -405,7 +442,8 @@ h1 {
 .capture-readout,
 .calibration-readout,
 .screenshot-readout,
-.guidance-request-readout {
+.guidance-request-readout,
+.guidance-risk-readout {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -413,7 +451,8 @@ h1 {
 .capture-readout div,
 .calibration-readout div,
 .screenshot-readout div,
-.guidance-request-readout div {
+.guidance-request-readout div,
+.guidance-risk-readout div {
   min-height: 48px;
   border-radius: 10px;
   padding: 8px;
@@ -424,7 +463,8 @@ h1 {
 .capture-readout dt,
 .calibration-readout dt,
 .screenshot-readout dt,
-.guidance-request-readout dt {
+.guidance-request-readout dt,
+.guidance-risk-readout dt {
   color: rgba(255, 255, 255, 0.46);
   font-size: 0.66rem;
   font-weight: 800;
@@ -435,7 +475,8 @@ h1 {
 .capture-readout dd,
 .calibration-readout dd,
 .screenshot-readout dd,
-.guidance-request-readout dd {
+.guidance-request-readout dd,
+.guidance-risk-readout dd {
   margin: 2px 0 0;
   color: rgba(255, 255, 255, 0.82);
   font-size: 0.78rem;
@@ -488,6 +529,77 @@ h1 {
   color: rgba(255, 255, 255, 0.72);
   font-size: 0.74rem;
   line-height: 1.35;
+}
+
+.confirmation-warning,
+.confirmation-ready {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 211, 109, 0.4);
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(255, 211, 109, 0.1);
+}
+
+.confirmation-ready {
+  border-color: rgba(117, 244, 215, 0.28);
+  background: rgba(117, 244, 215, 0.08);
+}
+
+.confirmation-warning span,
+.confirmation-ready span {
+  display: block;
+  color: #ffe4a3;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.confirmation-ready span {
+  color: #ddfff7;
+}
+
+.confirmation-warning p,
+.confirmation-ready p {
+  margin: 3px 0 0;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.confirmation-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.confirmation-button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 211, 109, 0.42);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: rgba(255, 211, 109, 0.12);
+  color: #ffe4a3;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.confirmation-button-secondary {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.confirmation-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.confirmation-button:focus-visible {
+  outline: 3px solid rgba(255, 211, 109, 0.78);
+  outline-offset: 2px;
 }
 
 .assistant-puck:focus-visible {
