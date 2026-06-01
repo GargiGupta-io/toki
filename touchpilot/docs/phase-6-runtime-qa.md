@@ -143,19 +143,216 @@ Additional target for this phase:
 
 - unit tests for `validateGuidanceResult()`
 
-## Manual Smoke Checklist
+## Desktop Runtime Smoke Checklist
 
-Run the desktop app locally and verify:
+Use this checklist whenever Phase 6 runtime behavior needs to be manually verified.
 
-- app opens without immediate runtime error
-- refresh capture completes or shows a clear error
-- screenshot preview appears when capture succeeds
-- guidance request readout shows metadata-only screenshot context
-- pointer ring appears at the mock target
-- step bubble shows instruction and risk strip
-- debug risk readout shows risk, confirmation, confidence, and mode
-- pause/resume/stop buttons still change overlay state
-- no obvious text overlap in the debug panel at desktop size
+### Before Starting
+
+Run the automated checks first:
+
+```bash
+npm --workspace @touchpilot/ai run test
+npm --workspace @touchpilot/desktop run typecheck
+npm --workspace @touchpilot/desktop run build
+npm run check
+```
+
+Then start the desktop app:
+
+```bash
+npm run desktop:dev
+```
+
+The app should open without a React error screen, Rust panic window, or immediate Tauri startup failure.
+
+### Smoke 1: Initial Capture And Safe Guidance
+
+1. Leave the guidance fixture set to `Safe`.
+2. Click `Refresh capture`.
+3. Wait for the button text to return from `Refreshing capture` to `Refresh capture`.
+
+Pass criteria:
+
+- State pill becomes `Guiding`.
+- Capture status says `Capture ready`.
+- Screenshot preview is visible when platform capture succeeds.
+- `Guidance fixture` shows `Safe` as selected.
+- Target readout shows an accepted target, not `None accepted`.
+- Pointer ring appears.
+- Step bubble appears.
+- Step bubble risk strip says `safe_navigation`.
+- Step bubble says `No confirmation`.
+- Debug risk readout shows:
+  - `Risk`: `safe_navigation`
+  - `Confirm`: `Not required`
+  - `Confidence`: `82%`
+  - `Mode`: `guide`
+- Confirm and Decline buttons are disabled.
+
+Fail conditions:
+
+- Pointer ring appears while target readout says `None accepted`.
+- Validation issues appear for the safe fixture.
+- Capture status says ready while screenshot/capture metadata are still waiting after refresh completes.
+
+### Smoke 2: Risky Guidance Confirmation Path
+
+1. Select `Risky` in the guidance fixture switcher.
+2. Click `Refresh capture`.
+3. Wait for refresh to finish.
+
+Pass criteria:
+
+- State pill becomes `Guiding`.
+- Target label becomes `Pay now`.
+- Pointer ring appears at the risky target.
+- Step bubble instruction mentions reviewing a payment action.
+- Risk strip says `payment`.
+- Risk strip says `Confirm first`.
+- Confirmation warning appears.
+- Debug risk readout shows:
+  - `Risk`: `payment`
+  - `Confirm`: `Required`
+  - `Confidence`: `76%`
+  - `Mode`: `guide`
+- Confirm and Decline buttons are enabled.
+- Validation issues are not shown.
+
+Fail conditions:
+
+- Risky guidance is rejected.
+- `payment` guidance appears without confirmation required.
+- Confirm/Decline remain disabled for valid risky guidance.
+
+### Smoke 3: Invalid Guidance Rejection Path
+
+1. Select `Invalid` in the guidance fixture switcher.
+2. Click `Refresh capture`.
+3. Wait for refresh to finish.
+
+Pass criteria:
+
+- State pill becomes `Error`.
+- Target readout says `None accepted`.
+- Coordinate header says `Target: none accepted`.
+- Pointer ring is not visible.
+- Step bubble is not visible.
+- Debug panel shows `Guidance rejected`.
+- Validation issues include:
+  - `step.confidence`
+  - `step.requiresConfirmation`
+  - `step.target.x`
+  - `step.target`
+- Confirm and Decline buttons are disabled.
+
+Fail conditions:
+
+- Invalid fixture renders a pointer ring.
+- Invalid fixture renders a step bubble.
+- Old safe/risky target remains visible after invalid refresh.
+- Validation issues are empty for the invalid fixture.
+
+### Smoke 4: Refresh Loading State
+
+1. Select either `Safe` or `Risky`.
+2. Click `Refresh capture`.
+3. Watch the UI while refresh is in progress.
+
+Pass criteria:
+
+- State changes to `Thinking` during refresh.
+- Refresh button is disabled while work is in progress.
+- Target readout clears to `None accepted` or waiting state while new guidance is pending.
+- Screenshot preview clears while new capture is pending.
+- After success, state becomes `Guiding`.
+
+Fail conditions:
+
+- Old pointer target remains visible during refresh.
+- Old screenshot preview implies the new capture already succeeded.
+- Refresh button can be clicked repeatedly while already refreshing.
+
+### Smoke 5: Viewport And Calibration Diagnostics
+
+1. Start with a successful capture.
+2. Resize the app window.
+3. Watch the calibration and viewport readouts.
+
+Pass criteria:
+
+- Viewport width/height update after resize.
+- DPR value is visible.
+- Resized timestamp changes after resizing.
+- Delta readout changes when viewport and captured display differ.
+- Calibration status remains `aligned` only when viewport, display dimensions, and scale match.
+- Calibration notes explain mismatch with dimension delta and DPR/capture scale comparison.
+
+Fail conditions:
+
+- Viewport readout does not change after resizing.
+- Calibration says `aligned` while the viewport and capture display visibly differ.
+- Calibration notes are blank during mismatch.
+
+### Smoke 6: Overlay State Controls
+
+1. Click `Pause`.
+2. Click `Resume`.
+3. Click `Stop`.
+4. Use the debug state buttons to select `Listening`, `Thinking`, `Guiding`, `Paused`, and `Error`.
+
+Pass criteria:
+
+- Pause changes the state pill to `Paused`.
+- Resume returns to `Guiding`.
+- Stop moves to `Idle`.
+- Debug state buttons update the assistant puck label.
+- Idle hides pointer ring and step bubble.
+- Error state does not create an accepted target by itself.
+
+Fail conditions:
+
+- State buttons break capture refresh.
+- Idle still shows pointer ring or step bubble.
+- Error state shows a stale accepted target after invalid guidance.
+
+### Smoke 7: Capture Error Handling
+
+This is platform-dependent and may require denying screen-capture permission, running in an unsupported environment, or temporarily forcing the capture command to fail during local debugging.
+
+Pass criteria:
+
+- Capture status says `Capture error`.
+- Error message is visible.
+- State pill becomes `Error`.
+- Refresh button is re-enabled.
+- Guidance request/result are cleared.
+- Pointer ring and step bubble are not visible.
+
+Fail conditions:
+
+- App crashes instead of showing capture error.
+- Refresh remains permanently disabled.
+- Stale accepted guidance remains visible after capture failure.
+
+### Smoke 8: Layout Sanity
+
+Check at normal desktop size and a narrower window.
+
+Pass criteria:
+
+- Debug panel text does not overlap.
+- Fixture buttons remain readable.
+- Confirmation buttons fit their containers.
+- Screenshot preview stays inside the debug panel.
+- Step bubble text stays readable.
+- Pointer ring does not resize surrounding layout.
+
+Fail conditions:
+
+- Text overlaps in the debug panel.
+- Buttons clip labels.
+- Screenshot preview pushes content into incoherent overlap.
 
 ## Exit Criteria
 
