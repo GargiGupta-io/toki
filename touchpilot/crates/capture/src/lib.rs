@@ -84,7 +84,9 @@ impl fmt::Display for CaptureError {
             CaptureError::NoDisplay => write!(f, "no display available for capture"),
             CaptureError::CaptureFailed(message) => write!(f, "screen capture failed: {message}"),
             CaptureError::InvalidBuffer => write!(f, "captured image buffer was invalid"),
-            CaptureError::EncodeFailed(message) => write!(f, "screenshot encoding failed: {message}"),
+            CaptureError::EncodeFailed(message) => {
+                write!(f, "screenshot encoding failed: {message}")
+            }
             CaptureError::LengthOverflow => write!(f, "encoded screenshot was too large"),
         }
     }
