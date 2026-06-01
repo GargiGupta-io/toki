@@ -49,6 +49,29 @@ export type GuidanceResult = {
   step?: GuidanceStep;
 };
 
+export type GuidanceScreenContext = {
+  display: DisplayContext;
+  capture?: CaptureMetadata;
+  screenshot?: ScreenshotMetadata;
+  calibration?: CoordinateCalibration;
+};
+
+export type GuidanceRequest = {
+  goal: string;
+  screen: GuidanceScreenContext;
+  previousStep?: GuidanceStep | null;
+};
+
+export type GuidanceValidationIssue = {
+  path: string;
+  message: string;
+};
+
+export type GuidanceValidationResult = {
+  valid: boolean;
+  issues: GuidanceValidationIssue[];
+};
+
 export type GestureCommand =
   | { type: "toggle_voice"; confidence: number }
   | { type: "pause"; confidence: number }
