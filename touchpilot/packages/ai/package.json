@@ -5,6 +5,7 @@
   "type": "module",
   "description": "AI provider clients, prompts, and response schemas for TouchPilot.",
   "scripts": {
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --project tsconfig.json"
   },
   "exports": {
@@ -12,5 +13,9 @@
   },
   "dependencies": {
     "@touchpilot/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.4"
   }
 }
