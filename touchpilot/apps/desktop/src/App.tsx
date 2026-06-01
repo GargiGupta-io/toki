@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { createMockGuidance } from "@touchpilot/ai";
+import { createMockGuidance, validateGuidanceResult } from "@touchpilot/ai";
 import type {
   CaptureMetadata,
   CoordinateCalibration,
   GuidanceResult,
   GuidanceStep,
+  GuidanceValidationIssue,
   TargetBox,
   ScreenshotCapture,
 } from "@touchpilot/shared";
@@ -149,6 +150,7 @@ function DebugPanel({
   captureMetadata,
   screenshotCapture,
   calibration,
+  guidanceIssues,
   captureError,
   isRefreshingCapture,
   onStateChange,
@@ -159,6 +161,7 @@ function DebugPanel({
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
   calibration: CoordinateCalibration;
+  guidanceIssues: GuidanceValidationIssue[];
   captureError: string | null;
   isRefreshingCapture: boolean;
   onStateChange: (state: OverlayState) => void;
@@ -299,6 +302,19 @@ function DebugPanel({
         </div>
       </dl>
 
+      {guidanceIssues.length > 0 && (
+        <div className="guidance-issues" role="status">
+          <span>Guidance rejected</span>
+          <ul>
+            {guidanceIssues.map((issue) => (
+              <li key={`${issue.path}-${issue.message}`}>
+                {issue.path}: {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {screenshotCapture?.imageBase64 && (
         <figure className="screenshot-preview">
           <img
@@ -352,6 +368,7 @@ function App() {
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
+  const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const meta = stateMeta[overlayState];
@@ -378,18 +395,21 @@ function App() {
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
-      setGuidanceResult(
-        createMockGuidance({
-          goal: "Show me what to click next.",
-          screen: {
-            display: metadata.display,
-            capture: metadata,
-            screenshot,
-            calibration: getCalibration(metadata),
-          },
-          previousStep: guidanceResult?.step ?? null,
-        }),
-      );
+      const nextGuidance = createMockGuidance({
+        goal: "Show me what to click next.",
+        screen: {
+          display: metadata.display,
+          capture: metadata,
+          screenshot,
+          calibration: getCalibration(metadata),
+        },
+        previousStep: guidanceResult?.step ?? null,
+      });
+      const validation = validateGuidanceResult(nextGuidance);
+
+      setGuidanceIssues(validation.issues);
+      setGuidanceResult(validation.valid ? nextGuidance : null);
+      setOverlayState(validation.valid ? "guiding" : "error");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setCaptureError(message);
@@ -473,6 +493,7 @@ function App() {
         captureMetadata={captureMetadata}
         screenshotCapture={screenshotCapture}
         calibration={calibration}
+        guidanceIssues={guidanceIssues}
         captureError={captureError}
         isRefreshingCapture={isRefreshingCapture}
         onStateChange={setOverlayState}

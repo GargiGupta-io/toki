@@ -1,4 +1,32 @@
-import type { GuidanceRequest, GuidanceResult } from "@touchpilot/shared";
+import type {
+  GuidanceRequest,
+  GuidanceResult,
+  GuidanceValidationIssue,
+  GuidanceValidationResult,
+  RiskClass,
+} from "@touchpilot/shared";
+
+const validRiskClasses: RiskClass[] = [
+  "safe_navigation",
+  "form_entry",
+  "external_send",
+  "delete",
+  "payment",
+  "security_change",
+  "account_change",
+  "permission_change",
+  "unknown_risky",
+];
+
+const confirmationRequiredRisks: RiskClass[] = [
+  "external_send",
+  "delete",
+  "payment",
+  "security_change",
+  "account_change",
+  "permission_change",
+  "unknown_risky",
+];
 
 export function createMockGuidance(request: GuidanceRequest): GuidanceResult {
   const targetWidth = 112;
@@ -22,5 +50,77 @@ export function createMockGuidance(request: GuidanceRequest): GuidanceResult {
       risk: "safe_navigation",
       requiresConfirmation: false,
     },
+  };
+}
+
+export function validateGuidanceResult(
+  result: GuidanceResult | null | undefined,
+): GuidanceValidationResult {
+  const issues: GuidanceValidationIssue[] = [];
+
+  if (result == null) {
+    return {
+      valid: false,
+      issues: [{ path: "result", message: "Guidance result is missing." }],
+    };
+  }
+
+  if (!["guide", "answer", "clarify"].includes(result.mode)) {
+    issues.push({ path: "mode", message: "Guidance mode is not recognized." });
+  }
+
+  if (result.summary.trim().length === 0) {
+    issues.push({ path: "summary", message: "Guidance summary is required." });
+  }
+
+  if (result.mode === "guide" && result.step == null) {
+    issues.push({ path: "step", message: "Guide mode requires a step." });
+  }
+
+  if (result.step != null) {
+    const { confidence, requiresConfirmation, risk, target } = result.step;
+
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+      issues.push({
+        path: "step.confidence",
+        message: "Confidence must be a number from 0 to 1.",
+      });
+    }
+
+    if (!validRiskClasses.includes(risk)) {
+      issues.push({ path: "step.risk", message: "Risk class is not recognized." });
+    }
+
+    if (confirmationRequiredRisks.includes(risk) && !requiresConfirmation) {
+      issues.push({
+        path: "step.requiresConfirmation",
+        message: "Risky guidance must require confirmation.",
+      });
+    }
+
+    if (target != null) {
+      const fields = ["x", "y", "width", "height"] as const;
+
+      for (const field of fields) {
+        if (!Number.isFinite(target[field])) {
+          issues.push({
+            path: `step.target.${field}`,
+            message: "Target coordinates and size must be finite numbers.",
+          });
+        }
+      }
+
+      if (target.width <= 0 || target.height <= 0) {
+        issues.push({
+          path: "step.target",
+          message: "Target width and height must be positive.",
+        });
+      }
+    }
+  }
+
+  return {
+    valid: issues.length === 0,
+    issues,
   };
 }

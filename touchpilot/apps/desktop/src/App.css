@@ -461,6 +461,30 @@ h1 {
   text-transform: uppercase;
 }
 
+.guidance-issues {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 138, 154, 0.38);
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(255, 138, 154, 0.1);
+}
+
+.guidance-issues span {
+  display: block;
+  color: #ffd6dc;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.guidance-issues ul {
+  margin: 5px 0 0;
+  padding-left: 18px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
 .assistant-puck:focus-visible {
   outline: 3px solid rgba(117, 244, 215, 0.9);
   outline-offset: 6px;
