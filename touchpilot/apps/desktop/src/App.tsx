@@ -4,11 +4,13 @@ import { createMockGuidance, validateGuidanceResult } from "@touchpilot/ai";
 import type {
   CaptureMetadata,
   CoordinateCalibration,
+  GuidanceRequest,
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
   TargetBox,
   ScreenshotCapture,
+  ScreenshotMetadata,
 } from "@touchpilot/shared";
 import "./App.css";
 
@@ -149,6 +151,7 @@ function DebugPanel({
   target,
   captureMetadata,
   screenshotCapture,
+  guidanceRequest,
   calibration,
   guidanceIssues,
   captureError,
@@ -160,6 +163,7 @@ function DebugPanel({
   target: RenderedGuidanceTarget;
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
+  guidanceRequest: GuidanceRequest | null;
   calibration: CoordinateCalibration;
   guidanceIssues: GuidanceValidationIssue[];
   captureError: string | null;
@@ -302,6 +306,29 @@ function DebugPanel({
         </div>
       </dl>
 
+      <dl className="guidance-request-readout">
+        <div>
+          <dt>Goal</dt>
+          <dd>{guidanceRequest?.goal ?? "Waiting"}</dd>
+        </div>
+        <div>
+          <dt>Request shot</dt>
+          <dd>
+            {guidanceRequest?.screen.screenshot
+              ? `${guidanceRequest.screen.screenshot.imageWidth} x ${guidanceRequest.screen.screenshot.imageHeight}`
+              : "Waiting"}
+          </dd>
+        </div>
+        <div>
+          <dt>Request bytes</dt>
+          <dd>{guidanceRequest?.screen.screenshot?.byteLength ?? "Waiting"}</dd>
+        </div>
+        <div>
+          <dt>Previous</dt>
+          <dd>{guidanceRequest?.previousStep?.target?.label ?? "None"}</dd>
+        </div>
+      </dl>
+
       {guidanceIssues.length > 0 && (
         <div className="guidance-issues" role="status">
           <span>Guidance rejected</span>
@@ -363,10 +390,25 @@ function getCalibration(captureMetadata: CaptureMetadata | null): CoordinateCali
   };
 }
 
+function getScreenshotMetadata(screenshot: ScreenshotCapture): ScreenshotMetadata {
+  return {
+    source: screenshot.source,
+    display: screenshot.display,
+    cursor: screenshot.cursor,
+    activeWindow: screenshot.activeWindow,
+    capturedAt: screenshot.capturedAt,
+    format: screenshot.format,
+    byteLength: screenshot.byteLength,
+    imageWidth: screenshot.imageWidth,
+    imageHeight: screenshot.imageHeight,
+  };
+}
+
 function App() {
   const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
+  const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -395,18 +437,20 @@ function App() {
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
-      const nextGuidance = createMockGuidance({
+      const nextGuidanceRequest: GuidanceRequest = {
         goal: "Show me what to click next.",
         screen: {
           display: metadata.display,
           capture: metadata,
-          screenshot,
+          screenshot: getScreenshotMetadata(screenshot),
           calibration: getCalibration(metadata),
         },
         previousStep: guidanceResult?.step ?? null,
-      });
+      };
+      const nextGuidance = createMockGuidance(nextGuidanceRequest);
       const validation = validateGuidanceResult(nextGuidance);
 
+      setGuidanceRequest(nextGuidanceRequest);
       setGuidanceIssues(validation.issues);
       setGuidanceResult(validation.valid ? nextGuidance : null);
       setOverlayState(validation.valid ? "guiding" : "error");
@@ -492,6 +536,7 @@ function App() {
         target={activeTarget}
         captureMetadata={captureMetadata}
         screenshotCapture={screenshotCapture}
+        guidanceRequest={guidanceRequest}
         calibration={calibration}
         guidanceIssues={guidanceIssues}
         captureError={captureError}
