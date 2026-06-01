@@ -783,8 +783,8 @@ function App() {
         </div>
 
         <div className="instruction-panel">
-          <p className="eyebrow">Next step</p>
-          <h2>{meta.title}</h2>
+          <p className="surface-kicker">Current guidance</p>
+          <h2>{hasAcceptedGuidance ? activeTarget.label : meta.label}</h2>
           <p>{meta.description}</p>
 
           <div className="control-row" aria-label="Overlay controls">
