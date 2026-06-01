@@ -880,7 +880,31 @@ Done when:
 
 ---
 
-## Phase 8: Gesture MVP
+## Phase 8: Monochrome Mac Overlay Reset
+
+Goal: Rebuild the default runtime surface so the app feels monochrome, translucent, restrained, and premium instead of like a debug prototype.
+
+Tasks:
+
+1. Remove loud brand-heavy overlay chrome from the default runtime.
+2. Rebuild the guidance surface into a smaller smoke-glass hint panel.
+3. Replace the bright mint/green accent system with a grayscale monochrome palette.
+4. Redesign the puck into a tiny white cursor-shadow presence near the real pointer.
+5. Rework activation so the cursor-shadow separates into droplets before forming the assistant state.
+6. Rework guiding motion so droplets leave the shadow form and become restrained target cues.
+7. Demote debug surfaces so they remain available without dominating the product UI.
+8. Tune spacing, contrast, blur, and motion toward a mac-like interface language.
+
+Done when:
+
+- the default UI reads as monochrome and translucent
+- the puck feels like a cursor-shadow, not a floating badge
+- activation and guiding states feel premium instead of noisy
+- the runtime surface looks product-grade before gesture work starts
+
+---
+
+## Phase 9: Gesture MVP
 
 Goal: Control the assistant with camera gestures.
 
@@ -904,7 +928,7 @@ Done when:
 
 ---
 
-## Phase 9: Voice MVP
+## Phase 10: Voice MVP
 
 Goal: Let the user speak their task.
 
@@ -924,7 +948,7 @@ Done when:
 
 ---
 
-## Phase 10: Safety And Guardrails
+## Phase 11: Safety And Guardrails
 
 Goal: Prevent dangerous or misleading guidance.
 
@@ -945,7 +969,7 @@ Done when:
 
 ---
 
-## Phase 11: Screen Intelligence Upgrade
+## Phase 12: Screen Intelligence Upgrade
 
 Goal: Improve target accuracy beyond raw screenshots.
 
@@ -966,7 +990,7 @@ Done when:
 
 ---
 
-## Phase 12: Multi-Step Workflows
+## Phase 13: Multi-Step Workflows
 
 Goal: Guide full tasks from start to finish.
 
@@ -987,7 +1011,7 @@ Done when:
 
 ---
 
-## Phase 13: Evaluation Metrics Harness
+## Phase 14: Evaluation Metrics Harness
 
 Goal: Measure whether the assistant points to the correct UI element and classifies risk correctly.
 
@@ -1011,7 +1035,7 @@ Done when:
 
 ---
 
-## Phase 14: Visual Polish Integration
+## Phase 15: Visual Polish Integration
 
 Goal: Make the app feel premium after the behavior and evaluation foundations are stable.
 
@@ -1033,7 +1057,7 @@ Done when:
 
 ---
 
-## Phase 15: Production Readiness
+## Phase 16: Production Readiness
 
 Goal: Prepare for real beta users.
 
@@ -1195,14 +1219,15 @@ The correct order:
 5. AI guidance loop with schema validation
 6. Runtime QA and hardening pass
 7. Fluid water puck motion system
-8. Gesture pinch/open palm
-9. Voice
-10. Safety
-11. OCR/accessibility
-12. Multi-step workflows
-13. Evaluation metrics harness
-14. Visual polish integration
-15. Production hardening
+8. Monochrome mac-style overlay reset
+9. Gesture pinch/open palm
+10. Voice
+11. Safety
+12. OCR/accessibility
+13. Multi-step workflows
+14. Evaluation metrics harness
+15. Visual polish integration
+16. Production hardening
 
 Do not start with the liquid visuals before the guidance loop is stable. The water puck depends on assistant states, target-ring behavior, and runtime capture diagnostics. Once Phase 5 proves the structured guidance loop and Phase 6 verifies it in a running app, the fluid puck can be built without constantly reworking its state transitions.
 

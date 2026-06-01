@@ -772,14 +772,6 @@ function App() {
       className={`overlay-shell is-${meta.tone}`}
       aria-label="TouchPilot overlay prototype"
     >
-      <section className="status-rail" aria-label="Assistant status">
-        <div className="brand-mark">TP</div>
-        <div>
-          <p className="eyebrow">TouchPilot</p>
-          <h1>Overlay prototype</h1>
-        </div>
-      </section>
-
       <section className="guidance-surface" aria-label="Current guidance">
         <div className="surface-header">
           <span className="state-pill">{meta.label}</span>
