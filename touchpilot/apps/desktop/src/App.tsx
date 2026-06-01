@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   createInvalidMockGuidance,
@@ -28,6 +29,11 @@ type ViewportMetrics = {
   height: number;
   devicePixelRatio: number;
   updatedAt: string;
+};
+
+type PointerShadowPosition = {
+  x: number;
+  y: number;
 };
 
 type OverlayStateMeta = {
@@ -102,17 +108,28 @@ const stateMeta: Record<OverlayState, OverlayStateMeta> = {
 function AssistantPuck({
   state,
   motion,
+  pointerShadow,
 }: {
   state: OverlayState;
   motion: PuckMotionModel;
+  pointerShadow: PointerShadowPosition | null;
 }) {
   const meta = stateMeta[state];
+  const shadowStyle =
+    pointerShadow == null
+      ? undefined
+      : ({
+          "--puck-shadow-x": `${pointerShadow.x}px`,
+          "--puck-shadow-y": `${pointerShadow.y}px`,
+        } as CSSProperties);
 
   return (
     <button
       className={`assistant-puck is-${meta.tone}`}
       data-motion={motion.state}
+      data-pointer-shadow={motion.state === "shadow" && pointerShadow ? "active" : "idle"}
       data-target-droplets={motion.canSendTargetDroplets ? "enabled" : "disabled"}
+      style={shadowStyle}
       type="button"
       aria-label={`TouchPilot is ${meta.label.toLowerCase()}`}
     >
@@ -521,6 +538,21 @@ function getViewportMetrics(): ViewportMetrics {
   };
 }
 
+function getPointerShadowPosition(
+  pointerX: number,
+  pointerY: number,
+  viewport: ViewportMetrics,
+): PointerShadowPosition {
+  const offsetX = 28;
+  const offsetY = 30;
+  const margin = 56;
+
+  return {
+    x: Math.min(Math.max(pointerX - offsetX, margin), viewport.width - margin),
+    y: Math.min(Math.max(pointerY + offsetY, margin), viewport.height - margin),
+  };
+}
+
 function getCalibration(
   captureMetadata: CaptureMetadata | null,
   viewport: ViewportMetrics,
@@ -588,6 +620,7 @@ function App() {
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
+  const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
   const meta = stateMeta[overlayState];
   const isPaused = overlayState === "paused";
   const calibration = getCalibration(captureMetadata, viewport);
@@ -679,6 +712,18 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      setPointerShadow(getPointerShadowPosition(event.clientX, event.clientY, viewport));
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+    };
+  }, [viewport]);
+
   function pauseGuidance() {
     setOverlayState("paused");
   }
@@ -744,7 +789,7 @@ function App() {
           <StepBubble step={activeStep} target={activeTarget} guidance={guidanceResult} />
         </>
       )}
-      <AssistantPuck state={overlayState} motion={puckMotion} />
+      <AssistantPuck state={overlayState} motion={puckMotion} pointerShadow={pointerShadow} />
       <DebugPanel
         currentState={overlayState}
         target={activeTarget}
