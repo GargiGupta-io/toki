@@ -686,7 +686,157 @@ h1 {
   z-index: -1;
 }
 
+.puck-droplets {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.puck-droplet {
+  --droplet-size: 13px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--droplet-size);
+  height: var(--droplet-size);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.74), transparent 24%),
+    radial-gradient(circle at 54% 58%, rgba(117, 244, 215, 0.76), rgba(38, 154, 181, 0.2));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 0 18px rgba(117, 244, 215, 0.34);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.5);
+}
+
+.puck-droplet-a {
+  --droplet-size: 12px;
+}
+
+.puck-droplet-b {
+  --droplet-size: 9px;
+}
+
+.puck-droplet-c {
+  --droplet-size: 11px;
+}
+
+.puck-droplet-d {
+  --droplet-size: 7px;
+}
+
+.assistant-puck[data-motion="shadow"] .puck-orbit {
+  opacity: 0.56;
+  transform: scale(0.9);
+}
+
+.assistant-puck[data-motion="shadow"] .puck-droplet-a {
+  opacity: 0.54;
+  transform: translate(-36px, -22px) scale(0.72);
+}
+
+.assistant-puck[data-motion="shadow"] .puck-droplet-b {
+  opacity: 0.38;
+  transform: translate(24px, 18px) scale(0.64);
+}
+
+.assistant-puck[data-motion="forming"] .puck-droplet,
+.assistant-puck[data-motion="thinking"] .puck-droplet,
+.assistant-puck[data-motion="guiding"] .puck-droplet {
+  opacity: 0.86;
+  animation: puck-droplet-orbit 2.2s ease-in-out infinite;
+}
+
+.assistant-puck[data-motion="forming"] .puck-droplet-a {
+  animation-delay: 0ms;
+}
+
+.assistant-puck[data-motion="forming"] .puck-droplet-b {
+  animation-delay: -340ms;
+}
+
+.assistant-puck[data-motion="forming"] .puck-droplet-c {
+  animation-delay: -680ms;
+}
+
+.assistant-puck[data-motion="forming"] .puck-droplet-d {
+  animation-delay: -1020ms;
+}
+
+.assistant-puck[data-motion="thinking"] .puck-droplet {
+  animation-name: puck-droplet-breathe;
+  animation-duration: 1.7s;
+}
+
+.assistant-puck[data-motion="thinking"] .puck-droplet-a {
+  transform: translate(-31px, -18px) scale(0.86);
+}
+
+.assistant-puck[data-motion="thinking"] .puck-droplet-b {
+  transform: translate(25px, -24px) scale(0.72);
+}
+
+.assistant-puck[data-motion="thinking"] .puck-droplet-c {
+  transform: translate(29px, 20px) scale(0.78);
+}
+
+.assistant-puck[data-motion="thinking"] .puck-droplet-d {
+  transform: translate(-22px, 26px) scale(0.62);
+}
+
+.assistant-puck[data-motion="guiding"] .puck-droplet-a {
+  transform: translate(-38px, -16px) scale(0.82);
+}
+
+.assistant-puck[data-motion="guiding"] .puck-droplet-b {
+  transform: translate(34px, -20px) scale(0.7);
+}
+
+.assistant-puck[data-motion="guiding"] .puck-droplet-c {
+  transform: translate(30px, 25px) scale(0.76);
+}
+
+.assistant-puck[data-motion="guiding"] .puck-droplet-d {
+  transform: translate(-28px, 27px) scale(0.58);
+}
+
+.assistant-puck[data-motion="paused"] .puck-droplet {
+  opacity: 0.52;
+  animation-play-state: paused;
+}
+
+.assistant-puck[data-motion="paused"] .puck-droplet-a {
+  transform: translate(-30px, -17px) scale(0.74);
+}
+
+.assistant-puck[data-motion="paused"] .puck-droplet-b {
+  transform: translate(24px, -22px) scale(0.62);
+}
+
+.assistant-puck[data-motion="error"] .puck-droplet {
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.68), transparent 24%),
+    radial-gradient(circle at 54% 58%, rgba(255, 138, 154, 0.72), rgba(181, 38, 72, 0.22));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 18px rgba(255, 138, 154, 0.26);
+  opacity: 0.66;
+}
+
+.assistant-puck[data-motion="error"] .puck-droplet-a {
+  transform: translate(-31px, -20px) scale(0.74);
+}
+
+.assistant-puck[data-motion="error"] .puck-droplet-b {
+  transform: translate(27px, 20px) scale(0.64);
+}
+
 .puck-core {
+  position: relative;
   display: grid;
   width: 58px;
   height: 58px;
@@ -699,6 +849,7 @@ h1 {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
   font-size: 0.82rem;
   font-weight: 900;
+  z-index: 1;
 }
 
 .puck-status {
@@ -766,6 +917,38 @@ h1 {
   50% {
     transform: scale(1.06);
     opacity: 1;
+  }
+}
+
+@keyframes puck-droplet-orbit {
+  0%,
+  100% {
+    transform: translate(-32px, -24px) scale(0.74);
+  }
+
+  25% {
+    transform: translate(26px, -30px) scale(0.9);
+  }
+
+  50% {
+    transform: translate(34px, 20px) scale(0.72);
+  }
+
+  75% {
+    transform: translate(-28px, 28px) scale(0.86);
+  }
+}
+
+@keyframes puck-droplet-breathe {
+  0%,
+  100% {
+    opacity: 0.58;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 0.9;
+    filter: blur(0.4px);
   }
 }
 

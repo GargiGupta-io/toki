@@ -117,6 +117,12 @@ function AssistantPuck({
       aria-label={`TouchPilot is ${meta.label.toLowerCase()}`}
     >
       <span className="puck-orbit" aria-hidden="true" />
+      <span className="puck-droplets" aria-hidden="true">
+        <span className="puck-droplet puck-droplet-a" />
+        <span className="puck-droplet puck-droplet-b" />
+        <span className="puck-droplet puck-droplet-c" />
+        <span className="puck-droplet puck-droplet-d" />
+      </span>
       <span className="puck-core">TP</span>
       <span className="puck-status">
         <span className="puck-status-dot" aria-hidden="true" />
