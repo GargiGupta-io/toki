@@ -168,6 +168,7 @@ function StepBubble({
 function DebugPanel({
   currentState,
   target,
+  hasAcceptedGuidance,
   captureMetadata,
   screenshotCapture,
   guidanceRequest,
@@ -183,6 +184,7 @@ function DebugPanel({
 }: {
   currentState: OverlayState;
   target: RenderedGuidanceTarget;
+  hasAcceptedGuidance: boolean;
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
   guidanceRequest: GuidanceRequest | null;
@@ -264,19 +266,15 @@ function DebugPanel({
       <dl className="debug-readout">
         <div>
           <dt>Target</dt>
-          <dd>{target.label}</dd>
+          <dd>{hasAcceptedGuidance ? target.label : "None accepted"}</dd>
         </div>
         <div>
           <dt>X/Y</dt>
-          <dd>
-            {target.x}, {target.y}
-          </dd>
+          <dd>{hasAcceptedGuidance ? `${target.x}, ${target.y}` : "Waiting"}</dd>
         </div>
         <div>
           <dt>Size</dt>
-          <dd>
-            {target.width} x {target.height}
-          </dd>
+          <dd>{hasAcceptedGuidance ? `${target.width} x ${target.height}` : "Waiting"}</dd>
         </div>
       </dl>
 
@@ -527,17 +525,26 @@ function App() {
   const isPaused = overlayState === "paused";
   const calibration = getCalibration(captureMetadata);
   const activeStep = guidanceResult?.step ?? null;
+  const acceptedStep = activeStep?.target != null ? activeStep : null;
+  const acceptedTarget = acceptedStep?.target ?? null;
+  const hasAcceptedGuidance = acceptedTarget != null;
   const activeTarget: RenderedGuidanceTarget =
-    activeStep?.target != null
+    acceptedTarget != null && acceptedStep != null
       ? {
-          ...activeStep.target,
-          instruction: activeStep.instruction,
+          ...acceptedTarget,
+          instruction: acceptedStep.instruction,
         }
       : testTarget;
 
   async function refreshCaptureMetadata() {
     setIsRefreshingCapture(true);
     setCaptureError(null);
+    setGuidanceIssues([]);
+    setGuidanceRequest(null);
+    setGuidanceResult(null);
+    setCaptureMetadata(null);
+    setScreenshotCapture(null);
+    setOverlayState("thinking");
 
     try {
       const [metadata, screenshot] = await Promise.all([
@@ -572,6 +579,9 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setCaptureError(message);
+      setGuidanceRequest(null);
+      setGuidanceIssues([]);
+      setGuidanceResult(null);
       setOverlayState("error");
     } finally {
       setIsRefreshingCapture(false);
@@ -611,7 +621,9 @@ function App() {
         <div className="surface-header">
           <span className="state-pill">{meta.label}</span>
           <span className="coordinate-readout">
-            Target: {testTarget.x}, {testTarget.y}
+            {hasAcceptedGuidance
+              ? `Target: ${activeTarget.x}, ${activeTarget.y}`
+              : "Target: none accepted"}
           </span>
         </div>
 
@@ -639,7 +651,7 @@ function App() {
         </div>
       </section>
 
-      {overlayState !== "idle" && (
+      {overlayState !== "idle" && hasAcceptedGuidance && (
         <>
           <PointerRing target={activeTarget} />
           <StepBubble step={activeStep} target={activeTarget} guidance={guidanceResult} />
@@ -649,6 +661,7 @@ function App() {
       <DebugPanel
         currentState={overlayState}
         target={activeTarget}
+        hasAcceptedGuidance={hasAcceptedGuidance}
         captureMetadata={captureMetadata}
         screenshotCapture={screenshotCapture}
         guidanceRequest={guidanceRequest}
