@@ -6,5 +6,8 @@
   "description": "AI provider clients, prompts, and response schemas for TouchPilot.",
   "scripts": {
     "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@touchpilot/shared": "0.1.0"
   }
 }
