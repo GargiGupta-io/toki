@@ -783,28 +783,104 @@ Done when:
 
 ---
 
-## Phase 4: First AI Guidance Loop
+## Phase 4: Real Screen Capture
 
-Goal: Ask a question, capture the screen, and point to a target.
+Goal: Replace placeholder screenshot data with a Windows-first real capture path.
 
 Tasks:
 
-1. Add AI provider interface.
-2. Add local provider config or gateway dev route.
-3. Send screenshot and prompt to model.
-4. Validate structured JSON response.
-5. Render pointer from model target.
-6. Add invalid-output fallback.
+1. Add capture dependencies.
+2. Capture the primary display.
+3. Encode the screenshot as PNG.
+4. Return base64 screenshot payloads through Tauri.
+5. Show screenshot dimensions, byte length, and preview in the debug panel.
+6. Replace placeholder display metadata with real display dimensions.
+7. Add capture error/status UI.
 
 Done when:
 
-- user can ask "what do I click next?"
-- assistant points to a visible target
-- invalid model output does not crash the app
+- real screenshot pixels are returned to the frontend
+- screenshot preview confirms image data exists
+- display metadata is real where available
+- capture failure does not crash the app
 
 ---
 
-## Phase 5: Gesture MVP
+## Phase 5: AI Guidance Loop Foundation
+
+Goal: Prove that structured guidance can drive the pointer ring and step bubble safely.
+
+Tasks:
+
+1. Add guidance request and response schemas.
+2. Add a deterministic mock guidance client.
+3. Wire the desktop UI to request mock guidance.
+4. Include screenshot and capture metadata in the guidance request.
+5. Feed returned target coordinates into the pointer ring.
+6. Feed returned instruction text into the step bubble.
+7. Add schema validation before rendering guidance.
+8. Validate response shape, finite coordinates, positive target size, confidence range, known risk class, and confirmation requirements for risky actions.
+9. Add invalid-guidance fallback state.
+10. Display risk, confidence, and confirmation requirement in the debug panel.
+
+Done when:
+
+- mock guidance output drives the overlay
+- hardcoded target data is replaced by guidance result data
+- invalid guidance is rejected safely
+- risky guidance cannot bypass confirmation requirements
+
+---
+
+## Phase 6: Runtime QA And Hardening Pass
+
+Goal: Manually and internally verify the overlay, capture, and mock guidance loop before adding real model providers or complex animation.
+
+Tasks:
+
+1. Launch the Tauri app locally.
+2. Verify overlay window behavior.
+3. Verify pause, resume, stop, and debug state controls.
+4. Verify screen capture refresh.
+5. Verify screenshot preview is real and nonblank.
+6. Compare overlay dimensions, display dimensions, and screenshot dimensions.
+7. Verify mock guidance target moves from screen context.
+8. Document runtime findings and known platform issues.
+
+Done when:
+
+- the app works in a real runtime session
+- screenshot and overlay diagnostics make sense
+- any coordinate mismatch is documented
+- Phase 7 visual work has stable states to animate
+
+---
+
+## Phase 7: Fluid Water Puck Motion System
+
+Goal: Replace the static assistant puck with a fluid, cursor-aware assistant presence.
+
+Tasks:
+
+1. Write a fluid puck motion spec.
+2. Add the animation rendering layer, likely `react-three-fiber` with a CSS fallback.
+3. Add idle shadow behavior behind or near the real pointer.
+4. Animate activation as droplets separating, orbiting, merging, and forming the puck.
+5. Animate guidance as droplets moving from the puck to the glowing target ring.
+6. Add reduced-motion and low-performance modes.
+7. Keep the existing static puck as fallback.
+
+Done when:
+
+- idle state feels like a shadow behind the pointer
+- activation forms the assistant puck through droplet motion
+- guidance can send droplets toward the target ring
+- performance remains acceptable
+- reduced-motion mode remains usable
+
+---
+
+## Phase 8: Gesture MVP
 
 Goal: Control the assistant with camera gestures.
 
@@ -828,7 +904,7 @@ Done when:
 
 ---
 
-## Phase 6: Voice MVP
+## Phase 9: Voice MVP
 
 Goal: Let the user speak their task.
 
@@ -848,7 +924,7 @@ Done when:
 
 ---
 
-## Phase 7: Safety And Guardrails
+## Phase 10: Safety And Guardrails
 
 Goal: Prevent dangerous or misleading guidance.
 
@@ -869,7 +945,7 @@ Done when:
 
 ---
 
-## Phase 8: Screen Intelligence Upgrade
+## Phase 11: Screen Intelligence Upgrade
 
 Goal: Improve target accuracy beyond raw screenshots.
 
@@ -890,7 +966,7 @@ Done when:
 
 ---
 
-## Phase 9: Multi-Step Workflows
+## Phase 12: Multi-Step Workflows
 
 Goal: Guide full tasks from start to finish.
 
@@ -911,49 +987,53 @@ Done when:
 
 ---
 
-## Phase 10: Visual Polish
+## Phase 13: Evaluation Metrics Harness
 
-Goal: Make the app feel premium.
+Goal: Measure whether the assistant points to the correct UI element and classifies risk correctly.
+
+Tasks:
+
+1. Build screenshot dataset format.
+2. Add expected target annotations.
+3. Add center-point hit test.
+4. Add IoU scoring for predicted versus expected boxes.
+5. Add center-distance scoring.
+6. Add risk classification accuracy.
+7. Add confidence calibration reports.
+8. Add eval CLI and regression output.
+
+Done when:
+
+- model/prompt changes can be compared objectively
+- target accuracy is measured with hit test, IoU, and center distance
+- risk classification accuracy is tracked
+- confidence scores can be calibrated against real correctness
+
+---
+
+## Phase 14: Visual Polish Integration
+
+Goal: Make the app feel premium after the behavior and evaluation foundations are stable.
 
 Tasks:
 
 1. Refine design system.
-2. Add `react-three-fiber` guidance visuals.
+2. Expand `react-three-fiber` guidance visuals.
 3. Add restrained `liquid-glass-js` panels.
 4. Add onboarding visuals.
 5. Add logo/splash treatment.
-6. Tune motion and readability.
+6. Tune motion, readability, and performance.
 
 Done when:
 
 - overlay feels polished
 - effects do not hide the target app
 - guidance remains readable
+- visual effects are covered by reduced-motion fallbacks
 
 ---
 
-## Phase 11: Evals
-
-Goal: Measure accuracy.
-
-Tasks:
-
-1. Build screenshot dataset.
-2. Add target annotations.
-3. Add eval CLI.
-4. Score coordinate accuracy.
-5. Score risk classification.
-6. Track model/prompt regressions.
-
-Done when:
-
-- model changes can be compared
-- prompt regressions are caught
-- accuracy is tracked over time
-
----
-
-## Phase 12: Production Readiness
+## Phase 15: Production Readiness
 
 Goal: Prepare for real beta users.
 
@@ -1110,18 +1190,23 @@ The correct order:
 
 1. Repo foundation
 2. Overlay coordinate system
-3. Screen capture
-4. AI point-to-target loop
-5. Gesture pinch/open palm
-6. Voice
-7. Safety
-8. OCR/accessibility
-9. Multi-step workflows
-10. Evals
-11. Visual polish
-12. Production hardening
+3. Screen capture metadata
+4. Real screen capture
+5. AI guidance loop with schema validation
+6. Runtime QA and hardening pass
+7. Fluid water puck motion system
+8. Gesture pinch/open palm
+9. Voice
+10. Safety
+11. OCR/accessibility
+12. Multi-step workflows
+13. Evaluation metrics harness
+14. Visual polish integration
+15. Production hardening
 
-Do not start with the liquid visuals. They make the product feel premium, but they do not prove the product works.
+Do not start with the liquid visuals before the guidance loop is stable. The water puck depends on assistant states, target-ring behavior, and runtime capture diagnostics. Once Phase 5 proves the structured guidance loop and Phase 6 verifies it in a running app, the fluid puck can be built without constantly reworking its state transitions.
+
+Do not treat confidence as an accuracy metric by itself. In Phase 5, confidence is only a schema-validated model field. In the later evaluation phase, confidence must be calibrated against measured correctness using center-point hit tests, IoU, center distance, and risk classification accuracy.
 
 The most important early question is:
 
