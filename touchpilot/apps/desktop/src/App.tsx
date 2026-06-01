@@ -17,9 +17,9 @@ import type {
   ScreenshotCapture,
   ScreenshotMetadata,
 } from "@touchpilot/shared";
+import { getPuckMotionModel } from "./puckMotion";
+import type { OverlayState, PuckMotionModel } from "./puckMotion";
 import "./App.css";
-
-type OverlayState = "idle" | "listening" | "thinking" | "guiding" | "paused" | "error";
 
 type GuidanceFixture = "safe" | "risky" | "invalid";
 
@@ -99,12 +99,20 @@ const stateMeta: Record<OverlayState, OverlayStateMeta> = {
   },
 };
 
-function AssistantPuck({ state }: { state: OverlayState }) {
+function AssistantPuck({
+  state,
+  motion,
+}: {
+  state: OverlayState;
+  motion: PuckMotionModel;
+}) {
   const meta = stateMeta[state];
 
   return (
     <button
       className={`assistant-puck is-${meta.tone}`}
+      data-motion={motion.state}
+      data-target-droplets={motion.canSendTargetDroplets ? "enabled" : "disabled"}
       type="button"
       aria-label={`TouchPilot is ${meta.label.toLowerCase()}`}
     >
@@ -588,6 +596,14 @@ function App() {
           instruction: acceptedStep.instruction,
         }
       : testTarget;
+  const puckMotion = getPuckMotionModel({
+    overlayState,
+    hasAcceptedGuidance,
+    hasActiveTarget: acceptedTarget != null,
+    isRefreshingCapture,
+    hasCaptureError: captureError != null,
+    guidanceIssueCount: guidanceIssues.length,
+  });
 
   async function refreshCaptureMetadata() {
     setIsRefreshingCapture(true);
@@ -722,7 +738,7 @@ function App() {
           <StepBubble step={activeStep} target={activeTarget} guidance={guidanceResult} />
         </>
       )}
-      <AssistantPuck state={overlayState} />
+      <AssistantPuck state={overlayState} motion={puckMotion} />
       <DebugPanel
         currentState={overlayState}
         target={activeTarget}
