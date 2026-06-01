@@ -36,6 +36,11 @@ type PointerShadowPosition = {
   y: number;
 };
 
+type PuckTargetVector = {
+  x: number;
+  y: number;
+};
+
 type OverlayStateMeta = {
   label: string;
   title: string;
@@ -109,19 +114,28 @@ function AssistantPuck({
   state,
   motion,
   pointerShadow,
+  targetVector,
 }: {
   state: OverlayState;
   motion: PuckMotionModel;
   pointerShadow: PointerShadowPosition | null;
+  targetVector: PuckTargetVector | null;
 }) {
   const meta = stateMeta[state];
-  const shadowStyle =
-    pointerShadow == null
-      ? undefined
-      : ({
+  const puckStyle = {
+    ...(pointerShadow == null
+      ? {}
+      : {
           "--puck-shadow-x": `${pointerShadow.x}px`,
           "--puck-shadow-y": `${pointerShadow.y}px`,
-        } as CSSProperties);
+        }),
+    ...(targetVector == null
+      ? {}
+      : {
+          "--puck-target-x": `${targetVector.x}px`,
+          "--puck-target-y": `${targetVector.y}px`,
+        }),
+  } as CSSProperties;
 
   return (
     <button
@@ -129,7 +143,7 @@ function AssistantPuck({
       data-motion={motion.state}
       data-pointer-shadow={motion.state === "shadow" && pointerShadow ? "active" : "idle"}
       data-target-droplets={motion.canSendTargetDroplets ? "enabled" : "disabled"}
-      style={shadowStyle}
+      style={puckStyle}
       type="button"
       aria-label={`TouchPilot is ${meta.label.toLowerCase()}`}
     >
@@ -553,6 +567,19 @@ function getPointerShadowPosition(
   };
 }
 
+function getPuckTargetVector(
+  target: TargetBox,
+  viewport: ViewportMetrics,
+): PuckTargetVector {
+  const puckCenterX = viewport.width - 80;
+  const puckCenterY = viewport.height - 334;
+
+  return {
+    x: target.x - puckCenterX,
+    y: target.y - puckCenterY,
+  };
+}
+
 function getCalibration(
   captureMetadata: CaptureMetadata | null,
   viewport: ViewportMetrics,
@@ -643,6 +670,10 @@ function App() {
     hasCaptureError: captureError != null,
     guidanceIssueCount: guidanceIssues.length,
   });
+  const puckTargetVector =
+    puckMotion.canSendTargetDroplets && acceptedTarget != null
+      ? getPuckTargetVector(acceptedTarget, viewport)
+      : null;
 
   async function refreshCaptureMetadata() {
     setIsRefreshingCapture(true);
@@ -789,7 +820,12 @@ function App() {
           <StepBubble step={activeStep} target={activeTarget} guidance={guidanceResult} />
         </>
       )}
-      <AssistantPuck state={overlayState} motion={puckMotion} pointerShadow={pointerShadow} />
+      <AssistantPuck
+        state={overlayState}
+        motion={puckMotion}
+        pointerShadow={pointerShadow}
+        targetVector={puckTargetVector}
+      />
       <DebugPanel
         currentState={overlayState}
         target={activeTarget}

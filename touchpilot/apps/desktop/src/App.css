@@ -845,6 +845,31 @@ h1 {
   transform: translate(-28px, 27px) scale(0.58);
 }
 
+.assistant-puck[data-motion="guiding"][data-target-droplets="enabled"] .puck-droplet {
+  animation-duration: 1.3s;
+  animation-iteration-count: infinite;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0.18, 1);
+}
+
+.assistant-puck[data-motion="guiding"][data-target-droplets="enabled"] .puck-droplet-a {
+  animation-name: puck-target-droplet-a;
+}
+
+.assistant-puck[data-motion="guiding"][data-target-droplets="enabled"] .puck-droplet-b {
+  animation-name: puck-target-droplet-b;
+  animation-delay: 180ms;
+}
+
+.assistant-puck[data-motion="guiding"][data-target-droplets="enabled"] .puck-droplet-c {
+  animation-name: puck-target-droplet-c;
+  animation-delay: 360ms;
+}
+
+.assistant-puck[data-motion="guiding"][data-target-droplets="enabled"] .puck-droplet-d {
+  opacity: 0;
+  animation: none;
+}
+
 .assistant-puck[data-motion="paused"] .puck-droplet {
   opacity: 0.52;
   animation-play-state: paused;
@@ -1112,6 +1137,89 @@ h1 {
   50% {
     opacity: 0.9;
     filter: blur(0.4px);
+  }
+}
+
+@keyframes puck-target-droplet-a {
+  0% {
+    opacity: 0;
+    transform: translate(-22px, -18px) scale(0.54);
+  }
+
+  18% {
+    opacity: 0.92;
+  }
+
+  72% {
+    opacity: 0.7;
+    transform: translate(
+        calc(var(--puck-target-x) * 0.82),
+        calc(var(--puck-target-y) * 0.82)
+      )
+      scale(0.78);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--puck-target-x), var(--puck-target-y)) scale(0.34);
+  }
+}
+
+@keyframes puck-target-droplet-b {
+  0% {
+    opacity: 0;
+    transform: translate(20px, -20px) scale(0.44);
+  }
+
+  20% {
+    opacity: 0.82;
+  }
+
+  74% {
+    opacity: 0.62;
+    transform: translate(
+        calc(var(--puck-target-x) * 0.74 + 10px),
+        calc(var(--puck-target-y) * 0.74 - 8px)
+      )
+      scale(0.62);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(var(--puck-target-x) + 6px),
+        calc(var(--puck-target-y) - 4px)
+      )
+      scale(0.28);
+  }
+}
+
+@keyframes puck-target-droplet-c {
+  0% {
+    opacity: 0;
+    transform: translate(18px, 19px) scale(0.48);
+  }
+
+  22% {
+    opacity: 0.78;
+  }
+
+  76% {
+    opacity: 0.58;
+    transform: translate(
+        calc(var(--puck-target-x) * 0.68 - 8px),
+        calc(var(--puck-target-y) * 0.68 + 10px)
+      )
+      scale(0.58);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(var(--puck-target-x) - 5px),
+        calc(var(--puck-target-y) + 5px)
+      )
+      scale(0.3);
   }
 }
 
