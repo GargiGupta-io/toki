@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createMockGuidance } from "@touchpilot/ai";
 import type {
   CaptureMetadata,
   CoordinateCalibration,
+  GuidanceResult,
   ScreenshotCapture,
 } from "@touchpilot/shared";
 import "./App.css";
@@ -337,6 +339,7 @@ function App() {
   const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
+  const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const meta = stateMeta[overlayState];
@@ -355,6 +358,18 @@ function App() {
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
+      setGuidanceResult(
+        createMockGuidance({
+          goal: "Show me what to click next.",
+          screen: {
+            display: metadata.display,
+            capture: metadata,
+            screenshot,
+            calibration: getCalibration(metadata),
+          },
+          previousStep: guidanceResult?.step ?? null,
+        }),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setCaptureError(message);
