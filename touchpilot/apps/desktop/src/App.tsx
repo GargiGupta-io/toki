@@ -154,7 +154,10 @@ function AssistantPuck({
         <span className="puck-droplet puck-droplet-c" />
         <span className="puck-droplet puck-droplet-d" />
       </span>
-      <span className="puck-core">TP</span>
+      <span className="puck-core" aria-hidden="true">
+        <span className="puck-shadow-form" />
+        <span className="puck-shadow-tail" />
+      </span>
       <span className="puck-status">
         <span className="puck-status-dot" aria-hidden="true" />
         {meta.label}

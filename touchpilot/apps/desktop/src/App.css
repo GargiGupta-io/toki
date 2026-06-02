@@ -316,12 +316,12 @@ h1 {
   position: absolute;
   right: 32px;
   bottom: 286px;
-  width: 96px;
-  height: 96px;
+  width: 54px;
+  height: 54px;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 50%;
+  border-radius: 18px;
   background: transparent;
   color: #ffffff;
   cursor: pointer;
@@ -339,7 +339,7 @@ h1 {
   top: var(--puck-shadow-y);
   right: auto;
   bottom: auto;
-  transform: translate(-50%, -50%);
+  transform: translate(-26%, -14%);
 }
 
 .debug-panel {
@@ -698,21 +698,21 @@ h1 {
 }
 
 .assistant-puck:focus-visible {
-  outline: 3px solid rgba(117, 244, 215, 0.9);
-  outline-offset: 6px;
+  outline: 3px solid rgba(255, 255, 255, 0.2);
+  outline-offset: 4px;
 }
 
 .puck-orbit {
   position: absolute;
-  inset: 0;
-  border: 1px solid rgba(117, 244, 215, 0.36);
-  border-radius: inherit;
+  inset: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
   background:
-    radial-gradient(circle at 50% 50%, rgba(117, 244, 215, 0.16), transparent 58%),
-    rgba(255, 255, 255, 0.06);
+    radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.14), transparent 62%),
+    rgba(255, 255, 255, 0.04);
   box-shadow:
-    0 0 0 10px rgba(117, 244, 215, 0.06),
-    0 20px 70px rgba(0, 0, 0, 0.4);
+    0 0 0 6px rgba(255, 255, 255, 0.02),
+    0 18px 36px rgba(0, 0, 0, 0.14);
   animation: puck-pulse 2.8s ease-in-out infinite;
   will-change: transform, opacity;
   z-index: -1;
@@ -727,64 +727,64 @@ h1 {
 }
 
 .puck-droplet {
-  --droplet-size: 13px;
+  --droplet-size: 7px;
   position: absolute;
   left: 50%;
   top: 50%;
   width: var(--droplet-size);
   height: var(--droplet-size);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 50%;
   background:
     radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.74), transparent 24%),
-    radial-gradient(circle at 54% 58%, rgba(117, 244, 215, 0.76), rgba(38, 154, 181, 0.2));
+    radial-gradient(circle at 54% 58%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.08));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.36),
-    0 0 18px rgba(117, 244, 215, 0.34);
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 0 12px rgba(255, 255, 255, 0.1);
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.5);
   will-change: transform, opacity;
 }
 
 .puck-droplet-a {
-  --droplet-size: 12px;
+  --droplet-size: 8px;
 }
 
 .puck-droplet-b {
-  --droplet-size: 9px;
+  --droplet-size: 6px;
 }
 
 .puck-droplet-c {
-  --droplet-size: 11px;
-}
-
-.puck-droplet-d {
   --droplet-size: 7px;
 }
 
+.puck-droplet-d {
+  --droplet-size: 5px;
+}
+
 .assistant-puck[data-motion="shadow"] .puck-orbit {
-  opacity: 0.56;
-  transform: scale(0.9);
+  opacity: 0.24;
+  transform: scale(0.88);
 }
 
 .assistant-puck[data-motion="shadow"][data-pointer-shadow="active"] .puck-orbit {
-  opacity: 0.42;
-  transform: scale(0.78);
+  opacity: 0.14;
+  transform: scale(0.72);
 }
 
 .assistant-puck[data-motion="shadow"][data-pointer-shadow="active"] .puck-core {
-  opacity: 0.78;
-  transform: scale(0.86);
+  opacity: 0.7;
+  transform: scale(0.92);
 }
 
 .assistant-puck[data-motion="shadow"] .puck-droplet-a {
-  opacity: 0.54;
-  transform: translate(-36px, -22px) scale(0.72);
+  opacity: 0.22;
+  transform: translate(-12px, -8px) scale(0.62);
 }
 
 .assistant-puck[data-motion="shadow"] .puck-droplet-b {
-  opacity: 0.38;
-  transform: translate(24px, 18px) scale(0.64);
+  opacity: 0.16;
+  transform: translate(10px, 9px) scale(0.56);
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet,
@@ -834,35 +834,35 @@ h1 {
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet-a {
-  transform: translate(-31px, -18px) scale(0.86);
+  transform: translate(-18px, -12px) scale(0.8);
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet-b {
-  transform: translate(25px, -24px) scale(0.72);
+  transform: translate(14px, -14px) scale(0.66);
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet-c {
-  transform: translate(29px, 20px) scale(0.78);
+  transform: translate(16px, 12px) scale(0.72);
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet-d {
-  transform: translate(-22px, 26px) scale(0.62);
+  transform: translate(-14px, 16px) scale(0.56);
 }
 
 .assistant-puck[data-motion="guiding"] .puck-droplet-a {
-  transform: translate(-38px, -16px) scale(0.82);
+  transform: translate(-20px, -10px) scale(0.78);
 }
 
 .assistant-puck[data-motion="guiding"] .puck-droplet-b {
-  transform: translate(34px, -20px) scale(0.7);
+  transform: translate(18px, -11px) scale(0.62);
 }
 
 .assistant-puck[data-motion="guiding"] .puck-droplet-c {
-  transform: translate(30px, 25px) scale(0.76);
+  transform: translate(16px, 15px) scale(0.68);
 }
 
 .assistant-puck[data-motion="guiding"] .puck-droplet-d {
-  transform: translate(-28px, 27px) scale(0.58);
+  transform: translate(-15px, 16px) scale(0.5);
 }
 
 .assistant-puck[data-motion="guiding"][data-target-droplets="enabled"] .puck-droplet {
@@ -896,45 +896,38 @@ h1 {
 }
 
 .assistant-puck[data-motion="paused"] .puck-droplet-a {
-  transform: translate(-30px, -17px) scale(0.74);
+  transform: translate(-16px, -10px) scale(0.68);
 }
 
 .assistant-puck[data-motion="paused"] .puck-droplet-b {
-  transform: translate(24px, -22px) scale(0.62);
+  transform: translate(13px, -12px) scale(0.56);
 }
 
 .assistant-puck[data-motion="error"] .puck-droplet {
   background:
     radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.68), transparent 24%),
-    radial-gradient(circle at 54% 58%, rgba(255, 138, 154, 0.72), rgba(181, 38, 72, 0.22));
+    radial-gradient(circle at 54% 58%, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.08));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 0 18px rgba(255, 138, 154, 0.26);
+    0 0 12px rgba(255, 255, 255, 0.08);
   opacity: 0.66;
 }
 
 .assistant-puck[data-motion="error"] .puck-droplet-a {
-  transform: translate(-31px, -20px) scale(0.74);
+  transform: translate(-16px, -11px) scale(0.68);
 }
 
 .assistant-puck[data-motion="error"] .puck-droplet-b {
-  transform: translate(27px, 20px) scale(0.64);
+  transform: translate(14px, 12px) scale(0.56);
 }
 
 .puck-core {
   position: relative;
   display: grid;
-  width: 58px;
-  height: 58px;
+  width: 22px;
+  height: 28px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 50%;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06)),
-    rgba(14, 18, 24, 0.88);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  font-size: 0.82rem;
-  font-weight: 900;
+  background: transparent;
   transition:
     opacity 160ms ease,
     transform 160ms ease;
@@ -942,59 +935,92 @@ h1 {
   z-index: 1;
 }
 
+.puck-shadow-form {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 2px 11px 11px 11px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.22));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 8px 18px rgba(255, 255, 255, 0.08);
+  transform: rotate(-18deg) skewY(-8deg);
+  transform-origin: center;
+}
+
+.puck-shadow-tail {
+  position: absolute;
+  left: 7px;
+  bottom: 1px;
+  width: 8px;
+  height: 13px;
+  border-radius: 0 0 7px 7px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.08));
+  box-shadow: 0 6px 12px rgba(255, 255, 255, 0.06);
+  clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
+  transform: rotate(-18deg);
+  transform-origin: top center;
+}
+
 .puck-status {
   position: absolute;
   left: 50%;
-  bottom: -10px;
-  min-width: 62px;
-  min-height: 24px;
+  bottom: -20px;
+  min-width: 56px;
+  min-height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   transform: translateX(-50%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  padding: 0 9px;
-  background: rgba(10, 13, 18, 0.82);
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 0.68rem;
-  font-weight: 800;
+  padding: 0 8px;
+  background: rgba(18, 19, 22, 0.34);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.62rem;
+  font-weight: 700;
   line-height: 1;
   white-space: nowrap;
+  backdrop-filter: blur(14px);
 }
 
 .puck-status-dot {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: #75f4d7;
-  box-shadow: 0 0 14px rgba(117, 244, 215, 0.9);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.22);
 }
 
 .assistant-puck.is-paused .puck-orbit {
-  border-color: rgba(255, 211, 109, 0.38);
+  border-color: rgba(255, 255, 255, 0.12);
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 211, 109, 0.14), transparent 58%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08), transparent 58%),
     rgba(255, 255, 255, 0.06);
   animation-play-state: paused;
 }
 
 .assistant-puck.is-paused .puck-status-dot {
-  background: #ffd36d;
-  box-shadow: 0 0 14px rgba(255, 211, 109, 0.85);
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.18);
 }
 
 .assistant-puck.is-error .puck-orbit {
-  border-color: rgba(255, 138, 154, 0.42);
+  border-color: rgba(255, 255, 255, 0.12);
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 138, 154, 0.16), transparent 58%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08), transparent 58%),
     rgba(255, 255, 255, 0.06);
 }
 
 .assistant-puck.is-error .puck-status-dot {
-  background: #ff8a9a;
-  box-shadow: 0 0 14px rgba(255, 138, 154, 0.9);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.18);
 }
 
 @keyframes puck-pulse {
@@ -1135,19 +1161,19 @@ h1 {
 @keyframes puck-droplet-orbit {
   0%,
   100% {
-    transform: translate(-32px, -24px) scale(0.74);
+    transform: translate(-18px, -12px) scale(0.72);
   }
 
   25% {
-    transform: translate(26px, -30px) scale(0.9);
+    transform: translate(15px, -16px) scale(0.82);
   }
 
   50% {
-    transform: translate(34px, 20px) scale(0.72);
+    transform: translate(18px, 12px) scale(0.66);
   }
 
   75% {
-    transform: translate(-28px, 28px) scale(0.86);
+    transform: translate(-14px, 17px) scale(0.78);
   }
 }
 
