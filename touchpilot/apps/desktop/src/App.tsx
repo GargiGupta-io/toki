@@ -275,11 +275,7 @@ function SettingsPopup({
       </div>
 
       <div className="settings-copy">
-        <p className="settings-headline">Cursor-first guidance</p>
-        <p>
-          The overlay stays fully pass-through. This popup controls the assistant without
-          blocking the desktop.
-        </p>
+        <p className="settings-headline">Cursor assistant</p>
       </div>
 
       <div className="settings-actions" aria-label="Settings actions">
@@ -655,6 +651,10 @@ function SettingsWindowApp() {
   const [hasAcceptedGuidance, setHasAcceptedGuidance] = useState(false);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
 
+  function hideSettings() {
+    overlayWindow.hide().catch(() => undefined);
+  }
+
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
 
@@ -679,6 +679,36 @@ function SettingsWindowApp() {
     };
   }, []);
 
+  useEffect(() => {
+    let unlistenFocus: (() => void) | undefined;
+
+    overlayWindow
+      .onFocusChanged((event) => {
+        if (!event.payload) {
+          hideSettings();
+        }
+      })
+      .then((cleanup) => {
+        unlistenFocus = cleanup;
+      })
+      .catch(() => {
+        unlistenFocus = undefined;
+      });
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        hideSettings();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      unlistenFocus?.();
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   return (
     <main className="settings-shell" aria-label="TouchPilot settings window">
       <SettingsPopup
@@ -696,7 +726,7 @@ function SettingsWindowApp() {
           } satisfies OverlayCommand).catch(() => undefined);
         }}
         onClose={() => {
-          overlayWindow.hide().catch(() => undefined);
+          hideSettings();
         }}
       />
     </main>

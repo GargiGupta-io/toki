@@ -51,7 +51,7 @@ html {
   display: grid;
   place-items: center;
   background: transparent;
-  padding: 12px;
+  padding: 10px;
 }
 
 .overlay-shell {
@@ -64,12 +64,12 @@ html {
 
 .settings-popup {
   position: absolute;
-  top: 28px;
+  top: 18px;
   left: 50%;
-  width: min(354px, calc(100vw - 56px));
-  padding: 14px 14px 12px;
+  width: min(312px, calc(100vw - 32px));
+  padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 22px;
+  border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
     rgba(17, 18, 22, 0.78);
@@ -83,19 +83,19 @@ html {
 
 .settings-shell .settings-popup {
   position: static;
-  width: min(354px, 100%);
+  width: min(312px, 100%);
   transform: none;
 }
 
 .settings-popup-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
 }
 
 .settings-popup-brand {
-  margin: 0 0 3px;
+  margin: 0 0 2px;
   color: rgba(255, 255, 255, 0.48);
   font-size: 0.66rem;
   font-weight: 700;
@@ -106,14 +106,14 @@ html {
 .settings-popup h2 {
   margin: 0;
   color: rgba(255, 255, 255, 0.96);
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 600;
   line-height: 1.1;
 }
 
 .settings-close-button {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
@@ -127,7 +127,7 @@ html {
 .settings-chip-row {
   display: flex;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .settings-chip {
@@ -151,38 +151,31 @@ html {
 }
 
 .settings-copy {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .settings-headline {
-  margin: 0 0 6px;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.settings-copy p:last-child {
   margin: 0;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 0.8rem;
-  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .settings-actions {
   display: flex;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .settings-action-button {
-  min-height: 32px;
+  min-height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
-  padding: 0 14px;
+  padding: 0 12px;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.82);
   font: inherit;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
 }
