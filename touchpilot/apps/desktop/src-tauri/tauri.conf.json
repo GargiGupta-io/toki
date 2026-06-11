@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "overlay",
-        "title": "TouchPilot Overlay",
+        "title": " ",
         "width": 1440,
         "height": 900,
         "decorations": false,
@@ -28,7 +28,7 @@
       },
       {
         "label": "settings",
-        "title": "TouchPilot",
+        "title": " ",
         "width": 372,
         "height": 248,
         "center": true,

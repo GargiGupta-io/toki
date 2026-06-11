@@ -31,6 +31,7 @@ fn remove_windows_overlay_chrome<R: tauri::Runtime>(window: &tauri::WebviewWindo
     extern "system" {
         fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> isize;
         fn SetWindowLongPtrW(hwnd: Hwnd, index: i32, value: isize) -> isize;
+        fn SetWindowTextW(hwnd: Hwnd, title: *const u16) -> i32;
         fn SetWindowPos(
             hwnd: Hwnd,
             hwnd_insert_after: Hwnd,
@@ -48,6 +49,9 @@ fn remove_windows_overlay_chrome<R: tauri::Runtime>(window: &tauri::WebviewWindo
     let hwnd = hwnd.0 as Hwnd;
 
     unsafe {
+        let empty_title = [0u16];
+        SetWindowTextW(hwnd, empty_title.as_ptr());
+
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
         let border_styles =
             WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
@@ -88,18 +92,22 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if let Some(overlay) = app.get_webview_window("overlay") {
+                let _ = overlay.set_title(" ");
                 let _ = overlay.set_decorations(false);
                 let _ = overlay.set_fullscreen(true);
                 let _ = overlay.set_ignore_cursor_events(true);
                 let _ = overlay.set_focusable(false);
+                let _ = overlay.set_skip_taskbar(true);
                 #[cfg(windows)]
                 remove_windows_overlay_chrome(&overlay);
             }
 
             if let Some(settings) = app.get_webview_window("settings") {
+                let _ = settings.set_title(" ");
                 let _ = settings.hide();
                 let _ = settings.set_decorations(false);
                 let _ = settings.set_focusable(true);
+                let _ = settings.set_skip_taskbar(true);
                 #[cfg(windows)]
                 remove_windows_overlay_chrome(&settings);
             }
