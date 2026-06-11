@@ -57,6 +57,7 @@ type OverlaySnapshot = {
 };
 
 type DebugSnapshot = OverlaySnapshot & {
+  guidanceFixture: GuidanceFixture;
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
   guidanceRequest: GuidanceRequest | null;
@@ -70,7 +71,9 @@ type DebugSnapshot = OverlaySnapshot & {
 type OverlayCommand =
   | { type: "refresh-capture" }
   | { type: "toggle-pause" }
-  | { type: "request-state" };
+  | { type: "request-state" }
+  | { type: "set-state"; state: OverlayState }
+  | { type: "set-guidance-fixture"; fixture: GuidanceFixture };
 
 const overlayWindow = getCurrentWindow();
 const currentWindowLabel = overlayWindow.label;
@@ -127,6 +130,24 @@ const stateMeta: Record<OverlayState, OverlayStateMeta> = {
     tone: "error",
   },
 };
+
+const debugOverlayStates: OverlayState[] = [
+  "idle",
+  "listening",
+  "thinking",
+  "guiding",
+  "paused",
+  "error",
+];
+
+const debugGuidanceFixtures: Array<{
+  fixture: GuidanceFixture;
+  label: string;
+}> = [
+  { fixture: "safe", label: "Safe" },
+  { fixture: "risky", label: "Risky" },
+  { fixture: "invalid", label: "Invalid" },
+];
 
 function AssistantPuck({
   state,
@@ -399,6 +420,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     overlayState: "idle",
     hasAcceptedGuidance: false,
     isRefreshingCapture: false,
+    guidanceFixture: "safe",
     captureMetadata: null,
     screenshotCapture: null,
     guidanceRequest: null,
@@ -412,7 +434,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
 
 function OverlayWindowApp() {
   const [overlayState, setOverlayState] = useState<OverlayState>("idle");
-  const [guidanceFixture] = useState<GuidanceFixture>("safe");
+  const [guidanceFixture, setGuidanceFixture] = useState<GuidanceFixture>("safe");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
@@ -463,6 +485,7 @@ function OverlayWindowApp() {
   const debugSnapshot = useMemo<DebugSnapshot>(
     () => ({
       ...overlaySnapshot,
+      guidanceFixture,
       captureMetadata,
       screenshotCapture,
       guidanceRequest,
@@ -474,6 +497,7 @@ function OverlayWindowApp() {
     }),
     [
       overlaySnapshot,
+      guidanceFixture,
       captureMetadata,
       screenshotCapture,
       guidanceRequest,
@@ -612,6 +636,16 @@ function OverlayWindowApp() {
       if (event.payload.type === "request-state") {
         await publishRuntimeSnapshots();
       }
+
+      if (event.payload.type === "set-state") {
+        setOverlayState(event.payload.state);
+        return;
+      }
+
+      if (event.payload.type === "set-guidance-fixture") {
+        setGuidanceFixture(event.payload.fixture);
+        return;
+      }
     })
       .then((cleanup) => {
         unlistenCommand = cleanup;
@@ -739,6 +773,11 @@ function DebugWindowApp() {
   );
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
+  const target = guidanceStep?.target ?? null;
+
+  function sendOverlayCommand(command: OverlayCommand) {
+    emitTo("overlay", "touchpilot://overlay-command", command).catch(() => undefined);
+  }
 
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
@@ -785,9 +824,7 @@ function DebugWindowApp() {
           <button
             type="button"
             onClick={() => {
-              emitTo("overlay", "touchpilot://overlay-command", {
-                type: "refresh-capture",
-              } satisfies OverlayCommand).catch(() => undefined);
+              sendOverlayCommand({ type: "refresh-capture" });
             }}
             disabled={snapshot.isRefreshingCapture}
           >
@@ -796,16 +833,61 @@ function DebugWindowApp() {
           <button
             type="button"
             onClick={() => {
-              emitTo("overlay", "touchpilot://overlay-command", {
-                type: "toggle-pause",
-              } satisfies OverlayCommand).catch(() => undefined);
+              sendOverlayCommand({ type: "toggle-pause" });
             }}
           >
             {snapshot.overlayState === "paused" ? "Resume overlay" : "Pause overlay"}
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              sendOverlayCommand({ type: "request-state" });
+            }}
+          >
+            Sync state
+          </button>
         </div>
 
         <div className="debug-window-grid">
+          <section className="debug-section">
+            <h2>State Controls</h2>
+            <div className="debug-toggle-grid">
+              {debugOverlayStates.map((state) => (
+                <button
+                  key={state}
+                  type="button"
+                  data-active={snapshot.overlayState === state}
+                  onClick={() => {
+                    sendOverlayCommand({ type: "set-state", state });
+                  }}
+                >
+                  {stateMeta[state].label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="debug-section">
+            <h2>Fixture Controls</h2>
+            <div className="debug-toggle-grid">
+              {debugGuidanceFixtures.map((option) => (
+                <button
+                  key={option.fixture}
+                  type="button"
+                  data-active={snapshot.guidanceFixture === option.fixture}
+                  onClick={() => {
+                    sendOverlayCommand({
+                      type: "set-guidance-fixture",
+                      fixture: option.fixture,
+                    });
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
           <section className="debug-section">
             <h2>Runtime</h2>
             <dl>
@@ -826,6 +908,14 @@ function DebugWindowApp() {
               <div>
                 <dt>DPR</dt>
                 <dd>{snapshot.viewport.devicePixelRatio}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{snapshot.viewport.updatedAt}</dd>
+              </div>
+              <div>
+                <dt>Fixture</dt>
+                <dd>{snapshot.guidanceFixture}</dd>
               </div>
             </dl>
           </section>
@@ -857,6 +947,26 @@ function DebugWindowApp() {
                 <dt>Bytes</dt>
                 <dd>{screenshot ? screenshot.byteLength : "None"}</dd>
               </div>
+              <div>
+                <dt>Format</dt>
+                <dd>{screenshot?.format ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Cursor</dt>
+                <dd>
+                  {snapshot.captureMetadata?.cursor
+                    ? `${snapshot.captureMetadata.cursor.x}, ${snapshot.captureMetadata.cursor.y}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Active app</dt>
+                <dd>{snapshot.captureMetadata?.activeWindow?.appName ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Window</dt>
+                <dd>{snapshot.captureMetadata?.activeWindow?.title ?? "None"}</dd>
+              </div>
             </dl>
           </section>
 
@@ -872,6 +982,14 @@ function DebugWindowApp() {
                 <dd>{guidanceStep?.risk ?? "None"}</dd>
               </div>
               <div>
+                <dt>Confirm</dt>
+                <dd>{guidanceStep?.requiresConfirmation ? "Required" : "Not required"}</dd>
+              </div>
+              <div>
+                <dt>Mode</dt>
+                <dd>{snapshot.guidanceResult?.mode ?? "None"}</dd>
+              </div>
+              <div>
                 <dt>Confidence</dt>
                 <dd>
                   {guidanceStep ? `${Math.round(guidanceStep.confidence * 100)}%` : "None"}
@@ -885,11 +1003,47 @@ function DebugWindowApp() {
                     : `${snapshot.guidanceIssues.length} issue(s)`}
                 </dd>
               </div>
+              <div>
+                <dt>Target</dt>
+                <dd>{target?.label ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Box</dt>
+                <dd>
+                  {target
+                    ? `${target.x}, ${target.y}, ${target.width} x ${target.height}`
+                    : "None"}
+                </dd>
+              </div>
             </dl>
           </section>
 
           <section className="debug-section">
             <h2>Calibration</h2>
+            <dl>
+              <div>
+                <dt>Status</dt>
+                <dd>{snapshot.calibration.status}</dd>
+              </div>
+              <div>
+                <dt>Overlay</dt>
+                <dd>
+                  {snapshot.calibration.overlayWidth} x{" "}
+                  {snapshot.calibration.overlayHeight}
+                </dd>
+              </div>
+              <div>
+                <dt>Display</dt>
+                <dd>
+                  {snapshot.calibration.displayWidth} x{" "}
+                  {snapshot.calibration.displayHeight}
+                </dd>
+              </div>
+              <div>
+                <dt>Scale</dt>
+                <dd>{snapshot.calibration.scaleFactor}</dd>
+              </div>
+            </dl>
             <p>{snapshot.calibration.notes}</p>
           </section>
         </div>
