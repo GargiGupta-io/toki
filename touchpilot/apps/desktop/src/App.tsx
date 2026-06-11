@@ -221,15 +221,10 @@ function PointerRing({ target }: { target: TargetBox }) {
 function StepBubble({
   step,
   target,
-  guidance,
 }: {
   step: GuidanceStep | null;
   target: RenderedGuidanceTarget;
-  guidance: GuidanceResult | null;
 }) {
-  const risk = guidance?.step?.risk ?? "safe_navigation";
-  const requiresConfirmation = guidance?.step?.requiresConfirmation ?? false;
-
   return (
     <aside
       className="step-bubble"
@@ -240,16 +235,8 @@ function StepBubble({
       aria-label={`Guidance step for ${target.label}`}
     >
       <span className="bubble-anchor" aria-hidden="true" />
-      <p className="eyebrow">Step 1</p>
-      <h3>{target.label}</h3>
-      <p>{step?.instruction ?? target.instruction}</p>
-      <div
-        className="risk-strip"
-        data-confirmation={requiresConfirmation ? "required" : "not-required"}
-      >
-        <span>{risk}</span>
-        <strong>{requiresConfirmation ? "Confirm first" : "No confirmation"}</strong>
-      </div>
+      <span className="step-cue-label">{target.label}</span>
+      <span className="step-cue-text">{step?.instruction ?? target.instruction}</span>
     </aside>
   );
 }
@@ -667,7 +654,7 @@ function OverlayWindowApp() {
       {overlayState !== "idle" && hasAcceptedGuidance && (
         <>
           <PointerRing target={activeTarget} />
-          <StepBubble step={activeStep} target={activeTarget} guidance={guidanceResult} />
+          <StepBubble step={activeStep} target={activeTarget} />
         </>
       )}
       <AssistantPuck
