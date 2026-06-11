@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emitTo, listen } from "@tauri-apps/api/event";
+import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import {
   createInvalidMockGuidance,
   createMockGuidance,
@@ -14,9 +16,9 @@ import type {
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
-  TargetBox,
   ScreenshotCapture,
   ScreenshotMetadata,
+  TargetBox,
 } from "@touchpilot/shared";
 import { getPuckMotionModel } from "./puckMotion";
 import type { OverlayState, PuckMotionModel } from "./puckMotion";
@@ -48,14 +50,30 @@ type OverlayStateMeta = {
   tone: "neutral" | "active" | "paused" | "error";
 };
 
-const overlayStates: OverlayState[] = [
-  "idle",
-  "listening",
-  "thinking",
-  "guiding",
-  "paused",
-  "error",
-];
+type OverlaySnapshot = {
+  overlayState: OverlayState;
+  hasAcceptedGuidance: boolean;
+  isRefreshingCapture: boolean;
+};
+
+type DebugSnapshot = OverlaySnapshot & {
+  captureMetadata: CaptureMetadata | null;
+  screenshotCapture: ScreenshotCapture | null;
+  guidanceRequest: GuidanceRequest | null;
+  guidanceResult: GuidanceResult | null;
+  guidanceIssues: GuidanceValidationIssue[];
+  captureError: string | null;
+  viewport: ViewportMetrics;
+  calibration: CoordinateCalibration;
+};
+
+type OverlayCommand =
+  | { type: "refresh-capture" }
+  | { type: "toggle-pause" }
+  | { type: "request-state" };
+
+const overlayWindow = getCurrentWindow();
+const currentWindowLabel = overlayWindow.label;
 
 const testTarget = {
   label: "Export",
@@ -138,13 +156,12 @@ function AssistantPuck({
   } as CSSProperties;
 
   return (
-    <button
+    <div
       className={`assistant-puck is-${meta.tone}`}
       data-motion={motion.state}
       data-pointer-shadow={motion.state === "shadow" && pointerShadow ? "active" : "idle"}
       data-target-droplets={motion.canSendTargetDroplets ? "enabled" : "disabled"}
       style={puckStyle}
-      type="button"
       aria-label={`TouchPilot is ${meta.label.toLowerCase()}`}
     >
       <span className="puck-orbit" aria-hidden="true" />
@@ -158,11 +175,7 @@ function AssistantPuck({
         <span className="puck-shadow-form" />
         <span className="puck-shadow-tail" />
       </span>
-      <span className="puck-status">
-        <span className="puck-status-dot" aria-hidden="true" />
-        {meta.label}
-      </span>
-    </button>
+    </div>
   );
 }
 
@@ -220,328 +233,72 @@ function StepBubble({
   );
 }
 
-function DebugPanel({
-  currentState,
-  target,
+function SettingsPopup({
+  overlayState,
   hasAcceptedGuidance,
-  captureMetadata,
-  screenshotCapture,
-  guidanceRequest,
-  guidanceResult,
-  guidanceFixture,
-  calibration,
-  viewport,
-  guidanceIssues,
-  captureError,
   isRefreshingCapture,
-  onStateChange,
-  onGuidanceFixtureChange,
   onRefreshCapture,
+  onPauseToggle,
+  onClose,
 }: {
-  currentState: OverlayState;
-  target: RenderedGuidanceTarget;
+  overlayState: OverlayState;
   hasAcceptedGuidance: boolean;
-  captureMetadata: CaptureMetadata | null;
-  screenshotCapture: ScreenshotCapture | null;
-  guidanceRequest: GuidanceRequest | null;
-  guidanceResult: GuidanceResult | null;
-  guidanceFixture: GuidanceFixture;
-  calibration: CoordinateCalibration;
-  viewport: ViewportMetrics;
-  guidanceIssues: GuidanceValidationIssue[];
-  captureError: string | null;
   isRefreshingCapture: boolean;
-  onStateChange: (state: OverlayState) => void;
-  onGuidanceFixtureChange: (fixture: GuidanceFixture) => void;
   onRefreshCapture: () => void;
+  onPauseToggle: () => void;
+  onClose: () => void;
 }) {
+  const isPaused = overlayState === "paused";
+
   return (
-    <section className="debug-panel" aria-label="Overlay debug controls">
-      <div>
-        <p className="eyebrow">Debug</p>
-        <h2>Overlay test controls</h2>
-      </div>
-
-      <button
-        className="capture-refresh-button"
-        type="button"
-        onClick={onRefreshCapture}
-        disabled={isRefreshingCapture}
-      >
-        {isRefreshingCapture ? "Refreshing capture" : "Refresh capture"}
-      </button>
-
-      <div className="fixture-switcher" aria-label="Guidance QA fixture">
-        <span>Guidance fixture</span>
+    <section className="settings-popup" aria-label="TouchPilot settings">
+      <div className="settings-popup-header">
         <div>
-          <button
-            className="fixture-button"
-            data-active={guidanceFixture === "safe"}
-            type="button"
-            onClick={() => onGuidanceFixtureChange("safe")}
-          >
-            Safe
-          </button>
-          <button
-            className="fixture-button"
-            data-active={guidanceFixture === "risky"}
-            type="button"
-            onClick={() => onGuidanceFixtureChange("risky")}
-          >
-            Risky
-          </button>
-          <button
-            className="fixture-button"
-            data-active={guidanceFixture === "invalid"}
-            type="button"
-            onClick={() => onGuidanceFixtureChange("invalid")}
-          >
-            Invalid
-          </button>
+          <p className="settings-popup-brand">TouchPilot</p>
+          <h2>{isPaused ? "Paused" : "Active"}</h2>
         </div>
-      </div>
-
-      <div className="capture-status" data-status={captureError ? "error" : "ok"}>
-        <span>{captureError ? "Capture error" : "Capture ready"}</span>
-        <p>{captureError ?? "Latest capture request completed without errors."}</p>
-      </div>
-
-      <div className="debug-grid" role="group" aria-label="Set overlay state">
-        {overlayStates.map((state) => (
-          <button
-            className="debug-state-button"
-            data-active={state === currentState}
-            key={state}
-            type="button"
-            onClick={() => onStateChange(state)}
-          >
-            {stateMeta[state].label}
-          </button>
-        ))}
-      </div>
-
-      <dl className="debug-readout">
-        <div>
-          <dt>Target</dt>
-          <dd>{hasAcceptedGuidance ? target.label : "None accepted"}</dd>
-        </div>
-        <div>
-          <dt>X/Y</dt>
-          <dd>{hasAcceptedGuidance ? `${target.x}, ${target.y}` : "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Size</dt>
-          <dd>{hasAcceptedGuidance ? `${target.width} x ${target.height}` : "Waiting"}</dd>
-        </div>
-      </dl>
-
-      <dl className="capture-readout">
-        <div>
-          <dt>Display</dt>
-          <dd>
-            {captureMetadata
-              ? `${captureMetadata.display.width} x ${captureMetadata.display.height}`
-              : "Waiting"}
-          </dd>
-        </div>
-        <div>
-          <dt>Scale</dt>
-          <dd>{captureMetadata?.display.scaleFactor ?? "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Cursor</dt>
-          <dd>
-            {captureMetadata?.cursor
-              ? `${captureMetadata.cursor.x}, ${captureMetadata.cursor.y}`
-              : "Unknown"}
-          </dd>
-        </div>
-        <div>
-          <dt>Source</dt>
-          <dd>{captureMetadata?.source ?? "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Window</dt>
-          <dd>{captureMetadata?.activeWindow?.title ?? "Unknown"}</dd>
-        </div>
-        <div>
-          <dt>Captured</dt>
-          <dd>{captureMetadata?.capturedAt ?? "Waiting"}</dd>
-        </div>
-      </dl>
-
-      <dl className="calibration-readout">
-        <div>
-          <dt>Calibration</dt>
-          <dd>{calibration.status}</dd>
-        </div>
-        <div>
-          <dt>Overlay</dt>
-          <dd>
-            {calibration.overlayWidth} x {calibration.overlayHeight}
-          </dd>
-        </div>
-        <div>
-          <dt>Display</dt>
-          <dd>
-            {calibration.displayWidth} x {calibration.displayHeight}
-          </dd>
-        </div>
-        <div>
-          <dt>Notes</dt>
-          <dd>{calibration.notes ?? "No notes"}</dd>
-        </div>
-      </dl>
-
-      <dl className="viewport-readout">
-        <div>
-          <dt>Viewport</dt>
-          <dd>
-            {viewport.width} x {viewport.height}
-          </dd>
-        </div>
-        <div>
-          <dt>DPR</dt>
-          <dd>{viewport.devicePixelRatio}</dd>
-        </div>
-        <div>
-          <dt>Delta</dt>
-          <dd>
-            {captureMetadata
-              ? `${viewport.width - captureMetadata.display.width}, ${
-                  viewport.height - captureMetadata.display.height
-                }`
-              : "Waiting"}
-          </dd>
-        </div>
-        <div>
-          <dt>Resized</dt>
-          <dd>{viewport.updatedAt}</dd>
-        </div>
-      </dl>
-
-      <dl className="screenshot-readout">
-        <div>
-          <dt>Shot size</dt>
-          <dd>
-            {screenshotCapture
-              ? `${screenshotCapture.imageWidth} x ${screenshotCapture.imageHeight}`
-              : "Waiting"}
-          </dd>
-        </div>
-        <div>
-          <dt>Bytes</dt>
-          <dd>{screenshotCapture?.byteLength ?? "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Format</dt>
-          <dd>{screenshotCapture?.format ?? "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Image data</dt>
-          <dd>{screenshotCapture?.imageBase64 ? "Present" : "Missing"}</dd>
-        </div>
-      </dl>
-
-      <dl className="guidance-request-readout">
-        <div>
-          <dt>Goal</dt>
-          <dd>{guidanceRequest?.goal ?? "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Request shot</dt>
-          <dd>
-            {guidanceRequest?.screen.screenshot
-              ? `${guidanceRequest.screen.screenshot.imageWidth} x ${guidanceRequest.screen.screenshot.imageHeight}`
-              : "Waiting"}
-          </dd>
-        </div>
-        <div>
-          <dt>Request bytes</dt>
-          <dd>{guidanceRequest?.screen.screenshot?.byteLength ?? "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Previous</dt>
-          <dd>{guidanceRequest?.previousStep?.target?.label ?? "None"}</dd>
-        </div>
-      </dl>
-
-      <dl className="guidance-risk-readout">
-        <div>
-          <dt>Risk</dt>
-          <dd>{guidanceResult?.step?.risk ?? "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Confirm</dt>
-          <dd>{guidanceResult?.step?.requiresConfirmation ? "Required" : "Not required"}</dd>
-        </div>
-        <div>
-          <dt>Confidence</dt>
-          <dd>
-            {guidanceResult?.step
-              ? `${Math.round(guidanceResult.step.confidence * 100)}%`
-              : "Waiting"}
-          </dd>
-        </div>
-        <div>
-          <dt>Mode</dt>
-          <dd>{guidanceResult?.mode ?? "Waiting"}</dd>
-        </div>
-      </dl>
-
-      {guidanceResult?.step?.requiresConfirmation && (
-        <div className="confirmation-warning" role="status">
-          <span>Confirmation required</span>
-          <p>This guidance touches a risky action and must be approved before execution.</p>
-        </div>
-      )}
-
-      {!guidanceResult?.step?.requiresConfirmation && guidanceResult && (
-        <div className="confirmation-ready" role="status">
-          <span>Safe navigation</span>
-          <p>This guidance can be shown without a confirmation gate.</p>
-        </div>
-      )}
-
-      <div className="confirmation-actions" aria-label="Confirmation controls">
         <button
-          className="confirmation-button"
+          className="settings-close-button"
           type="button"
-          disabled={!guidanceResult?.step?.requiresConfirmation}
+          onClick={onClose}
+          aria-label="Close settings"
         >
-          Confirm
-        </button>
-        <button
-          className="confirmation-button confirmation-button-secondary"
-          type="button"
-          disabled={!guidanceResult?.step?.requiresConfirmation}
-        >
-          Decline
+          x
         </button>
       </div>
 
-      {guidanceIssues.length > 0 && (
-        <div className="guidance-issues" role="status">
-          <span>Guidance rejected</span>
-          <ul>
-            {guidanceIssues.map((issue) => (
-              <li key={`${issue.path}-${issue.message}`}>
-                {issue.path}: {issue.message}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <div className="settings-chip-row" aria-label="Current runtime status">
+        <span className="settings-chip">{stateMeta[overlayState].label}</span>
+        <span className="settings-chip settings-chip-muted">
+          {hasAcceptedGuidance ? "Target locked" : "Waiting"}
+        </span>
+      </div>
 
-      {screenshotCapture?.imageBase64 && (
-        <figure className="screenshot-preview">
-          <img
-            src={`data:image/${screenshotCapture.format};base64,${screenshotCapture.imageBase64}`}
-            alt="Latest debug screenshot capture"
-          />
-          <figcaption>Debug screenshot preview</figcaption>
-        </figure>
-      )}
+      <div className="settings-copy">
+        <p className="settings-headline">Cursor-first guidance</p>
+        <p>
+          The overlay stays fully pass-through. This popup controls the assistant without
+          blocking the desktop.
+        </p>
+      </div>
+
+      <div className="settings-actions" aria-label="Settings actions">
+        <button
+          className="settings-action-button settings-action-button-primary"
+          type="button"
+          onClick={onRefreshCapture}
+          disabled={isRefreshingCapture}
+        >
+          {isRefreshingCapture ? "Refreshing" : "Refresh screen"}
+        </button>
+        <button
+          className="settings-action-button"
+          type="button"
+          onClick={onPauseToggle}
+        >
+          {isPaused ? "Resume" : "Pause"}
+        </button>
+      </div>
     </section>
   );
 }
@@ -575,7 +332,7 @@ function getPuckTargetVector(
   viewport: ViewportMetrics,
 ): PuckTargetVector {
   const puckCenterX = viewport.width - 80;
-  const puckCenterY = viewport.height - 334;
+  const puckCenterY = viewport.height - 140;
 
   return {
     x: target.x - puckCenterX,
@@ -639,9 +396,27 @@ function getScreenshotMetadata(screenshot: ScreenshotCapture): ScreenshotMetadat
   };
 }
 
-function App() {
-  const [overlayState, setOverlayState] = useState<OverlayState>("guiding");
-  const [guidanceFixture, setGuidanceFixture] = useState<GuidanceFixture>("safe");
+function createEmptyDebugSnapshot(): DebugSnapshot {
+  const viewport = getViewportMetrics();
+
+  return {
+    overlayState: "idle",
+    hasAcceptedGuidance: false,
+    isRefreshingCapture: false,
+    captureMetadata: null,
+    screenshotCapture: null,
+    guidanceRequest: null,
+    guidanceResult: null,
+    guidanceIssues: [],
+    captureError: null,
+    viewport,
+    calibration: getCalibration(null, viewport),
+  };
+}
+
+function OverlayWindowApp() {
+  const [overlayState, setOverlayState] = useState<OverlayState>("idle");
+  const [guidanceFixture] = useState<GuidanceFixture>("safe");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
@@ -651,9 +426,7 @@ function App() {
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
-  const meta = stateMeta[overlayState];
-  const isPaused = overlayState === "paused";
-  const calibration = getCalibration(captureMetadata, viewport);
+
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep = activeStep?.target != null ? activeStep : null;
   const acceptedTarget = acceptedStep?.target ?? null;
@@ -677,6 +450,53 @@ function App() {
     puckMotion.canSendTargetDroplets && acceptedTarget != null
       ? getPuckTargetVector(acceptedTarget, viewport)
       : null;
+  const calibration = useMemo(
+    () => getCalibration(captureMetadata, viewport),
+    [captureMetadata, viewport],
+  );
+
+  const overlaySnapshot = useMemo<OverlaySnapshot>(
+    () => ({
+      overlayState,
+      hasAcceptedGuidance,
+      isRefreshingCapture,
+    }),
+    [overlayState, hasAcceptedGuidance, isRefreshingCapture],
+  );
+
+  const debugSnapshot = useMemo<DebugSnapshot>(
+    () => ({
+      ...overlaySnapshot,
+      captureMetadata,
+      screenshotCapture,
+      guidanceRequest,
+      guidanceResult,
+      guidanceIssues,
+      captureError,
+      viewport,
+      calibration,
+    }),
+    [
+      overlaySnapshot,
+      captureMetadata,
+      screenshotCapture,
+      guidanceRequest,
+      guidanceResult,
+      guidanceIssues,
+      captureError,
+      viewport,
+      calibration,
+    ],
+  );
+
+  async function publishRuntimeSnapshots() {
+    await emitTo("settings", "touchpilot://overlay-state", overlaySnapshot).catch(
+      () => undefined,
+    );
+    await emitTo("debug", "touchpilot://debug-state", debugSnapshot).catch(
+      () => undefined,
+    );
+  }
 
   async function refreshCaptureMetadata() {
     setIsRefreshingCapture(true);
@@ -731,7 +551,8 @@ function App() {
   }
 
   useEffect(() => {
-    refreshCaptureMetadata();
+    overlayWindow.setIgnoreCursorEvents(true).catch(() => undefined);
+    overlayWindow.setFocusable(false).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -747,68 +568,72 @@ function App() {
   }, []);
 
   useEffect(() => {
-    function handlePointerMove(event: PointerEvent) {
-      setPointerShadow(getPointerShadowPosition(event.clientX, event.clientY, viewport));
+    let disposed = false;
+
+    async function syncCursorShadow() {
+      try {
+        const position = await cursorPosition();
+
+        if (!disposed) {
+          setPointerShadow(getPointerShadowPosition(position.x, position.y, viewport));
+        }
+      } catch {
+        return;
+      }
     }
 
-    window.addEventListener("pointermove", handlePointerMove);
+    void syncCursorShadow();
+    const timer = window.setInterval(() => {
+      void syncCursorShadow();
+    }, 32);
 
     return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
+      disposed = true;
+      window.clearInterval(timer);
     };
   }, [viewport]);
 
-  function pauseGuidance() {
-    setOverlayState("paused");
-  }
+  useEffect(() => {
+    void publishRuntimeSnapshots();
+  }, [overlaySnapshot, debugSnapshot]);
 
-  function resumeGuidance() {
-    setOverlayState("guiding");
-  }
+  useEffect(() => {
+    let unlistenCommand: (() => void) | undefined;
 
-  function stopGuidance() {
-    setOverlayState("idle");
-  }
+    listen<OverlayCommand>("touchpilot://overlay-command", async (event) => {
+      if (event.payload.type === "refresh-capture") {
+        await refreshCaptureMetadata();
+        return;
+      }
+
+      if (event.payload.type === "toggle-pause") {
+        setOverlayState((currentState) =>
+          currentState === "paused" ? "guiding" : "paused",
+        );
+        return;
+      }
+
+      if (event.payload.type === "request-state") {
+        await publishRuntimeSnapshots();
+      }
+    })
+      .then((cleanup) => {
+        unlistenCommand = cleanup;
+      })
+      .catch(() => {
+        unlistenCommand = undefined;
+      });
+
+    return () => {
+      unlistenCommand?.();
+    };
+  }, [overlaySnapshot, debugSnapshot, viewport, guidanceResult]);
 
   return (
     <main
-      className={`overlay-shell is-${meta.tone}`}
-      aria-label="TouchPilot overlay prototype"
+      className={`overlay-shell is-${stateMeta[overlayState].tone}`}
+      aria-label="TouchPilot overlay"
     >
-      <section className="guidance-surface" aria-label="Current guidance">
-        <div className="surface-header">
-          <span className="state-pill">{meta.label}</span>
-          <span className="coordinate-readout">
-            {hasAcceptedGuidance
-              ? `Target: ${activeTarget.x}, ${activeTarget.y}`
-              : "Target: none accepted"}
-          </span>
-        </div>
-
-        <div className="instruction-panel">
-          <p className="surface-kicker">Current guidance</p>
-          <h2>{hasAcceptedGuidance ? activeTarget.label : meta.label}</h2>
-          <p>{meta.description}</p>
-
-          <div className="control-row" aria-label="Overlay controls">
-            <button
-              className="control-button"
-              type="button"
-              onClick={isPaused ? resumeGuidance : pauseGuidance}
-            >
-              {isPaused ? "Resume" : "Pause"}
-            </button>
-            <button
-              className="control-button control-button-secondary"
-              type="button"
-              onClick={stopGuidance}
-            >
-              Stop
-            </button>
-          </div>
-        </div>
-      </section>
-
       {overlayState !== "idle" && hasAcceptedGuidance && (
         <>
           <PointerRing target={activeTarget} />
@@ -821,26 +646,261 @@ function App() {
         pointerShadow={pointerShadow}
         targetVector={puckTargetVector}
       />
-      <DebugPanel
-        currentState={overlayState}
-        target={activeTarget}
+    </main>
+  );
+}
+
+function SettingsWindowApp() {
+  const [overlayState, setOverlayState] = useState<OverlayState>("idle");
+  const [hasAcceptedGuidance, setHasAcceptedGuidance] = useState(false);
+  const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
+
+  useEffect(() => {
+    let unlistenState: (() => void) | undefined;
+
+    listen<OverlaySnapshot>("touchpilot://overlay-state", (event) => {
+      setOverlayState(event.payload.overlayState);
+      setHasAcceptedGuidance(event.payload.hasAcceptedGuidance);
+      setIsRefreshingCapture(event.payload.isRefreshingCapture);
+    })
+      .then((cleanup) => {
+        unlistenState = cleanup;
+      })
+      .catch(() => {
+        unlistenState = undefined;
+      });
+
+    emitTo("overlay", "touchpilot://overlay-command", {
+      type: "request-state",
+    } satisfies OverlayCommand).catch(() => undefined);
+
+    return () => {
+      unlistenState?.();
+    };
+  }, []);
+
+  return (
+    <main className="settings-shell" aria-label="TouchPilot settings window">
+      <SettingsPopup
+        overlayState={overlayState}
         hasAcceptedGuidance={hasAcceptedGuidance}
-        captureMetadata={captureMetadata}
-        screenshotCapture={screenshotCapture}
-        guidanceRequest={guidanceRequest}
-        guidanceResult={guidanceResult}
-        guidanceFixture={guidanceFixture}
-        calibration={calibration}
-        viewport={viewport}
-        guidanceIssues={guidanceIssues}
-        captureError={captureError}
         isRefreshingCapture={isRefreshingCapture}
-        onStateChange={setOverlayState}
-        onGuidanceFixtureChange={setGuidanceFixture}
-        onRefreshCapture={refreshCaptureMetadata}
+        onRefreshCapture={() => {
+          emitTo("overlay", "touchpilot://overlay-command", {
+            type: "refresh-capture",
+          } satisfies OverlayCommand).catch(() => undefined);
+        }}
+        onPauseToggle={() => {
+          emitTo("overlay", "touchpilot://overlay-command", {
+            type: "toggle-pause",
+          } satisfies OverlayCommand).catch(() => undefined);
+        }}
+        onClose={() => {
+          overlayWindow.hide().catch(() => undefined);
+        }}
       />
     </main>
   );
+}
+
+function DebugWindowApp() {
+  const [snapshot, setSnapshot] = useState<DebugSnapshot>(() =>
+    createEmptyDebugSnapshot(),
+  );
+  const screenshot = snapshot.screenshotCapture;
+  const guidanceStep = snapshot.guidanceResult?.step ?? null;
+
+  useEffect(() => {
+    let unlistenState: (() => void) | undefined;
+
+    listen<DebugSnapshot>("touchpilot://debug-state", (event) => {
+      setSnapshot(event.payload);
+    })
+      .then((cleanup) => {
+        unlistenState = cleanup;
+      })
+      .catch(() => {
+        unlistenState = undefined;
+      });
+
+    emitTo("overlay", "touchpilot://overlay-command", {
+      type: "request-state",
+    } satisfies OverlayCommand).catch(() => undefined);
+
+    return () => {
+      unlistenState?.();
+    };
+  }, []);
+
+  return (
+    <main className="debug-shell" aria-label="TouchPilot debug window">
+      <section className="debug-window">
+        <header className="debug-window-header">
+          <div>
+            <p>Internal</p>
+            <h1>TouchPilot Debug</h1>
+          </div>
+          <button
+            className="debug-close-button"
+            type="button"
+            onClick={() => {
+              overlayWindow.hide().catch(() => undefined);
+            }}
+          >
+            Close
+          </button>
+        </header>
+
+        <div className="debug-actions">
+          <button
+            type="button"
+            onClick={() => {
+              emitTo("overlay", "touchpilot://overlay-command", {
+                type: "refresh-capture",
+              } satisfies OverlayCommand).catch(() => undefined);
+            }}
+            disabled={snapshot.isRefreshingCapture}
+          >
+            {snapshot.isRefreshingCapture ? "Refreshing" : "Refresh capture"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              emitTo("overlay", "touchpilot://overlay-command", {
+                type: "toggle-pause",
+              } satisfies OverlayCommand).catch(() => undefined);
+            }}
+          >
+            {snapshot.overlayState === "paused" ? "Resume overlay" : "Pause overlay"}
+          </button>
+        </div>
+
+        <div className="debug-window-grid">
+          <section className="debug-section">
+            <h2>Runtime</h2>
+            <dl>
+              <div>
+                <dt>State</dt>
+                <dd>{stateMeta[snapshot.overlayState].label}</dd>
+              </div>
+              <div>
+                <dt>Target</dt>
+                <dd>{snapshot.hasAcceptedGuidance ? "Accepted" : "None"}</dd>
+              </div>
+              <div>
+                <dt>Viewport</dt>
+                <dd>
+                  {snapshot.viewport.width} x {snapshot.viewport.height}
+                </dd>
+              </div>
+              <div>
+                <dt>DPR</dt>
+                <dd>{snapshot.viewport.devicePixelRatio}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="debug-section">
+            <h2>Capture</h2>
+            <dl>
+              <div>
+                <dt>Status</dt>
+                <dd>{snapshot.captureError ?? (screenshot ? "Ready" : "Waiting")}</dd>
+              </div>
+              <div>
+                <dt>Display</dt>
+                <dd>
+                  {snapshot.captureMetadata
+                    ? `${snapshot.captureMetadata.display.width} x ${snapshot.captureMetadata.display.height}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Image</dt>
+                <dd>
+                  {screenshot
+                    ? `${screenshot.imageWidth} x ${screenshot.imageHeight}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Bytes</dt>
+                <dd>{screenshot ? screenshot.byteLength : "None"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="debug-section">
+            <h2>Guidance</h2>
+            <dl>
+              <div>
+                <dt>Request</dt>
+                <dd>{snapshot.guidanceRequest ? "Present" : "None"}</dd>
+              </div>
+              <div>
+                <dt>Risk</dt>
+                <dd>{guidanceStep?.risk ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Confidence</dt>
+                <dd>
+                  {guidanceStep ? `${Math.round(guidanceStep.confidence * 100)}%` : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Validation</dt>
+                <dd>
+                  {snapshot.guidanceIssues.length === 0
+                    ? "No issues"
+                    : `${snapshot.guidanceIssues.length} issue(s)`}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="debug-section">
+            <h2>Calibration</h2>
+            <p>{snapshot.calibration.notes}</p>
+          </section>
+        </div>
+
+        {snapshot.guidanceIssues.length > 0 && (
+          <section className="debug-section debug-section-wide">
+            <h2>Validation Issues</h2>
+            <ul>
+              {snapshot.guidanceIssues.map((issue) => (
+                <li key={`${issue.path}-${issue.message}`}>
+                  <strong>{issue.path}</strong>: {issue.message}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {screenshot && (
+          <figure className="debug-screenshot-preview">
+            <img
+              src={`data:image/${screenshot.format};base64,${screenshot.imageBase64}`}
+              alt="Latest screen capture preview"
+            />
+            <figcaption>Latest capture preview</figcaption>
+          </figure>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function App() {
+  if (currentWindowLabel === "settings") {
+    return <SettingsWindowApp />;
+  }
+
+  if (currentWindowLabel === "debug") {
+    return <DebugWindowApp />;
+  }
+
+  return <OverlayWindowApp />;
 }
 
 export default App;

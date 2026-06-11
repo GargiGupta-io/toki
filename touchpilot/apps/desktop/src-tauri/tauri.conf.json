@@ -12,16 +12,47 @@
   "app": {
     "windows": [
       {
-        "title": "TouchPilot",
-        "width": 1180,
-        "height": 760,
-        "minWidth": 920,
-        "minHeight": 560,
+        "label": "overlay",
+        "title": "TouchPilot Overlay",
+        "width": 1440,
+        "height": 900,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
+        "resizable": false,
+        "shadow": false,
+        "skipTaskbar": true,
+        "fullscreen": true,
+        "focus": false,
+        "focusable": false
+      },
+      {
+        "label": "settings",
+        "title": "TouchPilot",
+        "width": 372,
+        "height": 248,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "shadow": true,
+        "skipTaskbar": true,
+        "visible": false
+      },
+      {
+        "label": "debug",
+        "title": "TouchPilot Debug",
+        "width": 760,
+        "height": 620,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
         "resizable": true,
-        "shadow": false
+        "shadow": true,
+        "skipTaskbar": false,
+        "visible": false
       }
     ],
     "security": {
