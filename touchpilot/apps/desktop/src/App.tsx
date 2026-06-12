@@ -321,13 +321,15 @@ function getPointerShadowPosition(
   pointerY: number,
   viewport: ViewportMetrics,
 ): PointerShadowPosition {
-  const offsetX = 28;
-  const offsetY = 30;
-  const margin = 56;
+  const offsetX = 6;
+  const offsetY = 8;
+  const margin = 8;
+  const shadowWidth = 24;
+  const shadowHeight = 30;
 
   return {
-    x: Math.min(Math.max(pointerX - offsetX, margin), viewport.width - margin),
-    y: Math.min(Math.max(pointerY + offsetY, margin), viewport.height - margin),
+    x: Math.min(Math.max(pointerX + offsetX, margin), viewport.width - shadowWidth - margin),
+    y: Math.min(Math.max(pointerY + offsetY, margin), viewport.height - shadowHeight - margin),
   };
 }
 

@@ -478,21 +478,22 @@ h1 {
   position: absolute;
   right: 26px;
   bottom: 92px;
-  width: 34px;
-  height: 34px;
+  width: 24px;
+  height: 30px;
   display: grid;
   place-items: center;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: #ffffff;
-  cursor: pointer;
+  cursor: default;
   isolation: isolate;
+  pointer-events: none;
   will-change: transform, opacity;
   transition:
-    left 180ms ease,
-    top 180ms ease,
-    transform 180ms ease,
+    left 70ms linear,
+    top 70ms linear,
+    transform 140ms ease,
     opacity 180ms ease;
 }
 
@@ -501,7 +502,7 @@ h1 {
   top: var(--puck-shadow-y);
   right: auto;
   bottom: auto;
-  transform: translate(-14%, -8%);
+  transform: translate(0, 0);
 }
 
 .assistant-puck:focus-visible {
@@ -511,12 +512,12 @@ h1 {
 
 .puck-orbit {
   position: absolute;
-  inset: 0;
+  inset: 2px 0 0 1px;
   border: 0;
   border-radius: 999px;
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.14), transparent 56%);
-  box-shadow: 0 10px 24px rgba(255, 255, 255, 0.08);
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08), transparent 58%);
+  box-shadow: 0 7px 16px rgba(255, 255, 255, 0.045);
   animation: puck-pulse 2.8s ease-in-out infinite;
   will-change: transform, opacity;
   z-index: -1;
@@ -531,39 +532,39 @@ h1 {
 }
 
 .puck-droplet {
-  --droplet-size: 5px;
+  --droplet-size: 3px;
   position: absolute;
   left: 50%;
   top: 50%;
   width: var(--droplet-size);
   height: var(--droplet-size);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 0;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.74), transparent 24%),
-    radial-gradient(circle at 54% 58%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.08));
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.78), transparent 28%),
+    radial-gradient(circle at 54% 58%, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.04));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.24),
-    0 0 10px rgba(255, 255, 255, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 0 6px rgba(255, 255, 255, 0.045);
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.5);
   will-change: transform, opacity;
 }
 
 .puck-droplet-a {
-  --droplet-size: 6px;
+  --droplet-size: 4px;
 }
 
 .puck-droplet-b {
-  --droplet-size: 4px;
+  --droplet-size: 3px;
 }
 
 .puck-droplet-c {
-  --droplet-size: 5px;
+  --droplet-size: 3px;
 }
 
 .puck-droplet-d {
-  --droplet-size: 4px;
+  --droplet-size: 2px;
 }
 
 .assistant-puck[data-motion="shadow"] .puck-orbit {
@@ -577,23 +578,23 @@ h1 {
 }
 
 .assistant-puck[data-motion="shadow"][data-pointer-shadow="active"] .puck-core {
-  opacity: 0.48;
-  transform: scale(0.94);
+  opacity: 0.58;
+  transform: scale(0.9);
 }
 
 .assistant-puck[data-motion="shadow"] .puck-droplet-a {
-  opacity: 0.22;
-  transform: translate(-12px, -8px) scale(0.62);
+  opacity: 0.14;
+  transform: translate(-7px, -5px) scale(0.56);
 }
 
 .assistant-puck[data-motion="shadow"] .puck-droplet-b {
-  opacity: 0.16;
-  transform: translate(10px, 9px) scale(0.56);
+  opacity: 0.1;
+  transform: translate(6px, 6px) scale(0.5);
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet,
 .assistant-puck[data-motion="guiding"] .puck-droplet {
-  opacity: 0.86;
+  opacity: 0.7;
   animation: puck-droplet-orbit 2.2s ease-in-out infinite;
 }
 
@@ -638,35 +639,35 @@ h1 {
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet-a {
-  transform: translate(-18px, -12px) scale(0.8);
+  transform: translate(-10px, -7px) scale(0.74);
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet-b {
-  transform: translate(14px, -14px) scale(0.66);
+  transform: translate(8px, -8px) scale(0.62);
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet-c {
-  transform: translate(16px, 12px) scale(0.72);
+  transform: translate(9px, 8px) scale(0.66);
 }
 
 .assistant-puck[data-motion="thinking"] .puck-droplet-d {
-  transform: translate(-14px, 16px) scale(0.56);
+  transform: translate(-8px, 9px) scale(0.52);
 }
 
 .assistant-puck[data-motion="guiding"] .puck-droplet-a {
-  transform: translate(-20px, -10px) scale(0.78);
+  transform: translate(-11px, -6px) scale(0.72);
 }
 
 .assistant-puck[data-motion="guiding"] .puck-droplet-b {
-  transform: translate(18px, -11px) scale(0.62);
+  transform: translate(10px, -7px) scale(0.58);
 }
 
 .assistant-puck[data-motion="guiding"] .puck-droplet-c {
-  transform: translate(16px, 15px) scale(0.68);
+  transform: translate(9px, 9px) scale(0.62);
 }
 
 .assistant-puck[data-motion="guiding"] .puck-droplet-d {
-  transform: translate(-15px, 16px) scale(0.5);
+  transform: translate(-8px, 9px) scale(0.46);
 }
 
 .assistant-puck[data-motion="guiding"][data-target-droplets="enabled"] .puck-droplet {
@@ -695,16 +696,16 @@ h1 {
 }
 
 .assistant-puck[data-motion="paused"] .puck-droplet {
-  opacity: 0.52;
+  opacity: 0.36;
   animation-play-state: paused;
 }
 
 .assistant-puck[data-motion="paused"] .puck-droplet-a {
-  transform: translate(-16px, -10px) scale(0.68);
+  transform: translate(-9px, -6px) scale(0.62);
 }
 
 .assistant-puck[data-motion="paused"] .puck-droplet-b {
-  transform: translate(13px, -12px) scale(0.56);
+  transform: translate(8px, -7px) scale(0.52);
 }
 
 .assistant-puck[data-motion="error"] .puck-droplet {
@@ -713,23 +714,23 @@ h1 {
     radial-gradient(circle at 54% 58%, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.08));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 0 12px rgba(255, 255, 255, 0.08);
-  opacity: 0.66;
+    0 0 8px rgba(255, 255, 255, 0.055);
+  opacity: 0.48;
 }
 
 .assistant-puck[data-motion="error"] .puck-droplet-a {
-  transform: translate(-16px, -11px) scale(0.68);
+  transform: translate(-9px, -6px) scale(0.62);
 }
 
 .assistant-puck[data-motion="error"] .puck-droplet-b {
-  transform: translate(14px, 12px) scale(0.56);
+  transform: translate(8px, 7px) scale(0.52);
 }
 
 .puck-core {
   position: relative;
   display: grid;
-  width: 18px;
-  height: 24px;
+  width: 14px;
+  height: 21px;
   place-items: center;
   background: transparent;
   transition:
@@ -742,31 +743,31 @@ h1 {
 .puck-shadow-form {
   position: absolute;
   inset: 0;
-  width: 18px;
-  height: 24px;
+  width: 14px;
+  height: 21px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.28));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.24));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.34),
-    0 10px 18px rgba(255, 255, 255, 0.08);
-  clip-path: polygon(10% 0, 92% 49%, 60% 57%, 79% 100%, 50% 100%, 40% 66%, 10% 100%);
-  transform: rotate(-10deg);
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 6px 12px rgba(255, 255, 255, 0.055);
+  clip-path: polygon(9% 0, 94% 48%, 60% 57%, 78% 100%, 50% 100%, 39% 66%, 8% 100%);
+  transform: rotate(-8deg);
   transform-origin: 50% 28%;
 }
 
 .puck-shadow-tail {
   position: absolute;
-  left: 8px;
-  top: 10px;
-  width: 3px;
-  height: 12px;
+  left: 6px;
+  top: 9px;
+  width: 2px;
+  height: 10px;
   border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.1));
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.06);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.08));
+  box-shadow: 0 0 5px rgba(255, 255, 255, 0.035);
   transform: rotate(-34deg);
   transform-origin: top center;
-  opacity: 0.82;
+  opacity: 0.66;
 }
 
 .assistant-puck.is-paused .puck-orbit {
@@ -1089,10 +1090,10 @@ h1 {
   }
 
   .assistant-puck[data-motion="shadow"][data-pointer-shadow="active"] {
-    left: auto;
-    top: auto;
-    right: 32px;
-    bottom: 286px;
+    left: var(--puck-shadow-x);
+    top: var(--puck-shadow-y);
+    right: auto;
+    bottom: auto;
     transform: none;
   }
 
@@ -1104,19 +1105,19 @@ h1 {
   }
 
   .puck-orbit {
-    opacity: 0.72;
+    opacity: 0.38;
     transform: scale(1);
   }
 
   .assistant-puck[data-motion="shadow"] .puck-orbit {
-    opacity: 0.48;
-    transform: scale(0.86);
+    opacity: 0;
+    transform: scale(0.72);
   }
 
   .assistant-puck[data-motion="forming"] .puck-orbit,
   .assistant-puck[data-motion="thinking"] .puck-orbit,
   .assistant-puck[data-motion="guiding"] .puck-orbit {
-    opacity: 0.9;
+    opacity: 0.44;
     transform: scale(1);
   }
 
@@ -1141,26 +1142,26 @@ h1 {
   .assistant-puck[data-motion="thinking"] .puck-droplet-a,
   .assistant-puck[data-motion="guiding"] .puck-droplet-a {
     opacity: 0.62 !important;
-    transform: translate(-31px, -18px) scale(0.7) !important;
+    transform: translate(-11px, -7px) scale(0.68) !important;
   }
 
   .assistant-puck[data-motion="forming"] .puck-droplet-b,
   .assistant-puck[data-motion="thinking"] .puck-droplet-b,
   .assistant-puck[data-motion="guiding"] .puck-droplet-b {
     opacity: 0.42 !important;
-    transform: translate(24px, 18px) scale(0.58) !important;
+    transform: translate(9px, 8px) scale(0.54) !important;
   }
 
   .assistant-puck[data-motion="paused"] .puck-droplet-a,
   .assistant-puck[data-motion="error"] .puck-droplet-a {
     opacity: 0.52 !important;
-    transform: translate(-28px, -18px) scale(0.64) !important;
+    transform: translate(-9px, -6px) scale(0.58) !important;
   }
 
   .assistant-puck[data-motion="paused"] .puck-droplet-b,
   .assistant-puck[data-motion="error"] .puck-droplet-b {
     opacity: 0.36 !important;
-    transform: translate(22px, 18px) scale(0.52) !important;
+    transform: translate(8px, 7px) scale(0.5) !important;
   }
 
   .assistant-puck[data-motion="guiding"][data-target-droplets="enabled"] .puck-droplet {
