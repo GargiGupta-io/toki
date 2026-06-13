@@ -880,27 +880,41 @@ Done when:
 
 ---
 
-## Phase 8: Monochrome Mac Overlay Reset
+## Phase 8: Cursor-First Runtime Reset
 
-Goal: Rebuild the default runtime surface so the app feels monochrome, translucent, restrained, and premium instead of like a debug prototype.
+Goal: Rebuild the runtime so the product is the cursor behavior and target cues, while settings and debug tooling are separated from the default user-facing experience.
 
 Tasks:
 
-1. Remove loud brand-heavy overlay chrome from the default runtime.
-2. Rebuild the guidance surface into a smaller smoke-glass hint panel.
-3. Replace the bright mint/green accent system with a grayscale monochrome palette.
-4. Redesign the puck into a tiny white cursor-shadow presence near the real pointer.
-5. Rework activation so the cursor-shadow separates into droplets before forming the assistant state.
-6. Rework guiding motion so droplets leave the shadow form and become restrained target cues.
-7. Demote debug surfaces so they remain available without dominating the product UI.
-8. Tune spacing, contrast, blur, and motion toward a mac-like interface language.
+1. Add a Clicky-style visual acceptance spec.
+2. Split runtime surfaces into overlay, settings, and debug windows.
+3. Remove TouchPilot-created titlebars, app-name strips, taskbar presence, and blocking behavior.
+4. Make settings a compact tray-style popup that opens intentionally and closes on blur/Escape.
+5. Move capture preview, metadata, schema state, and QA controls into a separate debug window.
+6. Remove permanent panels/cards from the default overlay runtime.
+7. Refine the CSS puck baseline so it is smaller, white, cursor-shadow-like, and follows the cursor.
+8. Extract cursor/puck coordinate geometry for focused QA.
+9. Add Windows runtime QA for overlay existence, monitor bounds, click-through, no titlebar, no taskbar presence, settings chrome, and hit-testing.
+10. Add Windows visual QA for screenshots, forbidden TouchPilot title text, and default panel leakage.
+11. Add faster build scripts for desktop typecheck, web build, low-memory Windows build, and no-bundle release executable checks.
+12. Replace Tauri fullscreen overlay mode with a monitor-sized borderless Windows popup using native styles:
+    - `WS_POPUP`
+    - layered transparency
+    - transparent input
+    - toolwindow/no taskbar
+    - no activate
+    - exact monitor bounds
 
 Done when:
 
-- the default UI reads as monochrome and translucent
-- the puck feels like a cursor-shadow, not a floating badge
-- activation and guiding states feel premium instead of noisy
-- the runtime surface looks product-grade before gesture work starts
+- the default runtime is cursor-first, not panel-first
+- no debug UI is shown in the normal user-facing view
+- the settings surface behaves like a popup, not a permanent app shell
+- the puck and target cues carry the main guidance experience
+- the overlay feels like a desktop assistant layer instead of a prototype dashboard
+- Windows runtime QA passes
+- Windows visual QA passes
+- the monitor-sized popup overlay avoids the fullscreen blue-bar/app-window artifact
 
 ---
 
@@ -1219,7 +1233,7 @@ The correct order:
 5. AI guidance loop with schema validation
 6. Runtime QA and hardening pass
 7. Fluid water puck motion system
-8. Monochrome mac-style overlay reset
+8. Cursor-first runtime reset with Windows monitor-sized popup overlay
 9. Gesture pinch/open palm
 10. Voice
 11. Safety
