@@ -4,22 +4,29 @@ use touchpilot_capture::{
 use tauri::{
     menu::MenuBuilder,
     tray::TrayIconBuilder,
-    Manager,
+    Manager, PhysicalPosition, PhysicalSize, Position, Size,
 };
 
 #[cfg(windows)]
-fn remove_windows_overlay_chrome<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+fn prepare_windows_utility_window<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    passive_overlay: bool,
+) {
     use std::ffi::c_void;
 
     const GWL_STYLE: i32 = -16;
     const GWL_EXSTYLE: i32 = -20;
+    const WS_POPUP: isize = 0x80000000u32 as isize;
     const WS_CAPTION: isize = 0x00C00000;
     const WS_THICKFRAME: isize = 0x00040000;
     const WS_MINIMIZEBOX: isize = 0x00020000;
     const WS_MAXIMIZEBOX: isize = 0x00010000;
     const WS_SYSMENU: isize = 0x00080000;
+    const WS_EX_TRANSPARENT: isize = 0x00000020;
     const WS_EX_APPWINDOW: isize = 0x00040000;
     const WS_EX_TOOLWINDOW: isize = 0x00000080;
+    const WS_EX_LAYERED: isize = 0x00080000;
+    const WS_EX_NOACTIVATE: isize = 0x08000000;
     const SWP_NOSIZE: u32 = 0x0001;
     const SWP_NOMOVE: u32 = 0x0002;
     const SWP_NOZORDER: u32 = 0x0004;
@@ -55,14 +62,14 @@ fn remove_windows_overlay_chrome<R: tauri::Runtime>(window: &tauri::WebviewWindo
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
         let border_styles =
             WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
-        SetWindowLongPtrW(hwnd, GWL_STYLE, style & !border_styles);
+        SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !border_styles) | WS_POPUP);
 
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        SetWindowLongPtrW(
-            hwnd,
-            GWL_EXSTYLE,
-            (ex_style & !WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW,
-        );
+        let mut utility_ex_style = (ex_style & !WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
+        if passive_overlay {
+            utility_ex_style |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+        }
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, utility_ex_style);
 
         SetWindowPos(
             hwnd,
@@ -74,6 +81,30 @@ fn remove_windows_overlay_chrome<R: tauri::Runtime>(window: &tauri::WebviewWindo
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
     }
+}
+
+fn fit_overlay_to_monitor<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+
+    let Some(monitor) = monitor else {
+        return;
+    };
+
+    let position = monitor.position();
+    let size = monitor.size();
+    let _ = window.set_fullscreen(false);
+    let _ = window.set_position(Position::Physical(PhysicalPosition {
+        x: position.x,
+        y: position.y,
+    }));
+    let _ = window.set_size(Size::Physical(PhysicalSize {
+        width: size.width,
+        height: size.height,
+    }));
 }
 
 #[tauri::command]
@@ -94,12 +125,12 @@ pub fn run() {
             if let Some(overlay) = app.get_webview_window("overlay") {
                 let _ = overlay.set_title(" ");
                 let _ = overlay.set_decorations(false);
-                let _ = overlay.set_fullscreen(true);
+                fit_overlay_to_monitor(&overlay);
                 let _ = overlay.set_ignore_cursor_events(true);
                 let _ = overlay.set_focusable(false);
                 let _ = overlay.set_skip_taskbar(true);
                 #[cfg(windows)]
-                remove_windows_overlay_chrome(&overlay);
+                prepare_windows_utility_window(&overlay, true);
             }
 
             if let Some(settings) = app.get_webview_window("settings") {
@@ -109,7 +140,7 @@ pub fn run() {
                 let _ = settings.set_focusable(true);
                 let _ = settings.set_skip_taskbar(true);
                 #[cfg(windows)]
-                remove_windows_overlay_chrome(&settings);
+                prepare_windows_utility_window(&settings, false);
             }
 
             if let Some(debug) = app.get_webview_window("debug") {
