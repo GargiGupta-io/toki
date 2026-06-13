@@ -437,6 +437,33 @@ html {
   text-transform: uppercase;
 }
 
+.debug-camera-preview {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+    rgba(0, 0, 0, 0.22);
+}
+
+.debug-camera-preview video {
+  width: 100%;
+  max-height: 340px;
+  display: block;
+  object-fit: contain;
+  background: #050506;
+}
+
+.debug-camera-preview p {
+  max-width: 260px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.48);
+  text-align: center;
+}
+
 .debug-screenshot-preview {
   margin: 12px 0 0;
   overflow: hidden;

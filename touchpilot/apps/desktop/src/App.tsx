@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
@@ -11,6 +11,8 @@ import {
 } from "@touchpilot/ai";
 import type {
   CameraDeviceSummary,
+  CameraPermissionState,
+  CameraStreamStatus,
   CaptureMetadata,
   CoordinateCalibration,
   GuidanceRequest,
@@ -71,6 +73,12 @@ type OverlayCommand =
   | { type: "set-state"; state: OverlayState }
   | { type: "set-guidance-fixture"; fixture: GuidanceFixture }
   | { type: "set-camera-enabled"; enabled: boolean }
+  | {
+      type: "set-camera-preview-status";
+      status: CameraStreamStatus;
+      permission: CameraPermissionState;
+      error?: string;
+    }
   | { type: "set-gestures-enabled"; enabled: boolean };
 
 const overlayWindow = getCurrentWindow();
@@ -682,8 +690,23 @@ function OverlayWindowApp() {
           camera: {
             ...currentState.camera,
             enabled,
-            status: enabled ? "requesting_permission" : "disabled",
+            status: enabled ? "idle" : "disabled",
             error: undefined,
+          },
+        }));
+        return;
+      }
+
+      if (event.payload.type === "set-camera-preview-status") {
+        const { status, permission, error } = event.payload;
+
+        setGestureRuntime((currentState) => ({
+          ...currentState,
+          camera: {
+            ...currentState.camera,
+            permission,
+            status,
+            error,
           },
         }));
         return;
@@ -854,12 +877,29 @@ function DebugWindowApp() {
     "idle" | "probing" | "ready" | "unsupported" | "error"
   >("idle");
   const [cameraProbeError, setCameraProbeError] = useState<string | null>(null);
+  const [cameraPreviewStatus, setCameraPreviewStatus] =
+    useState<CameraStreamStatus>("idle");
+  const [cameraPreviewError, setCameraPreviewError] = useState<string | null>(null);
+  const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
 
   function sendOverlayCommand(command: OverlayCommand) {
     emitTo("overlay", "touchpilot://overlay-command", command).catch(() => undefined);
+  }
+
+  function reportCameraPreviewStatus(
+    status: CameraStreamStatus,
+    permission: CameraPermissionState,
+    error?: string,
+  ) {
+    sendOverlayCommand({
+      type: "set-camera-preview-status",
+      status,
+      permission,
+      error,
+    });
   }
 
   async function refreshCameraDevices() {
@@ -906,6 +946,79 @@ function DebugWindowApp() {
       unlistenState?.();
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let stream: MediaStream | null = null;
+    const cameraEnabled = snapshot.gestureRuntime.camera.enabled;
+
+    async function startCameraPreview() {
+      if (!cameraEnabled) {
+        setCameraPreviewStatus("disabled");
+        setCameraPreviewError(null);
+        reportCameraPreviewStatus("disabled", "unknown");
+        return;
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        const message = "Camera preview is not available in this WebView.";
+        setCameraPreviewStatus("error");
+        setCameraPreviewError(message);
+        reportCameraPreviewStatus("error", "unsupported", message);
+        return;
+      }
+
+      setCameraPreviewStatus("requesting_permission");
+      setCameraPreviewError(null);
+      reportCameraPreviewStatus("requesting_permission", "prompt");
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        if (cameraPreviewRef.current) {
+          cameraPreviewRef.current.srcObject = stream;
+          await cameraPreviewRef.current.play().catch(() => undefined);
+        }
+
+        setCameraPreviewStatus("active");
+        reportCameraPreviewStatus("active", "granted");
+      } catch (error) {
+        const errorName = error instanceof DOMException ? error.name : "";
+        const message = error instanceof Error ? error.message : String(error);
+        const nextStatus: CameraStreamStatus =
+          errorName === "NotAllowedError" || errorName === "SecurityError"
+            ? "permission_denied"
+            : errorName === "NotFoundError" || errorName === "DevicesNotFoundError"
+              ? "no_camera"
+              : "error";
+        const nextPermission: CameraPermissionState =
+          nextStatus === "permission_denied" ? "denied" : "error";
+
+        setCameraPreviewStatus(nextStatus);
+        setCameraPreviewError(message);
+        reportCameraPreviewStatus(nextStatus, nextPermission, message);
+      }
+    }
+
+    void startCameraPreview();
+
+    return () => {
+      cancelled = true;
+      stream?.getTracks().forEach((track) => track.stop());
+
+      if (cameraPreviewRef.current) {
+        cameraPreviewRef.current.srcObject = null;
+      }
+    };
+  }, [snapshot.gestureRuntime.camera.enabled]);
 
   return (
     <main className="debug-shell" aria-label="TouchPilot debug window">
@@ -1026,6 +1139,31 @@ function DebugWindowApp() {
             ) : (
               <p className="debug-muted">No video devices reported yet.</p>
             )}
+          </section>
+
+          <section className="debug-section debug-section-wide">
+            <h2>Camera Preview</h2>
+            <div className="debug-section-header-row">
+              <span>{cameraPreviewStatus}</span>
+              <span>
+                {snapshot.gestureRuntime.camera.enabled ? "camera enabled" : "camera off"}
+              </span>
+            </div>
+            <div className="debug-camera-preview">
+              {snapshot.gestureRuntime.camera.enabled ? (
+                <video
+                  ref={cameraPreviewRef}
+                  muted
+                  playsInline
+                  aria-label="Debug camera preview"
+                />
+              ) : (
+                <p>Turn on Camera in settings to preview the local stream.</p>
+              )}
+            </div>
+            {cameraPreviewError ? (
+              <p className="debug-muted">{cameraPreviewError}</p>
+            ) : null}
           </section>
 
           <section className="debug-section">
