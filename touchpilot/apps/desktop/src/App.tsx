@@ -724,25 +724,37 @@ function OverlayWindowApp() {
 
       if (event.payload.type === "set-gesture-classification") {
         const { classification } = event.payload;
-        const pinchAction: GestureActionEvent | undefined =
-          classification.label === "pinch" && classification.phase === "recognized"
-            ? {
-                type: "activate_assistant",
-                gesture: "pinch",
-                confidence: classification.confidence,
-                firedAt: new Date().toISOString(),
-                sourceFrameId: classification.sourceFrameId,
-              }
-            : undefined;
+        let gestureAction: GestureActionEvent | undefined;
 
-        if (pinchAction) {
+        if (classification.phase === "recognized" && classification.label === "pinch") {
+          gestureAction = {
+            type: "activate_assistant",
+            gesture: "pinch",
+            confidence: classification.confidence,
+            firedAt: new Date().toISOString(),
+            sourceFrameId: classification.sourceFrameId,
+          };
           setOverlayState("listening");
+        }
+
+        if (
+          classification.phase === "recognized" &&
+          classification.label === "open_palm"
+        ) {
+          gestureAction = {
+            type: "pause_assistant",
+            gesture: "open_palm",
+            confidence: classification.confidence,
+            firedAt: new Date().toISOString(),
+            sourceFrameId: classification.sourceFrameId,
+          };
+          setOverlayState("paused");
         }
 
         setGestureRuntime((currentState) => ({
           ...currentState,
           currentGesture: classification,
-          lastAction: pinchAction ?? currentState.lastAction,
+          lastAction: gestureAction ?? currentState.lastAction,
         }));
         return;
       }
