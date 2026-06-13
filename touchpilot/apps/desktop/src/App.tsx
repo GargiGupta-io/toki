@@ -17,6 +17,7 @@ import type {
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
+  GestureRuntimeState,
   ScreenshotCapture,
   ScreenshotMetadata,
   TargetBox,
@@ -48,6 +49,7 @@ type OverlaySnapshot = {
   overlayState: OverlayState;
   hasAcceptedGuidance: boolean;
   isRefreshingCapture: boolean;
+  gestureRuntime: GestureRuntimeState;
 };
 
 type DebugSnapshot = OverlaySnapshot & {
@@ -67,7 +69,9 @@ type OverlayCommand =
   | { type: "toggle-pause" }
   | { type: "request-state" }
   | { type: "set-state"; state: OverlayState }
-  | { type: "set-guidance-fixture"; fixture: GuidanceFixture };
+  | { type: "set-guidance-fixture"; fixture: GuidanceFixture }
+  | { type: "set-camera-enabled"; enabled: boolean }
+  | { type: "set-gestures-enabled"; enabled: boolean };
 
 const overlayWindow = getCurrentWindow();
 const currentWindowLabel = overlayWindow.label;
@@ -239,18 +243,26 @@ function SettingsPopup({
   overlayState,
   hasAcceptedGuidance,
   isRefreshingCapture,
+  gestureRuntime,
   onRefreshCapture,
   onPauseToggle,
+  onCameraToggle,
+  onGesturesToggle,
   onClose,
 }: {
   overlayState: OverlayState;
   hasAcceptedGuidance: boolean;
   isRefreshingCapture: boolean;
+  gestureRuntime: GestureRuntimeState;
   onRefreshCapture: () => void;
   onPauseToggle: () => void;
+  onCameraToggle: (enabled: boolean) => void;
+  onGesturesToggle: (enabled: boolean) => void;
   onClose: () => void;
 }) {
   const isPaused = overlayState === "paused";
+  const cameraEnabled = gestureRuntime.camera.enabled;
+  const gesturesEnabled = gestureRuntime.enabled;
 
   return (
     <section className="settings-popup" aria-label="TouchPilot settings">
@@ -278,6 +290,36 @@ function SettingsPopup({
 
       <div className="settings-copy">
         <p className="settings-headline">Cursor assistant</p>
+      </div>
+
+      <div className="settings-toggle-list" aria-label="Gesture settings">
+        <label className="settings-toggle-row">
+          <span>
+            <strong>Camera</strong>
+            <small>{cameraEnabled ? "Ready for gesture setup" : "Off"}</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={cameraEnabled}
+            onChange={(event) => {
+              onCameraToggle(event.currentTarget.checked);
+            }}
+          />
+        </label>
+        <label className="settings-toggle-row">
+          <span>
+            <strong>Gestures</strong>
+            <small>{gesturesEnabled ? "Pinch/open palm enabled" : "Disabled"}</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={gesturesEnabled}
+            disabled={!cameraEnabled}
+            onChange={(event) => {
+              onGesturesToggle(event.currentTarget.checked);
+            }}
+          />
+        </label>
       </div>
 
       <div className="settings-actions" aria-label="Settings actions">
@@ -366,6 +408,32 @@ function getScreenshotMetadata(screenshot: ScreenshotCapture): ScreenshotMetadat
   };
 }
 
+function createDefaultGestureRuntimeState(): GestureRuntimeState {
+  return {
+    enabled: false,
+    camera: {
+      enabled: false,
+      permission: "unknown",
+      status: "idle",
+      devices: [],
+    },
+    thresholds: {
+      minDetectionConfidence: 0.6,
+      pinchHoldMs: 180,
+      openPalmHoldMs: 220,
+      cooldownMs: 700,
+      maxHands: 1,
+    },
+    currentGesture: {
+      label: "none",
+      phase: "inactive",
+      confidence: 0,
+      holdMs: 0,
+      cooldownRemainingMs: 0,
+    },
+  };
+}
+
 function createEmptyDebugSnapshot(): DebugSnapshot {
   const viewport = getViewportMetrics();
 
@@ -373,6 +441,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     overlayState: "idle",
     hasAcceptedGuidance: false,
     isRefreshingCapture: false,
+    gestureRuntime: createDefaultGestureRuntimeState(),
     guidanceFixture: "safe",
     captureMetadata: null,
     screenshotCapture: null,
@@ -395,6 +464,9 @@ function OverlayWindowApp() {
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
+  const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
+    createDefaultGestureRuntimeState(),
+  );
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
 
@@ -431,8 +503,9 @@ function OverlayWindowApp() {
       overlayState,
       hasAcceptedGuidance,
       isRefreshingCapture,
+      gestureRuntime,
     }),
-    [overlayState, hasAcceptedGuidance, isRefreshingCapture],
+    [overlayState, hasAcceptedGuidance, isRefreshingCapture, gestureRuntime],
   );
 
   const debugSnapshot = useMemo<DebugSnapshot>(
@@ -599,6 +672,41 @@ function OverlayWindowApp() {
         setGuidanceFixture(event.payload.fixture);
         return;
       }
+
+      if (event.payload.type === "set-camera-enabled") {
+        const enabled = event.payload.enabled;
+
+        setGestureRuntime((currentState) => ({
+          ...currentState,
+          enabled: enabled ? currentState.enabled : false,
+          camera: {
+            ...currentState.camera,
+            enabled,
+            status: enabled ? "requesting_permission" : "disabled",
+            error: undefined,
+          },
+        }));
+        return;
+      }
+
+      if (event.payload.type === "set-gestures-enabled") {
+        const enabled = event.payload.enabled;
+
+        setGestureRuntime((currentState) => ({
+          ...currentState,
+          enabled,
+          currentGesture: enabled
+            ? currentState.currentGesture
+            : {
+                label: "none",
+                phase: "inactive",
+                confidence: 0,
+                holdMs: 0,
+                cooldownRemainingMs: 0,
+              },
+        }));
+        return;
+      }
     })
       .then((cleanup) => {
         unlistenCommand = cleanup;
@@ -637,6 +745,9 @@ function SettingsWindowApp() {
   const [overlayState, setOverlayState] = useState<OverlayState>("idle");
   const [hasAcceptedGuidance, setHasAcceptedGuidance] = useState(false);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
+  const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
+    createDefaultGestureRuntimeState(),
+  );
 
   function hideSettings() {
     overlayWindow.hide().catch(() => undefined);
@@ -649,6 +760,7 @@ function SettingsWindowApp() {
       setOverlayState(event.payload.overlayState);
       setHasAcceptedGuidance(event.payload.hasAcceptedGuidance);
       setIsRefreshingCapture(event.payload.isRefreshingCapture);
+      setGestureRuntime(event.payload.gestureRuntime);
     })
       .then((cleanup) => {
         unlistenState = cleanup;
@@ -702,6 +814,7 @@ function SettingsWindowApp() {
         overlayState={overlayState}
         hasAcceptedGuidance={hasAcceptedGuidance}
         isRefreshingCapture={isRefreshingCapture}
+        gestureRuntime={gestureRuntime}
         onRefreshCapture={() => {
           emitTo("overlay", "touchpilot://overlay-command", {
             type: "refresh-capture",
@@ -710,6 +823,18 @@ function SettingsWindowApp() {
         onPauseToggle={() => {
           emitTo("overlay", "touchpilot://overlay-command", {
             type: "toggle-pause",
+          } satisfies OverlayCommand).catch(() => undefined);
+        }}
+        onCameraToggle={(enabled) => {
+          emitTo("overlay", "touchpilot://overlay-command", {
+            type: "set-camera-enabled",
+            enabled,
+          } satisfies OverlayCommand).catch(() => undefined);
+        }}
+        onGesturesToggle={(enabled) => {
+          emitTo("overlay", "touchpilot://overlay-command", {
+            type: "set-gestures-enabled",
+            enabled,
           } satisfies OverlayCommand).catch(() => undefined);
         }}
         onClose={() => {
@@ -901,6 +1026,30 @@ function DebugWindowApp() {
             ) : (
               <p className="debug-muted">No video devices reported yet.</p>
             )}
+          </section>
+
+          <section className="debug-section">
+            <h2>Gesture Settings</h2>
+            <dl>
+              <div>
+                <dt>Camera</dt>
+                <dd>
+                  {snapshot.gestureRuntime.camera.enabled ? "Enabled" : "Disabled"}
+                </dd>
+              </div>
+              <div>
+                <dt>Gestures</dt>
+                <dd>{snapshot.gestureRuntime.enabled ? "Enabled" : "Disabled"}</dd>
+              </div>
+              <div>
+                <dt>Camera status</dt>
+                <dd>{snapshot.gestureRuntime.camera.status}</dd>
+              </div>
+              <div>
+                <dt>Cooldown</dt>
+                <dd>{snapshot.gestureRuntime.thresholds.cooldownMs}ms</dd>
+              </div>
+            </dl>
           </section>
 
           <section className="debug-section">

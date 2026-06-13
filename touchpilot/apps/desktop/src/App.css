@@ -161,6 +161,45 @@ html {
   font-weight: 600;
 }
 
+.settings-toggle-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-toggle-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.settings-toggle-row span {
+  display: grid;
+  gap: 2px;
+}
+
+.settings-toggle-row strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.72rem;
+}
+
+.settings-toggle-row small {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.65rem;
+}
+
+.settings-toggle-row input {
+  width: 34px;
+  height: 20px;
+  accent-color: rgba(255, 255, 255, 0.86);
+}
+
 .settings-actions {
   display: flex;
   gap: 8px;
