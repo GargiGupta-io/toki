@@ -452,6 +452,10 @@ function createDefaultGestureRuntimeState(): GestureRuntimeState {
   };
 }
 
+function createInactiveGestureClassification(): GestureClassification {
+  return createDefaultGestureRuntimeState().currentGesture;
+}
+
 function createEmptyDebugSnapshot(): DebugSnapshot {
   const viewport = getViewportMetrics();
 
@@ -697,10 +701,14 @@ function OverlayWindowApp() {
         setGestureRuntime((currentState) => ({
           ...currentState,
           enabled: enabled ? currentState.enabled : false,
+          currentGesture: enabled
+            ? currentState.currentGesture
+            : createInactiveGestureClassification(),
           camera: {
             ...currentState.camera,
             enabled,
             status: enabled ? "idle" : "disabled",
+            permission: enabled ? currentState.camera.permission : "unknown",
             error: undefined,
           },
         }));
@@ -712,6 +720,14 @@ function OverlayWindowApp() {
 
         setGestureRuntime((currentState) => ({
           ...currentState,
+          enabled:
+            status === "active" || status === "requesting_permission"
+              ? currentState.enabled
+              : false,
+          currentGesture:
+            status === "active" || status === "requesting_permission"
+              ? currentState.currentGesture
+              : createInactiveGestureClassification(),
           camera: {
             ...currentState.camera,
             permission,
@@ -1036,6 +1052,11 @@ function DebugWindowApp() {
       if (!cameraEnabled) {
         setCameraPreviewStatus("disabled");
         setCameraPreviewError(null);
+        setHandLandmarkFrame(null);
+        setHandLandmarkerStatus("idle");
+        setHandLandmarkerError(null);
+        gestureSmoothingStateRef.current = initialGestureSmoothingState;
+        setSmoothedGesture(createInactiveGestureClassification());
         reportCameraPreviewStatus("disabled", "unknown");
         return;
       }
@@ -1084,6 +1105,11 @@ function DebugWindowApp() {
 
         setCameraPreviewStatus(nextStatus);
         setCameraPreviewError(message);
+        setHandLandmarkFrame(null);
+        setHandLandmarkerStatus("idle");
+        setHandLandmarkerError(null);
+        gestureSmoothingStateRef.current = initialGestureSmoothingState;
+        setSmoothedGesture(createInactiveGestureClassification());
         reportCameraPreviewStatus(nextStatus, nextPermission, message);
       }
     }
@@ -1334,6 +1360,21 @@ function DebugWindowApp() {
                 <p>Turn on Camera in settings to preview the local stream.</p>
               )}
             </div>
+            {cameraPreviewStatus === "permission_denied" ? (
+              <p className="debug-muted">
+                Camera permission is denied. Enable camera access in Windows privacy
+                settings before using gestures.
+              </p>
+            ) : cameraPreviewStatus === "no_camera" ? (
+              <p className="debug-muted">
+                No usable camera was found. TouchPilot remains available through tray and
+                manual controls.
+              </p>
+            ) : cameraPreviewStatus === "disabled" ? (
+              <p className="debug-muted">
+                Camera is off. No camera frames are captured or processed.
+              </p>
+            ) : null}
             {cameraPreviewError ? (
               <p className="debug-muted">{cameraPreviewError}</p>
             ) : null}
@@ -1507,6 +1548,10 @@ function DebugWindowApp() {
               <div>
                 <dt>Camera status</dt>
                 <dd>{snapshot.gestureRuntime.camera.status}</dd>
+              </div>
+              <div>
+                <dt>Permission</dt>
+                <dd>{snapshot.gestureRuntime.camera.permission}</dd>
               </div>
               <div>
                 <dt>Cooldown</dt>
