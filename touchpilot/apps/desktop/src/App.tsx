@@ -10,6 +10,7 @@ import {
   validateGuidanceResult,
 } from "@touchpilot/ai";
 import type {
+  CameraDeviceSummary,
   CaptureMetadata,
   CoordinateCalibration,
   GuidanceRequest,
@@ -20,6 +21,7 @@ import type {
   ScreenshotMetadata,
   TargetBox,
 } from "@touchpilot/shared";
+import { probeCameraDevices } from "./cameraDevices";
 import {
   getPointerShadowPosition,
   getPuckTargetVector,
@@ -722,12 +724,39 @@ function DebugWindowApp() {
   const [snapshot, setSnapshot] = useState<DebugSnapshot>(() =>
     createEmptyDebugSnapshot(),
   );
+  const [cameraDevices, setCameraDevices] = useState<CameraDeviceSummary[]>([]);
+  const [cameraProbeStatus, setCameraProbeStatus] = useState<
+    "idle" | "probing" | "ready" | "unsupported" | "error"
+  >("idle");
+  const [cameraProbeError, setCameraProbeError] = useState<string | null>(null);
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
 
   function sendOverlayCommand(command: OverlayCommand) {
     emitTo("overlay", "touchpilot://overlay-command", command).catch(() => undefined);
+  }
+
+  async function refreshCameraDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setCameraProbeStatus("unsupported");
+      setCameraProbeError("Camera device enumeration is not available.");
+      setCameraDevices([]);
+      return;
+    }
+
+    setCameraProbeStatus("probing");
+    setCameraProbeError(null);
+
+    try {
+      const devices = await probeCameraDevices();
+      setCameraDevices(devices);
+      setCameraProbeStatus("ready");
+    } catch (error) {
+      setCameraDevices([]);
+      setCameraProbeStatus("error");
+      setCameraProbeError(error instanceof Error ? error.message : String(error));
+    }
   }
 
   useEffect(() => {
@@ -746,6 +775,7 @@ function DebugWindowApp() {
     emitTo("overlay", "touchpilot://overlay-command", {
       type: "request-state",
     } satisfies OverlayCommand).catch(() => undefined);
+    refreshCameraDevices();
 
     return () => {
       unlistenState?.();
@@ -837,6 +867,40 @@ function DebugWindowApp() {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="debug-section">
+            <h2>Camera Devices</h2>
+            <div className="debug-section-header-row">
+              <span>{cameraProbeStatus}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  refreshCameraDevices();
+                }}
+                disabled={cameraProbeStatus === "probing"}
+              >
+                {cameraProbeStatus === "probing" ? "Probing" : "Refresh"}
+              </button>
+            </div>
+            {cameraProbeError ? (
+              <p className="debug-muted">{cameraProbeError}</p>
+            ) : null}
+            {cameraDevices.length > 0 ? (
+              <ul className="debug-device-list">
+                {cameraDevices.map((device) => (
+                  <li key={device.id}>
+                    <span>{device.label}</span>
+                    <small>
+                      {device.kind}
+                      {device.isDefault ? " / default" : ""}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="debug-muted">No video devices reported yet.</p>
+            )}
           </section>
 
           <section className="debug-section">

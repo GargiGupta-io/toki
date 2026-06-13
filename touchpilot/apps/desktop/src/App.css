@@ -343,6 +343,61 @@ html {
   padding-left: 18px;
 }
 
+.debug-section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.debug-section-header-row span {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.debug-section-header-row button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  padding: 6px 10px;
+}
+
+.debug-section-header-row button:disabled {
+  opacity: 0.48;
+}
+
+.debug-muted {
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.debug-device-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+}
+
+.debug-device-list li {
+  display: grid;
+  gap: 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 9px 10px;
+}
+
+.debug-device-list span {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.debug-device-list small {
+  color: rgba(255, 255, 255, 0.52);
+  text-transform: uppercase;
+}
+
 .debug-screenshot-preview {
   margin: 12px 0 0;
   overflow: hidden;
