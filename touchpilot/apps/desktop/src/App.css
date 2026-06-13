@@ -92,6 +92,8 @@ html {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  cursor: move;
+  user-select: none;
 }
 
 .settings-popup-brand {
@@ -122,6 +124,7 @@ html {
   font-size: 0.86rem;
   line-height: 1;
   cursor: pointer;
+  user-select: none;
 }
 
 .settings-chip-row {
