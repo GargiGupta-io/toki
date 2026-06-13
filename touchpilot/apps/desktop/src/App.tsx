@@ -19,6 +19,7 @@ import type {
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
+  GestureClassification,
   GestureRuntimeState,
   HandLandmarkFrame,
   ScreenshotCapture,
@@ -27,6 +28,10 @@ import type {
 } from "@touchpilot/shared";
 import { probeCameraDevices } from "./cameraDevices";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
+import {
+  initialGestureSmoothingState,
+  smoothGestureCandidate,
+} from "./gestureSmoothing";
 import { detectHandLandmarksForVideo, getHandLandmarker } from "./handLandmarker";
 import {
   getPointerShadowPosition,
@@ -82,6 +87,7 @@ type OverlayCommand =
       permission: CameraPermissionState;
       error?: string;
     }
+  | { type: "set-gesture-classification"; classification: GestureClassification }
   | { type: "set-gestures-enabled"; enabled: boolean };
 
 const overlayWindow = getCurrentWindow();
@@ -715,6 +721,16 @@ function OverlayWindowApp() {
         return;
       }
 
+      if (event.payload.type === "set-gesture-classification") {
+        const { classification } = event.payload;
+
+        setGestureRuntime((currentState) => ({
+          ...currentState,
+          currentGesture: classification,
+        }));
+        return;
+      }
+
       if (event.payload.type === "set-gestures-enabled") {
         const enabled = event.payload.enabled;
 
@@ -890,8 +906,12 @@ function DebugWindowApp() {
   const [handLandmarkFrame, setHandLandmarkFrame] = useState<HandLandmarkFrame | null>(
     null,
   );
+  const [smoothedGesture, setSmoothedGesture] = useState(
+    createDefaultGestureRuntimeState().currentGesture,
+  );
   const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
   const handFrameIdRef = useRef(0);
+  const gestureSmoothingStateRef = useRef(initialGestureSmoothingState);
   const pinchClassification = useMemo(
     () =>
       classifyPinchGesture(
@@ -908,6 +928,11 @@ function DebugWindowApp() {
       ),
     [handLandmarkFrame, snapshot.gestureRuntime.thresholds],
   );
+  const rawGestureCandidate =
+    openPalmClassification.label !== "none" &&
+    openPalmClassification.confidence >= pinchClassification.confidence
+      ? openPalmClassification
+      : pinchClassification;
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
@@ -1106,6 +1131,39 @@ function DebugWindowApp() {
       window.cancelAnimationFrame(animationFrame);
     };
   }, [cameraPreviewStatus]);
+
+  useEffect(() => {
+    if (!snapshot.gestureRuntime.enabled) {
+      gestureSmoothingStateRef.current = initialGestureSmoothingState;
+      const inactiveGesture = createDefaultGestureRuntimeState().currentGesture;
+      setSmoothedGesture(inactiveGesture);
+      sendOverlayCommand({
+        type: "set-gesture-classification",
+        classification: inactiveGesture,
+      });
+      return;
+    }
+
+    const result = smoothGestureCandidate(
+      gestureSmoothingStateRef.current,
+      rawGestureCandidate,
+      snapshot.gestureRuntime.thresholds,
+      performance.now(),
+    );
+
+    gestureSmoothingStateRef.current = result.state;
+    setSmoothedGesture(result.classification);
+    sendOverlayCommand({
+      type: "set-gesture-classification",
+      classification: result.classification,
+    });
+  }, [
+    rawGestureCandidate.label,
+    rawGestureCandidate.confidence,
+    rawGestureCandidate.sourceFrameId,
+    snapshot.gestureRuntime.enabled,
+    snapshot.gestureRuntime.thresholds,
+  ]);
 
   return (
     <main className="debug-shell" aria-label="TouchPilot debug window">
@@ -1354,6 +1412,32 @@ function DebugWindowApp() {
           </section>
 
           <section className="debug-section">
+            <h2>Smoothed Gesture</h2>
+            <dl>
+              <div>
+                <dt>Label</dt>
+                <dd>{smoothedGesture.label}</dd>
+              </div>
+              <div>
+                <dt>Phase</dt>
+                <dd>{smoothedGesture.phase}</dd>
+              </div>
+              <div>
+                <dt>Hold</dt>
+                <dd>{Math.round(smoothedGesture.holdMs)}ms</dd>
+              </div>
+              <div>
+                <dt>Cooldown</dt>
+                <dd>{Math.round(smoothedGesture.cooldownRemainingMs)}ms</dd>
+              </div>
+              <div>
+                <dt>Confidence</dt>
+                <dd>{smoothedGesture.confidence.toFixed(2)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="debug-section">
             <h2>Gesture Settings</h2>
             <dl>
               <div>
@@ -1373,6 +1457,10 @@ function DebugWindowApp() {
               <div>
                 <dt>Cooldown</dt>
                 <dd>{snapshot.gestureRuntime.thresholds.cooldownMs}ms</dd>
+              </div>
+              <div>
+                <dt>Current gesture</dt>
+                <dd>{snapshot.gestureRuntime.currentGesture.phase}</dd>
               </div>
             </dl>
           </section>
