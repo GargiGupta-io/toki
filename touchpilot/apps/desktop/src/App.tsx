@@ -19,6 +19,7 @@ import type {
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
+  GestureActionEvent,
   GestureClassification,
   GestureRuntimeState,
   HandLandmarkFrame,
@@ -723,10 +724,25 @@ function OverlayWindowApp() {
 
       if (event.payload.type === "set-gesture-classification") {
         const { classification } = event.payload;
+        const pinchAction: GestureActionEvent | undefined =
+          classification.label === "pinch" && classification.phase === "recognized"
+            ? {
+                type: "activate_assistant",
+                gesture: "pinch",
+                confidence: classification.confidence,
+                firedAt: new Date().toISOString(),
+                sourceFrameId: classification.sourceFrameId,
+              }
+            : undefined;
+
+        if (pinchAction) {
+          setOverlayState("listening");
+        }
 
         setGestureRuntime((currentState) => ({
           ...currentState,
           currentGesture: classification,
+          lastAction: pinchAction ?? currentState.lastAction,
         }));
         return;
       }
@@ -1433,6 +1449,32 @@ function DebugWindowApp() {
               <div>
                 <dt>Confidence</dt>
                 <dd>{smoothedGesture.confidence.toFixed(2)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="debug-section">
+            <h2>Gesture Action</h2>
+            <dl>
+              <div>
+                <dt>Last action</dt>
+                <dd>{snapshot.gestureRuntime.lastAction?.type ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Gesture</dt>
+                <dd>{snapshot.gestureRuntime.lastAction?.gesture ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Confidence</dt>
+                <dd>
+                  {snapshot.gestureRuntime.lastAction
+                    ? snapshot.gestureRuntime.lastAction.confidence.toFixed(2)
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Fired</dt>
+                <dd>{snapshot.gestureRuntime.lastAction?.firedAt ?? "None"}</dd>
               </div>
             </dl>
           </section>
