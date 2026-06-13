@@ -14,6 +14,7 @@
     "rust:check": "cargo check --workspace",
     "rust:fmt": "cargo fmt --all",
     "desktop:dev": "npm --workspace @touchpilot/desktop run tauri dev",
-    "desktop:build": "npm --workspace @touchpilot/desktop run tauri build"
+    "desktop:build": "npm --workspace @touchpilot/desktop run tauri build",
+    "qa:windows:runtime": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-runtime-qa.ps1"
   }
 }
