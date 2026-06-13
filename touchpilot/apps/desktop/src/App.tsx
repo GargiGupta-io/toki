@@ -266,6 +266,7 @@ function SettingsPopup({
   onPauseToggle,
   onCameraToggle,
   onGesturesToggle,
+  onStartDrag,
   onClose,
 }: {
   overlayState: OverlayState;
@@ -276,6 +277,7 @@ function SettingsPopup({
   onPauseToggle: () => void;
   onCameraToggle: (enabled: boolean) => void;
   onGesturesToggle: (enabled: boolean) => void;
+  onStartDrag: () => void;
   onClose: () => void;
 }) {
   const isPaused = overlayState === "paused";
@@ -284,7 +286,14 @@ function SettingsPopup({
 
   return (
     <section className="settings-popup" aria-label="TouchPilot settings">
-      <div className="settings-popup-header">
+      <div
+        className="settings-popup-header"
+        onMouseDown={(event) => {
+          if (event.button === 0) {
+            onStartDrag();
+          }
+        }}
+      >
         <div>
           <p className="settings-popup-brand">TouchPilot</p>
           <h2>{isPaused ? "Paused" : "Active"}</h2>
@@ -292,7 +301,14 @@ function SettingsPopup({
         <button
           className="settings-close-button"
           type="button"
-          onClick={onClose}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+          }}
           aria-label="Close settings"
         >
           x
@@ -839,6 +855,10 @@ function SettingsWindowApp() {
     overlayWindow.hide().catch(() => undefined);
   }
 
+  function startSettingsDrag() {
+    overlayWindow.startDragging().catch(() => undefined);
+  }
+
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
 
@@ -923,6 +943,7 @@ function SettingsWindowApp() {
             enabled,
           } satisfies OverlayCommand).catch(() => undefined);
         }}
+        onStartDrag={startSettingsDrag}
         onClose={() => {
           hideSettings();
         }}
