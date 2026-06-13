@@ -84,14 +84,14 @@ function Get-WindowTitle([IntPtr]$Handle) {
     return ""
   }
 
-  $builder = [StringBuilder]::new($length + 1)
+  $builder = [System.Text.StringBuilder]::new($length + 1)
   [void][TouchPilotWindowProbe]::GetWindowTextW($Handle, $builder, $builder.Capacity)
   return $builder.ToString()
 }
 
 function Get-WindowInfo([IntPtr]$Handle) {
-  $pid = 0
-  [void][TouchPilotWindowProbe]::GetWindowThreadProcessId($Handle, [ref]$pid)
+  $windowProcessId = 0
+  [void][TouchPilotWindowProbe]::GetWindowThreadProcessId($Handle, [ref]$windowProcessId)
 
   $rect = [TouchPilotWindowProbe+Rect]::new()
   [void][TouchPilotWindowProbe]::GetWindowRect($Handle, [ref]$rect)
@@ -104,7 +104,7 @@ function Get-WindowInfo([IntPtr]$Handle) {
   [pscustomobject]@{
     Handle = $Handle
     HandleHex = "0x{0:X}" -f $Handle.ToInt64()
-    ProcessId = [int]$pid
+    ProcessId = [int]$windowProcessId
     Title = Get-WindowTitle $Handle
     Visible = [TouchPilotWindowProbe]::IsWindowVisible($Handle)
     Left = $rect.Left
@@ -131,9 +131,9 @@ $windows = New-Object System.Collections.Generic.List[object]
 $callback = [TouchPilotWindowProbe+EnumWindowsProc]{
   param([IntPtr]$hWnd, [IntPtr]$extraData)
 
-  $pid = 0
-  [void][TouchPilotWindowProbe]::GetWindowThreadProcessId($hWnd, [ref]$pid)
-  if ($targetPids -contains [int]$pid) {
+  $windowProcessId = 0
+  [void][TouchPilotWindowProbe]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId)
+  if ($targetPids -contains [int]$windowProcessId) {
     $windows.Add((Get-WindowInfo $hWnd))
   }
 
@@ -149,7 +149,14 @@ if ($windows.Count -eq 0) {
 
 $overlay = $windows | Sort-Object Area -Descending | Select-Object -First 1
 $settings = $windows |
-  Where-Object { $_.Handle -ne $overlay.Handle -and $_.Width -le 520 -and $_.Height -le 420 } |
+  Where-Object {
+    $_.Handle -ne $overlay.Handle -and
+    $_.Width -gt 0 -and
+    $_.Height -gt 0 -and
+    $_.Width -le 520 -and
+    $_.Height -le 420 -and
+    $_.Title -ne "MSCTFIME UI"
+  } |
   Sort-Object Area |
   Select-Object -First 1
 

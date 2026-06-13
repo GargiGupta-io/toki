@@ -61,14 +61,14 @@ function Get-WindowTitle([IntPtr]$Handle) {
     return ""
   }
 
-  $builder = [StringBuilder]::new($length + 1)
+  $builder = [System.Text.StringBuilder]::new($length + 1)
   [void][TouchPilotVisualProbe]::GetWindowTextW($Handle, $builder, $builder.Capacity)
   return $builder.ToString()
 }
 
 function Get-WindowInfo([IntPtr]$Handle) {
-  $pid = 0
-  [void][TouchPilotVisualProbe]::GetWindowThreadProcessId($Handle, [ref]$pid)
+  $windowProcessId = 0
+  [void][TouchPilotVisualProbe]::GetWindowThreadProcessId($Handle, [ref]$windowProcessId)
 
   $rect = [TouchPilotVisualProbe+Rect]::new()
   [void][TouchPilotVisualProbe]::GetWindowRect($Handle, [ref]$rect)
@@ -78,7 +78,7 @@ function Get-WindowInfo([IntPtr]$Handle) {
   [pscustomobject]@{
     Handle = $Handle
     HandleHex = "0x{0:X}" -f $Handle.ToInt64()
-    ProcessId = [int]$pid
+    ProcessId = [int]$windowProcessId
     Title = Get-WindowTitle $Handle
     Visible = [TouchPilotVisualProbe]::IsWindowVisible($Handle)
     Left = $rect.Left
@@ -102,9 +102,9 @@ $windows = New-Object System.Collections.Generic.List[object]
 $callback = [TouchPilotVisualProbe+EnumWindowsProc]{
   param([IntPtr]$hWnd, [IntPtr]$extraData)
 
-  $pid = 0
-  [void][TouchPilotVisualProbe]::GetWindowThreadProcessId($hWnd, [ref]$pid)
-  if ($targetPids -contains [int]$pid) {
+  $windowProcessId = 0
+  [void][TouchPilotVisualProbe]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId)
+  if ($targetPids -contains [int]$windowProcessId) {
     $windows.Add((Get-WindowInfo $hWnd))
   }
 
@@ -124,13 +124,18 @@ $visiblePanels = @(
     Where-Object {
       $_.Visible -and
       $_.Handle -ne $overlay.Handle -and
+      $_.Title -ne "MSCTFIME UI" -and
       $_.Width -gt 160 -and
       $_.Height -gt 120
     }
 )
 $visibleTitles = @(
   $windows |
-    Where-Object { $_.Visible -and -not [string]::IsNullOrWhiteSpace($_.Title) }
+    Where-Object {
+      $_.Visible -and
+      $_.Title -ne "MSCTFIME UI" -and
+      -not [string]::IsNullOrWhiteSpace($_.Title)
+    }
 )
 
 $primary = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
