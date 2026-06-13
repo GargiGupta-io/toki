@@ -674,3 +674,319 @@ The user should experience TouchPilot as a cursor assistant, not as a camera app
 ---
 
 *Generated: 2026-06-13 | Project: TouchPilot | Phase: 9 Gesture MVP*
+
+---
+
+## Updates
+
+### 2026-06-14 - Phase 9 implementation completed
+
+Phase 9 moved from decision/design into working code.
+
+The final implementation followed the planned architecture:
+
+```text
+settings toggle
+  -> debug camera preview
+  -> MediaPipe hand landmarks
+  -> raw pinch/open-palm classifiers
+  -> smoothing and cooldown
+  -> gesture action event
+  -> overlay state
+```
+
+Plain English:
+
+TouchPilot now has a local gesture path. The user can enable camera/gestures, the debug window can show whether the camera and hand detector are working, and stable gestures can change the assistant state.
+
+What changed from the original planning doc:
+
+- the camera preview was kept strictly debug-only
+- camera device probing was added before real stream use
+- the Surface IR/Windows Hello hardware is treated as probe-only, not a dependency
+- pinch activation now maps to `listening`
+- open palm now maps to `paused`
+- gesture smoothing is its own helper instead of being buried inside the React component
+- camera failure states now shut gesture recognition down safely
+
+#### Files That Carry The Gesture System
+
+The main Phase 9 implementation lives in:
+
+- `touchpilot/packages/shared/src/index.ts`
+- `touchpilot/apps/desktop/src/cameraDevices.ts`
+- `touchpilot/apps/desktop/src/handLandmarker.ts`
+- `touchpilot/apps/desktop/src/gestureClassifier.ts`
+- `touchpilot/apps/desktop/src/gestureSmoothing.ts`
+- `touchpilot/apps/desktop/src/App.tsx`
+
+#### Shared Contracts
+
+Plain English:
+
+The shared package became the vocabulary for gesture state. Instead of each part of the app inventing its own labels, the camera, debug window, settings window, and overlay now speak the same language.
+
+Important contract groups:
+
+- camera permission state
+- camera stream status
+- camera device summaries
+- hand landmark frames
+- gesture labels
+- gesture phases
+- gesture thresholds
+- gesture classification state
+- gesture action events
+- full gesture runtime state
+
+The key idea is separation:
+
+```text
+raw detection data
+  !=
+smoothed gesture state
+  !=
+final assistant action
+```
+
+That separation matters because a hand can briefly look like a pinch without meaning "activate the assistant." The app should not fire an action until the gesture has passed smoothing.
+
+#### Camera Device Probe
+
+Plain English:
+
+Before asking for the camera, TouchPilot can inspect what video devices Windows exposes. This helps us see whether a machine reports a normal camera, virtual camera, IR-like camera, or depth-like camera.
+
+The helper classifies labels into:
+
+- `rgb`
+- `ir`
+- `depth`
+- `virtual`
+- `unknown`
+
+This is intentionally lightweight. It does not prove an IR/depth stream is usable. It only prevents us from pretending all camera hardware is the same.
+
+The Surface lesson remains:
+
+Windows may expose `Microsoft IR Camera Front` or Windows Hello-related devices, but that does not guarantee normal app access to an IR/depth stream.
+
+#### Debug Camera Preview
+
+Plain English:
+
+The camera preview appears only in the debug window. It does not appear in the normal overlay.
+
+That preserves the Phase 8 product rule:
+
+```text
+normal runtime = cursor assistant
+debug runtime = internal camera/vision tooling
+```
+
+The debug preview:
+
+- requests `getUserMedia` only after Camera is enabled
+- shows the local camera stream only in debug
+- reports permission/status back into the shared runtime state
+- stops tracks when disabled or unmounted
+
+That last point matters. Camera privacy is not only about asking permission. It also means turning the stream off when the user disables it.
+
+#### MediaPipe Hand Landmarker
+
+Plain English:
+
+MediaPipe is the part that looks at the camera image and finds the hand points.
+
+The helper uses:
+
+- `FilesetResolver`
+- `HandLandmarker`
+- `detectForVideo`
+
+The output is converted into a project-specific `HandLandmarkFrame`:
+
+```text
+frame id
+captured time
+handedness
+confidence
+21 landmark points
+```
+
+This lets the rest of the app avoid depending directly on MediaPipe's raw result shape.
+
+Important risk:
+
+The current prototype loads MediaPipe WASM/model assets from remote URLs. That was acceptable for the MVP, but production needs local packaged assets or a clear offline fallback.
+
+#### Pinch Classifier
+
+Plain English:
+
+Pinch detection checks whether the thumb tip and index fingertip are close together.
+
+The implementation does not use raw pixel distance. It normalizes by palm size:
+
+```text
+distance(thumb_tip, index_tip) / distance(wrist, middle_mcp)
+```
+
+That is better because a hand close to the camera looks bigger than a hand far away. Normalization makes the threshold less dependent on distance.
+
+Current behavior:
+
+- below threshold = pinch candidate
+- above threshold = no pinch
+- confidence comes from the current hand detection
+- no action fires directly from raw pinch
+
+#### Open Palm Classifier
+
+Plain English:
+
+Open palm detection checks whether the fingers look extended and spread apart.
+
+The classifier uses:
+
+- index/middle/ring/pinky extension
+- fingertip spread
+- palm-size normalization
+
+Current behavior:
+
+- enough extended fingers + enough spread = open-palm candidate
+- otherwise = none
+- no action fires directly from raw open palm
+
+This is intentionally simple. It is good enough for MVP, but will need real threshold tuning in different lighting and camera angles.
+
+#### Gesture Smoothing
+
+Plain English:
+
+Smoothing is the safety layer between "this frame looks like a gesture" and "the assistant should react."
+
+The smoother tracks:
+
+- current active label
+- when the hold started
+- cooldown end time
+- last recognized time
+
+It emits phases:
+
+- `inactive`
+- `holding`
+- `recognized`
+- `cooldown`
+
+Why this matters:
+
+Without smoothing, one noisy frame could activate the assistant. Without cooldown, one held pinch could fire repeatedly.
+
+The key product behavior is:
+
+```text
+gesture candidate appears
+  -> stays stable for hold duration
+  -> becomes recognized
+  -> fires once
+  -> enters cooldown
+```
+
+#### Gesture Action Wiring
+
+Plain English:
+
+Once a gesture is recognized, it becomes an assistant action.
+
+Current mappings:
+
+| Recognized gesture | Action | Overlay state |
+|---|---|---|
+| `pinch` | `activate_assistant` | `listening` |
+| `open_palm` | `pause_assistant` | `paused` |
+
+This is intentionally minimal. Voice mode does not exist yet, so "listening" is the activation state for now.
+
+The debug window records the last gesture action:
+
+- action type
+- gesture
+- confidence
+- fired timestamp
+
+That makes it possible to verify gesture firing before Phase 10 voice work exists.
+
+#### Camera Failure Handling
+
+Plain English:
+
+If the camera is unavailable, TouchPilot should keep working without gestures.
+
+Step 9.12 hardened:
+
+- camera off clears landmarks
+- camera off clears smoothed gesture state
+- permission denied disables gestures
+- no camera disables gestures
+- preview errors reset gesture recognition safely
+- debug messages explain what happened
+
+This prevents a privacy/control bug where the UI says camera is off but gesture state continues to update.
+
+#### Checks That Passed
+
+Phase 9 Step 9.14 recorded these checks:
+
+```powershell
+npm --workspace @touchpilot/desktop run typecheck
+cargo check --workspace
+npm --workspace @touchpilot/desktop run build
+```
+
+The desktop production build now includes the gesture code and MediaPipe dependency.
+
+#### Runtime QA Still Needed By Hand
+
+Compile/build passing does not prove camera behavior on every machine.
+
+Manual runtime QA still needs to verify:
+
+- camera permission prompt appears only after enabling Camera
+- debug preview shows the local stream
+- hand landmarks update when a hand is visible
+- pinch reaches recognized after hold
+- pinch moves overlay to listening
+- open palm reaches recognized after hold
+- open palm moves overlay to paused
+- cooldown prevents repeated firing
+- camera-off clears stream/landmarks/gesture state
+- permission denied/no camera remain safe fallback states
+
+The checklist lives at:
+
+```text
+touchpilot/docs/phase-9-gesture-runtime-qa.md
+```
+
+#### Final Phase 9 Lesson
+
+The important design win was keeping gesture work split into layers:
+
+```text
+camera stream
+  -> landmarks
+  -> raw classifier
+  -> smoother
+  -> action event
+  -> overlay state
+```
+
+That makes the system easier to debug and safer to evolve.
+
+The most important product rule remained unchanged:
+
+TouchPilot should never feel like a camera app. Gesture detection is an invisible input layer for a cursor-first assistant.
