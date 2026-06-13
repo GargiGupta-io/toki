@@ -19,12 +19,14 @@ import type {
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
+  HandLandmarkFrame,
   GestureRuntimeState,
   ScreenshotCapture,
   ScreenshotMetadata,
   TargetBox,
 } from "@touchpilot/shared";
 import { probeCameraDevices } from "./cameraDevices";
+import { detectHandLandmarksForVideo, getHandLandmarker } from "./handLandmarker";
 import {
   getPointerShadowPosition,
   getPuckTargetVector,
@@ -880,7 +882,15 @@ function DebugWindowApp() {
   const [cameraPreviewStatus, setCameraPreviewStatus] =
     useState<CameraStreamStatus>("idle");
   const [cameraPreviewError, setCameraPreviewError] = useState<string | null>(null);
+  const [handLandmarkerStatus, setHandLandmarkerStatus] = useState<
+    "idle" | "loading" | "running" | "no_hand" | "error"
+  >("idle");
+  const [handLandmarkerError, setHandLandmarkerError] = useState<string | null>(null);
+  const [handLandmarkFrame, setHandLandmarkFrame] = useState<HandLandmarkFrame | null>(
+    null,
+  );
   const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const handFrameIdRef = useRef(0);
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
@@ -1019,6 +1029,66 @@ function DebugWindowApp() {
       }
     };
   }, [snapshot.gestureRuntime.camera.enabled]);
+
+  useEffect(() => {
+    if (cameraPreviewStatus !== "active") {
+      setHandLandmarkerStatus(cameraPreviewStatus === "disabled" ? "idle" : "loading");
+      setHandLandmarkFrame(null);
+      return;
+    }
+
+    let cancelled = false;
+    let animationFrame = 0;
+
+    async function runHandLandmarker() {
+      setHandLandmarkerStatus("loading");
+      setHandLandmarkerError(null);
+
+      try {
+        const landmarker = await getHandLandmarker();
+
+        function detectFrame() {
+          if (cancelled) {
+            return;
+          }
+
+          const video = cameraPreviewRef.current;
+
+          if (video) {
+            const frame = detectHandLandmarksForVideo(
+              landmarker,
+              video,
+              handFrameIdRef.current + 1,
+            );
+            handFrameIdRef.current += 1;
+
+            if (frame) {
+              setHandLandmarkFrame(frame);
+              setHandLandmarkerStatus("running");
+            } else {
+              setHandLandmarkerStatus("no_hand");
+            }
+          }
+
+          animationFrame = window.requestAnimationFrame(detectFrame);
+        }
+
+        detectFrame();
+      } catch (error) {
+        if (!cancelled) {
+          setHandLandmarkerStatus("error");
+          setHandLandmarkerError(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    void runHandLandmarker();
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [cameraPreviewStatus]);
 
   return (
     <main className="debug-shell" aria-label="TouchPilot debug window">
@@ -1163,6 +1233,39 @@ function DebugWindowApp() {
             </div>
             {cameraPreviewError ? (
               <p className="debug-muted">{cameraPreviewError}</p>
+            ) : null}
+          </section>
+
+          <section className="debug-section">
+            <h2>Hand Landmarks</h2>
+            <dl>
+              <div>
+                <dt>Status</dt>
+                <dd>{handLandmarkerStatus}</dd>
+              </div>
+              <div>
+                <dt>Frame</dt>
+                <dd>{handLandmarkFrame?.frameId ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Hand</dt>
+                <dd>{handLandmarkFrame?.handedness ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Confidence</dt>
+                <dd>
+                  {handLandmarkFrame
+                    ? handLandmarkFrame.confidence.toFixed(2)
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Landmarks</dt>
+                <dd>{handLandmarkFrame?.landmarks.length ?? 0}</dd>
+              </div>
+            </dl>
+            {handLandmarkerError ? (
+              <p className="debug-muted">{handLandmarkerError}</p>
             ) : null}
           </section>
 
