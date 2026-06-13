@@ -10,11 +10,16 @@
   "scripts": {
     "build": "npm run desktop:build",
     "check": "npm run typecheck && npm run rust:check",
+    "check:fast": "npm run desktop:typecheck && npm run rust:check",
     "typecheck": "npm --workspace @touchpilot/desktop run typecheck && npm --workspace @touchpilot/shared run typecheck && npm --workspace @touchpilot/ai run typecheck && npm --workspace @touchpilot/ui run typecheck && npm --workspace @touchpilot/evals run typecheck && npm --workspace @touchpilot/design run typecheck",
+    "desktop:typecheck": "npm --workspace @touchpilot/desktop run typecheck",
+    "desktop:web:build": "npm --workspace @touchpilot/desktop run build",
     "rust:check": "cargo check --workspace",
     "rust:fmt": "cargo fmt --all",
     "desktop:dev": "npm --workspace @touchpilot/desktop run tauri dev",
     "desktop:build": "npm --workspace @touchpilot/desktop run tauri build",
+    "desktop:build:windows": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-tauri-build.ps1",
+    "desktop:release:exe": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-tauri-build.ps1 -NoBundle",
     "qa:windows:runtime": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-runtime-qa.ps1",
     "qa:windows:visual": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-visual-qa.ps1"
   }
