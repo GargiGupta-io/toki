@@ -20,28 +20,20 @@ import type {
   ScreenshotMetadata,
   TargetBox,
 } from "@touchpilot/shared";
+import {
+  getPointerShadowPosition,
+  getPuckTargetVector,
+} from "./overlayGeometry";
+import type {
+  PointerShadowPosition,
+  PuckTargetVector,
+  ViewportMetrics,
+} from "./overlayGeometry";
 import { getPuckMotionModel } from "./puckMotion";
 import type { OverlayState, PuckMotionModel } from "./puckMotion";
 import "./App.css";
 
 type GuidanceFixture = "safe" | "risky" | "invalid";
-
-type ViewportMetrics = {
-  width: number;
-  height: number;
-  devicePixelRatio: number;
-  updatedAt: string;
-};
-
-type PointerShadowPosition = {
-  x: number;
-  y: number;
-};
-
-type PuckTargetVector = {
-  x: number;
-  y: number;
-};
 
 type OverlayStateMeta = {
   label: string;
@@ -313,36 +305,6 @@ function getViewportMetrics(): ViewportMetrics {
     height: window.innerHeight,
     devicePixelRatio: window.devicePixelRatio,
     updatedAt: new Date().toISOString(),
-  };
-}
-
-function getPointerShadowPosition(
-  pointerX: number,
-  pointerY: number,
-  viewport: ViewportMetrics,
-): PointerShadowPosition {
-  const offsetX = 6;
-  const offsetY = 8;
-  const margin = 8;
-  const shadowWidth = 24;
-  const shadowHeight = 30;
-
-  return {
-    x: Math.min(Math.max(pointerX + offsetX, margin), viewport.width - shadowWidth - margin),
-    y: Math.min(Math.max(pointerY + offsetY, margin), viewport.height - shadowHeight - margin),
-  };
-}
-
-function getPuckTargetVector(
-  target: TargetBox,
-  viewport: ViewportMetrics,
-): PuckTargetVector {
-  const puckCenterX = viewport.width - 80;
-  const puckCenterY = viewport.height - 140;
-
-  return {
-    x: target.x - puckCenterX,
-    y: target.y - puckCenterY,
   };
 }
 
