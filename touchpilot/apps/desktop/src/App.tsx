@@ -19,13 +19,14 @@ import type {
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
-  HandLandmarkFrame,
   GestureRuntimeState,
+  HandLandmarkFrame,
   ScreenshotCapture,
   ScreenshotMetadata,
   TargetBox,
 } from "@touchpilot/shared";
 import { probeCameraDevices } from "./cameraDevices";
+import { classifyPinchGesture } from "./gestureClassifier";
 import { detectHandLandmarksForVideo, getHandLandmarker } from "./handLandmarker";
 import {
   getPointerShadowPosition,
@@ -891,6 +892,14 @@ function DebugWindowApp() {
   );
   const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
   const handFrameIdRef = useRef(0);
+  const pinchClassification = useMemo(
+    () =>
+      classifyPinchGesture(
+        handLandmarkFrame,
+        snapshot.gestureRuntime.thresholds,
+      ),
+    [handLandmarkFrame, snapshot.gestureRuntime.thresholds],
+  );
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
@@ -1267,6 +1276,36 @@ function DebugWindowApp() {
             {handLandmarkerError ? (
               <p className="debug-muted">{handLandmarkerError}</p>
             ) : null}
+          </section>
+
+          <section className="debug-section">
+            <h2>Pinch Classifier</h2>
+            <dl>
+              <div>
+                <dt>Label</dt>
+                <dd>{pinchClassification.label}</dd>
+              </div>
+              <div>
+                <dt>Phase</dt>
+                <dd>{pinchClassification.phase}</dd>
+              </div>
+              <div>
+                <dt>Distance</dt>
+                <dd>
+                  {pinchClassification.normalizedDistance == null
+                    ? "None"
+                    : pinchClassification.normalizedDistance.toFixed(3)}
+                </dd>
+              </div>
+              <div>
+                <dt>Threshold</dt>
+                <dd>{pinchClassification.pinchThreshold.toFixed(3)}</dd>
+              </div>
+              <div>
+                <dt>Confidence</dt>
+                <dd>{pinchClassification.confidence.toFixed(2)}</dd>
+              </div>
+            </dl>
           </section>
 
           <section className="debug-section">
