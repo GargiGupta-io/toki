@@ -64,26 +64,26 @@ html {
 
 .settings-popup {
   position: absolute;
-  top: 18px;
+  top: 14px;
   left: 50%;
-  width: min(312px, calc(100vw - 32px));
-  padding: 12px;
+  width: min(360px, calc(100vw - 28px));
+  padding: 18px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 18px;
+  border-radius: 14px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
-    rgba(17, 18, 22, 0.78);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015)),
+    rgba(9, 10, 12, 0.88);
   box-shadow:
-    0 22px 60px rgba(0, 0, 0, 0.26),
+    0 24px 70px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(24px);
+  backdrop-filter: blur(28px);
   transform: translateX(-50%);
   pointer-events: auto;
 }
 
 .settings-shell .settings-popup {
   position: static;
-  width: min(312px, 100%);
+  width: min(360px, 100%);
   transform: none;
 }
 
@@ -91,143 +91,156 @@ html {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   cursor: move;
   user-select: none;
 }
 
-.settings-popup-brand {
-  margin: 0 0 2px;
-  color: rgba(255, 255, 255, 0.48);
-  font-size: 0.66rem;
+.settings-title-group,
+.settings-window-actions {
+  display: flex;
+  align-items: center;
+}
+
+.settings-title-group {
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-status-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #39e6ad;
+  box-shadow: 0 0 18px rgba(57, 230, 173, 0.5);
+}
+
+.settings-status-dot-muted {
+  background: rgba(255, 255, 255, 0.36);
+  box-shadow: none;
+}
+
+.settings-window-actions {
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.settings-state-label {
+  font-size: 0.94rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .settings-popup h2 {
   margin: 0;
   color: rgba(255, 255, 255, 0.96);
-  font-size: 0.98rem;
-  font-weight: 600;
+  font-size: 1.08rem;
+  font-weight: 700;
   line-height: 1.1;
 }
 
 .settings-close-button {
-  width: 26px;
-  height: 26px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.54);
+  width: auto;
+  height: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.46);
   font: inherit;
-  font-size: 0.86rem;
+  font-size: 1.15rem;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
   user-select: none;
 }
 
-.settings-chip-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
+.settings-separator {
+  height: 1px;
+  margin: 18px 0 16px;
+  background: rgba(255, 255, 255, 0.16);
 }
 
-.settings-chip {
-  min-height: 24px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  padding: 0 10px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.settings-chip-muted {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.54);
-}
-
-.settings-copy {
-  margin-top: 10px;
-}
-
-.settings-headline {
+.settings-instruction {
   margin: 0;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 0.82rem;
-  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
-.settings-toggle-list {
+.settings-menu {
   display: grid;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 14px;
+  margin-top: 18px;
 }
 
-.settings-toggle-row {
-  min-height: 42px;
+.settings-menu-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.055);
+  gap: 18px;
+  padding: 0;
+  cursor: pointer;
 }
 
-.settings-toggle-row span {
+.settings-menu-row span {
   display: grid;
-  gap: 2px;
+  gap: 4px;
+  min-width: 0;
 }
 
-.settings-toggle-row strong {
+.settings-menu-row strong {
   color: rgba(255, 255, 255, 0.9);
-  font-size: 0.72rem;
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 
-.settings-toggle-row small {
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 0.65rem;
+.settings-menu-row small {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 0.76rem;
+  font-weight: 600;
 }
 
-.settings-toggle-row input {
-  width: 34px;
-  height: 20px;
+.settings-switch {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
   accent-color: rgba(255, 255, 255, 0.86);
 }
 
-.settings-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
+.settings-footnote {
+  min-height: 18px;
+  margin: 18px 0 0;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.74rem;
+  font-weight: 600;
 }
 
-.settings-action-button {
-  min-height: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  padding: 0 12px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.82);
+.settings-footer-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.settings-footer-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.56);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.84rem;
   font-weight: 700;
   cursor: pointer;
 }
 
-.settings-action-button-primary {
-  background: rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.96);
+.settings-footer-button:hover,
+.settings-close-button:hover {
+  color: rgba(255, 255, 255, 0.9);
 }
 
-.settings-action-button:disabled {
+.settings-footer-button:disabled {
   cursor: wait;
   opacity: 0.56;
 }
