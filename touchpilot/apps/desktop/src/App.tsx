@@ -288,51 +288,62 @@ function SettingsPopup({
     <section className="settings-popup" aria-label="TouchPilot settings">
       <div
         className="settings-popup-header"
+        data-tauri-drag-region
         onMouseDown={(event) => {
-          if (event.button === 0) {
+          const target = event.target;
+          if (
+            event.button === 0 &&
+            target instanceof HTMLElement &&
+            !target.closest("button,input,label")
+          ) {
             onStartDrag();
           }
         }}
       >
-        <div>
-          <p className="settings-popup-brand">TouchPilot</p>
-          <h2>{isPaused ? "Paused" : "Active"}</h2>
+        <div className="settings-title-group" data-tauri-drag-region>
+          <span
+            className={`settings-status-dot${
+              isPaused ? " settings-status-dot-muted" : ""
+            }`}
+            aria-hidden="true"
+          />
+          <h2 data-tauri-drag-region>TouchPilot</h2>
         </div>
-        <button
-          className="settings-close-button"
-          type="button"
-          onMouseDown={(event) => {
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onClose();
-          }}
-          aria-label="Close settings"
-        >
-          x
-        </button>
+        <div className="settings-window-actions">
+          <span className="settings-state-label">{isPaused ? "Paused" : "Active"}</span>
+          <button
+            className="settings-close-button"
+            type="button"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onMouseDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onClose();
+            }}
+            aria-label="Close settings"
+          >
+            x
+          </button>
+        </div>
       </div>
 
-      <div className="settings-chip-row" aria-label="Current runtime status">
-        <span className="settings-chip">{stateMeta[overlayState].label}</span>
-        <span className="settings-chip settings-chip-muted">
-          {hasAcceptedGuidance ? "Target locked" : "Waiting"}
-        </span>
-      </div>
+      <div className="settings-separator" />
 
-      <div className="settings-copy">
-        <p className="settings-headline">Cursor assistant</p>
-      </div>
+      <p className="settings-instruction">Pinch to activate. Open palm to pause.</p>
 
-      <div className="settings-toggle-list" aria-label="Gesture settings">
-        <label className="settings-toggle-row">
+      <div className="settings-menu" aria-label="Gesture settings">
+        <label className="settings-menu-row">
           <span>
             <strong>Camera</strong>
-            <small>{cameraEnabled ? "Ready for gesture setup" : "Off"}</small>
+            <small>{cameraEnabled ? "Ready" : "Off"}</small>
           </span>
           <input
+            className="settings-switch"
             type="checkbox"
             checked={cameraEnabled}
             onChange={(event) => {
@@ -340,12 +351,13 @@ function SettingsPopup({
             }}
           />
         </label>
-        <label className="settings-toggle-row">
+        <label className="settings-menu-row">
           <span>
             <strong>Gestures</strong>
             <small>{gesturesEnabled ? "Pinch/open palm enabled" : "Disabled"}</small>
           </span>
           <input
+            className="settings-switch"
             type="checkbox"
             checked={gesturesEnabled}
             disabled={!cameraEnabled}
@@ -356,21 +368,25 @@ function SettingsPopup({
         </label>
       </div>
 
-      <div className="settings-actions" aria-label="Settings actions">
+      <p className="settings-footnote">
+        {hasAcceptedGuidance ? "Target locked." : stateMeta[overlayState].description}
+      </p>
+
+      <div className="settings-footer-actions" aria-label="Settings actions">
         <button
-          className="settings-action-button settings-action-button-primary"
+          className="settings-footer-button"
           type="button"
           onClick={onRefreshCapture}
           disabled={isRefreshingCapture}
         >
-          {isRefreshingCapture ? "Refreshing" : "Refresh screen"}
+          {isRefreshingCapture ? "Refreshing screen" : "Refresh screen"}
         </button>
         <button
-          className="settings-action-button"
+          className="settings-footer-button"
           type="button"
           onClick={onPauseToggle}
         >
-          {isPaused ? "Resume" : "Pause"}
+          {isPaused ? "Resume assistant" : "Pause assistant"}
         </button>
       </div>
     </section>
