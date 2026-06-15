@@ -283,12 +283,27 @@ function SettingsPopup({
   const isPaused = overlayState === "paused";
   const cameraEnabled = gestureRuntime.camera.enabled;
   const gesturesEnabled = gestureRuntime.enabled;
+  const settingsStatusText = hasAcceptedGuidance
+    ? "Target locked."
+    : isPaused
+      ? "Paused. Resume when ready."
+      : "Waiting for voice, prompt, or gesture.";
 
   return (
     <section className="settings-popup" aria-label="TouchPilot settings">
       <div
         className="settings-popup-header"
         data-tauri-drag-region
+        onPointerDown={(event) => {
+          const target = event.target;
+          if (
+            event.button === 0 &&
+            target instanceof HTMLElement &&
+            !target.closest("button,input,label")
+          ) {
+            onStartDrag();
+          }
+        }}
         onMouseDown={(event) => {
           const target = event.target;
           if (
@@ -368,9 +383,7 @@ function SettingsPopup({
         </label>
       </div>
 
-      <p className="settings-footnote">
-        {hasAcceptedGuidance ? "Target locked." : stateMeta[overlayState].description}
-      </p>
+      <p className="settings-footnote">{settingsStatusText}</p>
 
       <div className="settings-footer-actions" aria-label="Settings actions">
         <button
