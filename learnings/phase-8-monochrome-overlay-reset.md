@@ -737,3 +737,138 @@ npm run desktop:build:windows
 ## Updates
 
 - 2026-06-13 - Consolidated duplicate Phase 8 notes, added the final Option 1 Windows overlay decision, recorded runtime/visual QA results, and clarified remaining tradeoffs for puck rendering, cursor tracking, and future native/WebGL work.
+
+- 2026-06-15 - Added the settings popup repair work after manual testing showed that the first Clicky-style popup was visually closer but functionally broken. The important lesson was that a pretty borderless popup is not acceptable unless close, movement, focus, and click targets are reliable.
+
+### 2026-06-15 Settings Popup Repair
+
+Plain English: the settings popup had the right direction visually, but it behaved like a fake window. It looked like something you could drag or close, but the custom close button and custom drag behavior were unreliable. That made the app feel broken even though the overlay architecture was improving.
+
+The final fix copied the working model from the local `codex_usage.py` popup utility: make a small borderless utility window, then manually move that window using pointer coordinates. Do not rely on Tauri's `startDragging()` behavior for this popup, and do not use a native titlebar as the final product surface.
+
+#### What Went Wrong
+
+The first settings pass mixed three different ideas:
+
+- a transparent Tauri window
+- a fake custom titlebar in React
+- Tauri-native drag behavior via `startDragging()` / drag regions
+
+That combination looked plausible but was not stable enough on Windows. The user could see the settings UI, but the custom `x` did not reliably close it and the popup did not move like a normal utility surface.
+
+The fallback made the settings window native again. That fixed the OS-level move/close behavior, but it failed the product direction. It looked like a normal app window, which brought back the exact problem Phase 8 was meant to remove: TouchPilot should feel like a small tray/menu utility, not a full application window.
+
+#### What The Sample Popup Proved
+
+The sample launcher at:
+
+```text
+C:\Users\Pumba\AppData\Roaming\npm\codex-usage.cmd
+```
+
+loads:
+
+```text
+C:\Users\Pumba\bin\codex_usage.py
+```
+
+That Python popup uses a better model:
+
+```text
+Tray icon
+  -> borderless popup
+  -> manual drag by storing pointer offset
+  -> hide on close/focus loss
+  -> no native app titlebar
+```
+
+The important part was not Python or Tkinter. The important part was the interaction model:
+
+1. The popup is exact-sized.
+2. There is no large hidden native window around the content.
+3. The whole popup can be moved by tracking the pointer.
+4. The close action hides the popup instead of trying to behave like a full app close.
+5. The tray remains the stable way to reopen it.
+
+That is much closer to how TouchPilot settings should feel.
+
+#### Final TouchPilot Settings Pattern
+
+TouchPilot now uses the same practical model inside Tauri:
+
+```text
+Settings popup React UI
+  pointer down on header
+    -> remember pointer offset from native window position
+
+pointer move
+  -> invoke Rust command: move_settings_window(x, y)
+
+custom x
+  -> invoke Rust command: hide_settings_window()
+
+tray Open Settings
+  -> show settings window again
+```
+
+This avoids the broken path:
+
+```text
+React fake titlebar
+  -> Tauri startDragging()
+  -> unreliable Windows behavior in this app
+```
+
+And it avoids the product-regressing path:
+
+```text
+native titlebar settings window
+  -> reliable OS behavior
+  -> looks like a normal app window
+  -> fails Clicky-style popup direction
+```
+
+#### Files Changed
+
+The final popup movement model lives in:
+
+```text
+touchpilot/apps/desktop/src/App.tsx
+touchpilot/apps/desktop/src/App.css
+touchpilot/apps/desktop/src-tauri/tauri.conf.json
+touchpilot/apps/desktop/src-tauri/src/lib.rs
+```
+
+Key responsibilities:
+
+- `App.tsx` stores drag offset, listens for pointer movement, and calls native movement/hide commands.
+- `App.css` keeps the header visually marked as movable.
+- `tauri.conf.json` restores settings to borderless transparent popup mode.
+- `lib.rs` exposes `hide_settings_window` and `move_settings_window`, and prepares the settings window as a utility popup instead of a normal app window.
+
+#### Tradeoff Accepted
+
+The chosen design is not native Windows window behavior. It is a custom utility popup. That is intentional.
+
+The tradeoff:
+
+| Choice | Benefit | Cost |
+| --- | --- | --- |
+| Native titlebar settings window | OS move/close works automatically | Looks like a normal app and fails the product feel |
+| Tauri `startDragging()` custom popup | Less Rust code | Was unreliable in manual testing |
+| Manual pointer-to-window movement | Matches the working sample popup model | More custom code to maintain |
+
+The final choice was manual pointer-to-window movement because it preserves the small Clicky-style popup feel while making drag and close behavior explicit and testable.
+
+#### Important Lesson
+
+Visual polish cannot replace window mechanics. For tray-style utilities, the operating-system behavior is part of the product design. A popup that looks premium but cannot close or move correctly feels worse than a plain native window.
+
+The right order for this type of surface is:
+
+1. Make close/reopen reliable.
+2. Make movement reliable.
+3. Make sizing exact so there is no extra invisible box.
+4. Then polish the glass/mac-like look.
+
+TouchPilot initially did this in the wrong order. The 2026-06-15 fix corrected that by adopting the working popup mechanics first, then keeping the cleaned-up visual design.
