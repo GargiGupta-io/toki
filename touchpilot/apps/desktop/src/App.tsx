@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
@@ -266,6 +266,7 @@ function SettingsPopup({
   onPauseToggle,
   onCameraToggle,
   onGesturesToggle,
+  onStartDrag,
   onClose,
 }: {
   overlayState: OverlayState;
@@ -276,6 +277,7 @@ function SettingsPopup({
   onPauseToggle: () => void;
   onCameraToggle: (enabled: boolean) => void;
   onGesturesToggle: (enabled: boolean) => void;
+  onStartDrag: (event: ReactPointerEvent<HTMLElement>) => void;
   onClose: () => void;
 }) {
   const isPaused = overlayState === "paused";
@@ -289,7 +291,19 @@ function SettingsPopup({
 
   return (
     <section className="settings-popup" aria-label="TouchPilot settings">
-      <div className="settings-popup-header">
+      <div
+        className="settings-popup-header"
+        onPointerDown={(event) => {
+          const target = event.target;
+          if (
+            event.button === 0 &&
+            target instanceof HTMLElement &&
+            !target.closest("button,input,label")
+          ) {
+            onStartDrag(event);
+          }
+        }}
+      >
         <div className="settings-title-group">
           <span
             className={`settings-status-dot${
@@ -854,9 +868,26 @@ function SettingsWindowApp() {
   const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
     createDefaultGestureRuntimeState(),
   );
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 
   function hideSettings() {
-    overlayWindow.hide().catch(() => undefined);
+    invoke("hide_settings_window").catch(() => {
+      overlayWindow.hide().catch(() => undefined);
+    });
+  }
+
+  function startSettingsDrag(event: ReactPointerEvent<HTMLElement>) {
+    overlayWindow
+      .outerPosition()
+      .then((position) => {
+        dragOffsetRef.current = {
+          x: event.screenX - position.x,
+          y: event.screenY - position.y,
+        };
+      })
+      .catch(() => {
+        dragOffsetRef.current = null;
+      });
   }
 
   useEffect(() => {
@@ -914,6 +945,34 @@ function SettingsWindowApp() {
     };
   }, []);
 
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const offset = dragOffsetRef.current;
+      if (offset == null) {
+        return;
+      }
+
+      invoke("move_settings_window", {
+        x: Math.round(event.screenX - offset.x),
+        y: Math.round(event.screenY - offset.y),
+      }).catch(() => undefined);
+    }
+
+    function stopDrag() {
+      dragOffsetRef.current = null;
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopDrag);
+    window.addEventListener("pointercancel", stopDrag);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopDrag);
+      window.removeEventListener("pointercancel", stopDrag);
+    };
+  }, []);
+
   return (
     <main className="settings-shell" aria-label="TouchPilot settings window">
       <SettingsPopup
@@ -943,6 +1002,7 @@ function SettingsWindowApp() {
             enabled,
           } satisfies OverlayCommand).catch(() => undefined);
         }}
+        onStartDrag={startSettingsDrag}
         onClose={() => {
           hideSettings();
         }}
