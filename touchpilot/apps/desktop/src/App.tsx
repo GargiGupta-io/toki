@@ -27,7 +27,9 @@ import type {
   ScreenshotMetadata,
   TargetBox,
   VoiceActivationSource,
+  VoiceCommandRequest,
   VoiceRuntimeState,
+  VoiceTranscript,
 } from "@touchpilot/shared";
 import { probeCameraDevices } from "./cameraDevices";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
@@ -48,6 +50,8 @@ import type {
 import { getPuckMotionModel } from "./puckMotion";
 import { probeVoiceCapabilities } from "./voiceCapabilities";
 import type { VoiceCapabilityProbe } from "./voiceCapabilities";
+import { startVoiceRecognition } from "./voiceRecognition";
+import type { VoiceRecognitionSession } from "./voiceRecognition";
 import type { OverlayState, PuckMotionModel } from "./puckMotion";
 import "./App.css";
 
@@ -298,10 +302,20 @@ function SettingsPopup({
     voiceRuntime.status === "listening" ||
     voiceRuntime.status === "requesting_microphone" ||
     voiceRuntime.status === "transcribing";
+  const voiceStatusText =
+    voiceRuntime.status === "command_ready"
+      ? "Command ready"
+      : voiceListening
+        ? "Listening"
+        : voiceRuntime.status === "error"
+          ? "Voice error"
+          : "Idle";
   const settingsStatusText = hasAcceptedGuidance
     ? "Target locked."
     : isPaused
       ? "Paused. Resume when ready."
+      : voiceRuntime.status === "command_ready" && voiceRuntime.transcript
+        ? `Heard: ${voiceRuntime.transcript.text}`
       : voiceListening
         ? "Listening for your command."
         : "Waiting for voice, prompt, or gesture.";
@@ -390,7 +404,7 @@ function SettingsPopup({
         <label className="settings-menu-row">
           <span>
             <strong>Voice</strong>
-            <small>{voiceListening ? "Listening" : "Idle"}</small>
+            <small>{voiceStatusText}</small>
           </span>
           <input
             className="settings-switch"
@@ -568,6 +582,7 @@ function OverlayWindowApp() {
   );
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
+  const voiceSessionRef = useRef<VoiceRecognitionSession | null>(null);
 
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep = activeStep?.target != null ? activeStep : null;
@@ -882,7 +897,7 @@ function OverlayWindowApp() {
         setVoiceRuntime({
           enabled: true,
           permission: "unknown",
-          status: "listening",
+          status: "requesting_microphone",
           activationSource: event.payload.source,
         });
         setOverlayState("listening");
@@ -890,6 +905,8 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "stop-voice-listening") {
+        voiceSessionRef.current?.stop();
+        voiceSessionRef.current = null;
         setVoiceRuntime(createDefaultVoiceRuntimeState());
         setOverlayState((currentState) =>
           currentState === "listening" ? "idle" : currentState,
@@ -908,6 +925,93 @@ function OverlayWindowApp() {
       unlistenCommand?.();
     };
   }, [overlaySnapshot, debugSnapshot, viewport, guidanceResult]);
+
+  useEffect(() => {
+    if (!voiceRuntime.enabled) {
+      return;
+    }
+
+    let session: VoiceRecognitionSession | null = null;
+
+    try {
+      session = startVoiceRecognition({
+        onStart: () => {
+          setVoiceRuntime((currentState) => ({
+            ...currentState,
+            permission: "granted",
+            status: "listening",
+            error: undefined,
+          }));
+        },
+        onTranscript: (transcript: VoiceTranscript) => {
+          setVoiceRuntime((currentState) => {
+            const pendingCommand: VoiceCommandRequest | undefined = transcript.isFinal
+              ? {
+                  text: transcript.text,
+                  source: currentState.activationSource ?? "settings",
+                  createdAt: new Date().toISOString(),
+                }
+              : currentState.pendingCommand;
+
+            return {
+              ...currentState,
+              status: transcript.isFinal ? "command_ready" : "listening",
+              transcript,
+              pendingCommand,
+              error: undefined,
+            };
+          });
+        },
+        onEnd: () => {
+          setVoiceRuntime((currentState) =>
+            currentState.status === "command_ready"
+              ? {
+                  ...currentState,
+                  enabled: false,
+                }
+              : {
+                  ...currentState,
+                  enabled: false,
+                  status: "idle",
+                },
+          );
+          voiceSessionRef.current = null;
+        },
+        onError: (message) => {
+          setVoiceRuntime((currentState) => ({
+            ...currentState,
+            enabled: false,
+            permission:
+              message.toLowerCase().includes("not allowed") ||
+              message.toLowerCase().includes("denied")
+                ? "denied"
+                : currentState.permission === "unknown"
+                  ? "error"
+                  : currentState.permission,
+            status: "error",
+            error: message,
+          }));
+          voiceSessionRef.current = null;
+        },
+      });
+      voiceSessionRef.current = session;
+    } catch (error) {
+      setVoiceRuntime((currentState) => ({
+        ...currentState,
+        enabled: false,
+        permission: "unsupported",
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+
+    return () => {
+      if (voiceSessionRef.current === session) {
+        session?.abort();
+        voiceSessionRef.current = null;
+      }
+    };
+  }, [voiceRuntime.enabled]);
 
   return (
     <main
@@ -1533,6 +1637,18 @@ function DebugWindowApp() {
               <div>
                 <dt>Source</dt>
                 <dd>{snapshot.voiceRuntime.activationSource ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Transcript</dt>
+                <dd>{snapshot.voiceRuntime.transcript?.text ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Command</dt>
+                <dd>{snapshot.voiceRuntime.pendingCommand?.text ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Error</dt>
+                <dd>{snapshot.voiceRuntime.error ?? "None"}</dd>
               </div>
             </dl>
             <p className="debug-muted">
