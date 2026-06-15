@@ -583,6 +583,7 @@ function OverlayWindowApp() {
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
   const voiceSessionRef = useRef<VoiceRecognitionSession | null>(null);
+  const routedVoiceCommandRef = useRef<string | null>(null);
 
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep = activeStep?.target != null ? activeStep : null;
@@ -665,7 +666,7 @@ function OverlayWindowApp() {
     );
   }
 
-  async function refreshCaptureMetadata() {
+  async function refreshCaptureMetadata(goal = "Show me what to click next.") {
     setIsRefreshingCapture(true);
     setCaptureError(null);
     setGuidanceIssues([]);
@@ -684,7 +685,7 @@ function OverlayWindowApp() {
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
       const nextGuidanceRequest: GuidanceRequest = {
-        goal: "Show me what to click next.",
+        goal,
         screen: {
           display: metadata.display,
           capture: metadata,
@@ -1012,6 +1013,29 @@ function OverlayWindowApp() {
       }
     };
   }, [voiceRuntime.enabled]);
+
+  useEffect(() => {
+    const command = voiceRuntime.pendingCommand;
+
+    if (voiceRuntime.status !== "command_ready" || command == null) {
+      return;
+    }
+
+    const commandKey = `${command.createdAt}:${command.text}`;
+
+    if (routedVoiceCommandRef.current === commandKey) {
+      return;
+    }
+
+    routedVoiceCommandRef.current = commandKey;
+    void refreshCaptureMetadata(command.text);
+  }, [
+    voiceRuntime.status,
+    voiceRuntime.pendingCommand,
+    viewport,
+    guidanceFixture,
+    guidanceResult,
+  ]);
 
   return (
     <main
@@ -1652,8 +1676,8 @@ function DebugWindowApp() {
               </div>
             </dl>
             <p className="debug-muted">
-              Manual listening state only. Transcription connects in the next voice
-              step.
+              Final voice text is routed into the current guidance loop as the
+              screen goal.
             </p>
           </section>
 
