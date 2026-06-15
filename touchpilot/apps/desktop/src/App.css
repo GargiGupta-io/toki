@@ -94,7 +94,6 @@ html {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  cursor: move;
   user-select: none;
 }
 
