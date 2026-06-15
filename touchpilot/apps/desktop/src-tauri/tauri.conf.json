@@ -28,16 +28,16 @@
       },
       {
         "label": "settings",
-        "title": "TouchPilot",
+        "title": " ",
         "width": 424,
         "height": 344,
         "center": true,
-        "decorations": true,
-        "transparent": false,
+        "decorations": false,
+        "transparent": true,
         "alwaysOnTop": true,
         "resizable": false,
         "shadow": true,
-        "skipTaskbar": false,
+        "skipTaskbar": true,
         "visible": false
       },
       {
