@@ -223,6 +223,48 @@ export type GestureRuntimeState = {
   lastAction?: GestureActionEvent;
 };
 
+export type VoicePermissionState =
+  | "unknown"
+  | "prompt"
+  | "granted"
+  | "denied"
+  | "unsupported"
+  | "error";
+
+export type VoiceRuntimeStatus =
+  | "idle"
+  | "requesting_microphone"
+  | "listening"
+  | "transcribing"
+  | "command_ready"
+  | "cancelled"
+  | "error";
+
+export type VoiceActivationSource = "settings" | "debug" | "gesture" | "hotkey";
+
+export type VoiceTranscript = {
+  text: string;
+  confidence?: number;
+  isFinal: boolean;
+  updatedAt: string;
+};
+
+export type VoiceCommandRequest = {
+  text: string;
+  source: VoiceActivationSource | "debug_text";
+  createdAt: string;
+};
+
+export type VoiceRuntimeState = {
+  enabled: boolean;
+  permission: VoicePermissionState;
+  status: VoiceRuntimeStatus;
+  activationSource?: VoiceActivationSource;
+  transcript?: VoiceTranscript;
+  pendingCommand?: VoiceCommandRequest;
+  error?: string;
+};
+
 export type DisplayContext = {
   id: string;
   width: number;
