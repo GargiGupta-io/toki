@@ -117,6 +117,26 @@ fn capture_screenshot() -> Result<ScreenshotCapture, String> {
     capture_primary_display().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("settings") else {
+        return Err("settings window not found".to_string());
+    };
+
+    window.hide().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn move_settings_window(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("settings") else {
+        return Err("settings window not found".to_string());
+    };
+
+    window
+        .set_position(Position::Physical(PhysicalPosition { x, y }))
+        .map_err(|error| error.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -134,11 +154,13 @@ pub fn run() {
             }
 
             if let Some(settings) = app.get_webview_window("settings") {
-                let _ = settings.set_title("TouchPilot");
+                let _ = settings.set_title(" ");
                 let _ = settings.hide();
-                let _ = settings.set_decorations(true);
+                let _ = settings.set_decorations(false);
                 let _ = settings.set_focusable(true);
-                let _ = settings.set_skip_taskbar(false);
+                let _ = settings.set_skip_taskbar(true);
+                #[cfg(windows)]
+                prepare_windows_utility_window(&settings, false);
             }
 
             if let Some(debug) = app.get_webview_window("debug") {
@@ -185,7 +207,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             capture_metadata,
-            capture_screenshot
+            capture_screenshot,
+            hide_settings_window,
+            move_settings_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
