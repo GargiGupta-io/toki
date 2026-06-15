@@ -942,23 +942,50 @@ Done when:
 
 ---
 
-## Phase 10: Voice MVP
+## Phase 10: Voice-First Command MVP
 
-Goal: Let the user speak their task.
+Goal: Let the user speak their task, turn that speech into a command, capture the screen, and drive visual puck guidance from the spoken intent.
+
+Decision:
+
+> Voice is the primary user input. Text command input is debug-only, used only to test the guidance loop when microphone or transcription behavior is unreliable.
 
 Tasks:
 
-1. Add push-to-talk.
-2. Add transcription.
-3. Connect gesture trigger to voice mode.
-4. Show live listening UI.
-5. Send transcript into guidance loop.
-6. Add stop/interruption command.
+1. Define the voice-first UX spec:
+   - no user-facing command prompt
+   - no permanent command panel
+   - minimal listening state near the puck/settings
+   - debug-only text fallback
+2. Add voice state:
+   - idle
+   - requesting microphone
+   - listening
+   - transcribing
+   - command ready
+   - error
+3. Probe WebView2 microphone and speech/transcription support on the Surface device.
+4. Add push-to-talk or toggle-to-talk from settings/debug.
+5. Show a minimal listening indicator without turning the overlay into an app window.
+6. Add a transcription adapter that converts speech into the shared command shape.
+7. Send the transcript into the screen capture and guidance loop.
+8. Add a debug-only text command fallback for QA.
+9. Connect pinch to start/listen and open palm to stop/pause after the voice loop works.
+10. Handle microphone denied, no microphone, empty transcript, failed transcription, and cancel.
+11. Run manual end-to-end QA:
+    - speak command
+    - capture screen
+    - target appears
+    - puck guides
+12. Document remaining mocked pieces and platform limits.
 
 Done when:
 
-- user can pinch, speak, and get visual guidance
-- user can stop with gesture or keyboard
+- the normal user flow is voice-first, not text-prompt-first
+- user can speak a task and trigger the guidance loop
+- debug can still test the guidance loop with text when voice fails
+- user can stop listening with gesture, settings, or keyboard
+- the overlay stays cursor-first and does not become a chatbot window
 
 ---
 

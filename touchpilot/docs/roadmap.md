@@ -46,9 +46,13 @@
 
 ## Phase 6: Voice MVP
 
-- Push-to-talk.
-- Streaming transcription.
-- Gesture-triggered voice mode.
+- Voice-first command input.
+- No user-facing text command prompt.
+- Push-to-talk or toggle-to-talk.
+- Minimal listening state near the puck/settings.
+- Transcription into the guidance loop.
+- Debug-only text command fallback for QA.
+- Gesture-triggered voice mode after the voice loop works.
 - Stop/interruption command.
 
 ## Phase 7: Safety And Guardrails
