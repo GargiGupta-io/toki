@@ -26,6 +26,8 @@ import type {
   ScreenshotCapture,
   ScreenshotMetadata,
   TargetBox,
+  VoiceActivationSource,
+  VoiceRuntimeState,
 } from "@touchpilot/shared";
 import { probeCameraDevices } from "./cameraDevices";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
@@ -63,6 +65,7 @@ type OverlaySnapshot = {
   hasAcceptedGuidance: boolean;
   isRefreshingCapture: boolean;
   gestureRuntime: GestureRuntimeState;
+  voiceRuntime: VoiceRuntimeState;
 };
 
 type DebugSnapshot = OverlaySnapshot & {
@@ -91,7 +94,9 @@ type OverlayCommand =
       error?: string;
     }
   | { type: "set-gesture-classification"; classification: GestureClassification }
-  | { type: "set-gestures-enabled"; enabled: boolean };
+  | { type: "set-gestures-enabled"; enabled: boolean }
+  | { type: "start-voice-listening"; source: VoiceActivationSource }
+  | { type: "stop-voice-listening" };
 
 const overlayWindow = getCurrentWindow();
 const currentWindowLabel = overlayWindow.label;
@@ -264,10 +269,12 @@ function SettingsPopup({
   hasAcceptedGuidance,
   isRefreshingCapture,
   gestureRuntime,
+  voiceRuntime,
   onRefreshCapture,
   onPauseToggle,
   onCameraToggle,
   onGesturesToggle,
+  onVoiceToggle,
   onStartDrag,
   onClose,
 }: {
@@ -275,21 +282,29 @@ function SettingsPopup({
   hasAcceptedGuidance: boolean;
   isRefreshingCapture: boolean;
   gestureRuntime: GestureRuntimeState;
+  voiceRuntime: VoiceRuntimeState;
   onRefreshCapture: () => void;
   onPauseToggle: () => void;
   onCameraToggle: (enabled: boolean) => void;
   onGesturesToggle: (enabled: boolean) => void;
+  onVoiceToggle: (enabled: boolean) => void;
   onStartDrag: (event: ReactPointerEvent<HTMLElement>) => void;
   onClose: () => void;
 }) {
   const isPaused = overlayState === "paused";
   const cameraEnabled = gestureRuntime.camera.enabled;
   const gesturesEnabled = gestureRuntime.enabled;
+  const voiceListening =
+    voiceRuntime.status === "listening" ||
+    voiceRuntime.status === "requesting_microphone" ||
+    voiceRuntime.status === "transcribing";
   const settingsStatusText = hasAcceptedGuidance
     ? "Target locked."
     : isPaused
       ? "Paused. Resume when ready."
-      : "Waiting for voice, prompt, or gesture.";
+      : voiceListening
+        ? "Listening for your command."
+        : "Waiting for voice, prompt, or gesture.";
 
   return (
     <section className="settings-popup" aria-label="TouchPilot settings">
@@ -369,6 +384,20 @@ function SettingsPopup({
             disabled={!cameraEnabled}
             onChange={(event) => {
               onGesturesToggle(event.currentTarget.checked);
+            }}
+          />
+        </label>
+        <label className="settings-menu-row">
+          <span>
+            <strong>Voice</strong>
+            <small>{voiceListening ? "Listening" : "Idle"}</small>
+          </span>
+          <input
+            className="settings-switch"
+            type="checkbox"
+            checked={voiceListening}
+            onChange={(event) => {
+              onVoiceToggle(event.currentTarget.checked);
             }}
           />
         </label>
@@ -488,6 +517,14 @@ function createDefaultGestureRuntimeState(): GestureRuntimeState {
   };
 }
 
+function createDefaultVoiceRuntimeState(): VoiceRuntimeState {
+  return {
+    enabled: false,
+    permission: "unknown",
+    status: "idle",
+  };
+}
+
 function createInactiveGestureClassification(): GestureClassification {
   return createDefaultGestureRuntimeState().currentGesture;
 }
@@ -500,6 +537,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     hasAcceptedGuidance: false,
     isRefreshingCapture: false,
     gestureRuntime: createDefaultGestureRuntimeState(),
+    voiceRuntime: createDefaultVoiceRuntimeState(),
     guidanceFixture: "safe",
     captureMetadata: null,
     screenshotCapture: null,
@@ -524,6 +562,9 @@ function OverlayWindowApp() {
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
     createDefaultGestureRuntimeState(),
+  );
+  const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
+    createDefaultVoiceRuntimeState(),
   );
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
@@ -562,8 +603,15 @@ function OverlayWindowApp() {
       hasAcceptedGuidance,
       isRefreshingCapture,
       gestureRuntime,
+      voiceRuntime,
     }),
-    [overlayState, hasAcceptedGuidance, isRefreshingCapture, gestureRuntime],
+    [
+      overlayState,
+      hasAcceptedGuidance,
+      isRefreshingCapture,
+      gestureRuntime,
+      voiceRuntime,
+    ],
   );
 
   const debugSnapshot = useMemo<DebugSnapshot>(
@@ -829,6 +877,25 @@ function OverlayWindowApp() {
         }));
         return;
       }
+
+      if (event.payload.type === "start-voice-listening") {
+        setVoiceRuntime({
+          enabled: true,
+          permission: "unknown",
+          status: "listening",
+          activationSource: event.payload.source,
+        });
+        setOverlayState("listening");
+        return;
+      }
+
+      if (event.payload.type === "stop-voice-listening") {
+        setVoiceRuntime(createDefaultVoiceRuntimeState());
+        setOverlayState((currentState) =>
+          currentState === "listening" ? "idle" : currentState,
+        );
+        return;
+      }
     })
       .then((cleanup) => {
         unlistenCommand = cleanup;
@@ -870,6 +937,9 @@ function SettingsWindowApp() {
   const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
     createDefaultGestureRuntimeState(),
   );
+  const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
+    createDefaultVoiceRuntimeState(),
+  );
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 
   function hideSettings() {
@@ -900,6 +970,7 @@ function SettingsWindowApp() {
       setHasAcceptedGuidance(event.payload.hasAcceptedGuidance);
       setIsRefreshingCapture(event.payload.isRefreshingCapture);
       setGestureRuntime(event.payload.gestureRuntime);
+      setVoiceRuntime(event.payload.voiceRuntime);
     })
       .then((cleanup) => {
         unlistenState = cleanup;
@@ -982,6 +1053,7 @@ function SettingsWindowApp() {
         hasAcceptedGuidance={hasAcceptedGuidance}
         isRefreshingCapture={isRefreshingCapture}
         gestureRuntime={gestureRuntime}
+        voiceRuntime={voiceRuntime}
         onRefreshCapture={() => {
           emitTo("overlay", "touchpilot://overlay-command", {
             type: "refresh-capture",
@@ -1003,6 +1075,15 @@ function SettingsWindowApp() {
             type: "set-gestures-enabled",
             enabled,
           } satisfies OverlayCommand).catch(() => undefined);
+        }}
+        onVoiceToggle={(enabled) => {
+          const command: OverlayCommand = enabled
+            ? { type: "start-voice-listening", source: "settings" }
+            : { type: "stop-voice-listening" };
+
+          emitTo("overlay", "touchpilot://overlay-command", command).catch(
+            () => undefined,
+          );
         }}
         onStartDrag={startSettingsDrag}
         onClose={() => {
@@ -1412,6 +1493,52 @@ function DebugWindowApp() {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="debug-section">
+            <h2>Voice Runtime</h2>
+            <div className="debug-section-header-row">
+              <span>{snapshot.voiceRuntime.status}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({
+                    type: "start-voice-listening",
+                    source: "debug",
+                  });
+                }}
+                disabled={snapshot.voiceRuntime.status === "listening"}
+              >
+                Start listening
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "stop-voice-listening" });
+                }}
+                disabled={!snapshot.voiceRuntime.enabled}
+              >
+                Stop
+              </button>
+            </div>
+            <dl>
+              <div>
+                <dt>Enabled</dt>
+                <dd>{snapshot.voiceRuntime.enabled ? "Yes" : "No"}</dd>
+              </div>
+              <div>
+                <dt>Permission</dt>
+                <dd>{snapshot.voiceRuntime.permission}</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd>{snapshot.voiceRuntime.activationSource ?? "None"}</dd>
+              </div>
+            </dl>
+            <p className="debug-muted">
+              Manual listening state only. Transcription connects in the next voice
+              step.
+            </p>
           </section>
 
           <section className="debug-section">
