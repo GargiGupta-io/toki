@@ -266,7 +266,6 @@ function SettingsPopup({
   onPauseToggle,
   onCameraToggle,
   onGesturesToggle,
-  onStartDrag,
   onClose,
 }: {
   overlayState: OverlayState;
@@ -277,7 +276,6 @@ function SettingsPopup({
   onPauseToggle: () => void;
   onCameraToggle: (enabled: boolean) => void;
   onGesturesToggle: (enabled: boolean) => void;
-  onStartDrag: () => void;
   onClose: () => void;
 }) {
   const isPaused = overlayState === "paused";
@@ -291,38 +289,15 @@ function SettingsPopup({
 
   return (
     <section className="settings-popup" aria-label="TouchPilot settings">
-      <div
-        className="settings-popup-header"
-        data-tauri-drag-region
-        onPointerDown={(event) => {
-          const target = event.target;
-          if (
-            event.button === 0 &&
-            target instanceof HTMLElement &&
-            !target.closest("button,input,label")
-          ) {
-            onStartDrag();
-          }
-        }}
-        onMouseDown={(event) => {
-          const target = event.target;
-          if (
-            event.button === 0 &&
-            target instanceof HTMLElement &&
-            !target.closest("button,input,label")
-          ) {
-            onStartDrag();
-          }
-        }}
-      >
-        <div className="settings-title-group" data-tauri-drag-region>
+      <div className="settings-popup-header">
+        <div className="settings-title-group">
           <span
             className={`settings-status-dot${
               isPaused ? " settings-status-dot-muted" : ""
             }`}
             aria-hidden="true"
           />
-          <h2 data-tauri-drag-region>TouchPilot</h2>
+          <h2>TouchPilot</h2>
         </div>
         <div className="settings-window-actions">
           <span className="settings-state-label">{isPaused ? "Paused" : "Active"}</span>
@@ -884,10 +859,6 @@ function SettingsWindowApp() {
     overlayWindow.hide().catch(() => undefined);
   }
 
-  function startSettingsDrag() {
-    overlayWindow.startDragging().catch(() => undefined);
-  }
-
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
 
@@ -972,7 +943,6 @@ function SettingsWindowApp() {
             enabled,
           } satisfies OverlayCommand).catch(() => undefined);
         }}
-        onStartDrag={startSettingsDrag}
         onClose={() => {
           hideSettings();
         }}
