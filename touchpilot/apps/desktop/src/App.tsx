@@ -44,6 +44,8 @@ import type {
   ViewportMetrics,
 } from "./overlayGeometry";
 import { getPuckMotionModel } from "./puckMotion";
+import { probeVoiceCapabilities } from "./voiceCapabilities";
+import type { VoiceCapabilityProbe } from "./voiceCapabilities";
 import type { OverlayState, PuckMotionModel } from "./puckMotion";
 import "./App.css";
 
@@ -1020,6 +1022,11 @@ function DebugWindowApp() {
     "idle" | "probing" | "ready" | "unsupported" | "error"
   >("idle");
   const [cameraProbeError, setCameraProbeError] = useState<string | null>(null);
+  const [voiceProbe, setVoiceProbe] = useState<VoiceCapabilityProbe | null>(null);
+  const [voiceProbeStatus, setVoiceProbeStatus] = useState<
+    "idle" | "probing" | "requesting" | "ready" | "unsupported" | "error"
+  >("idle");
+  const [voiceProbeError, setVoiceProbeError] = useState<string | null>(null);
   const [cameraPreviewStatus, setCameraPreviewStatus] =
     useState<CameraStreamStatus>("idle");
   const [cameraPreviewError, setCameraPreviewError] = useState<string | null>(null);
@@ -1063,6 +1070,26 @@ function DebugWindowApp() {
 
   function sendOverlayCommand(command: OverlayCommand) {
     emitTo("overlay", "touchpilot://overlay-command", command).catch(() => undefined);
+  }
+
+  function refreshVoiceCapabilities(requestMicrophone = false) {
+    setVoiceProbeStatus(requestMicrophone ? "requesting" : "probing");
+    setVoiceProbeError(null);
+
+    probeVoiceCapabilities({ requestMicrophone })
+      .then((result) => {
+        setVoiceProbe(result);
+        setVoiceProbeStatus(
+          result.mediaDevicesSupported || result.speechRecognition.supported
+            ? "ready"
+            : "unsupported",
+        );
+        setVoiceProbeError(result.error ?? null);
+      })
+      .catch((error: unknown) => {
+        setVoiceProbeStatus("error");
+        setVoiceProbeError(error instanceof Error ? error.message : String(error));
+      });
   }
 
   function reportCameraPreviewStatus(
@@ -1116,6 +1143,7 @@ function DebugWindowApp() {
     emitTo("overlay", "touchpilot://overlay-command", {
       type: "request-state",
     } satisfies OverlayCommand).catch(() => undefined);
+    refreshVoiceCapabilities(false);
     refreshCameraDevices();
 
     return () => {
@@ -1384,6 +1412,80 @@ function DebugWindowApp() {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="debug-section">
+            <h2>Voice Capabilities</h2>
+            <div className="debug-section-header-row">
+              <span>{voiceProbeStatus}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  refreshVoiceCapabilities(false);
+                }}
+                disabled={
+                  voiceProbeStatus === "probing" || voiceProbeStatus === "requesting"
+                }
+              >
+                {voiceProbeStatus === "probing" ? "Probing" : "Probe"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  refreshVoiceCapabilities(true);
+                }}
+                disabled={
+                  voiceProbeStatus === "probing" || voiceProbeStatus === "requesting"
+                }
+              >
+                {voiceProbeStatus === "requesting" ? "Requesting" : "Request mic"}
+              </button>
+            </div>
+            {voiceProbeError ? <p className="debug-muted">{voiceProbeError}</p> : null}
+            {voiceProbe ? (
+              <>
+                <dl>
+                  <div>
+                    <dt>Permission</dt>
+                    <dd>{voiceProbe.microphonePermission}</dd>
+                  </div>
+                  <div>
+                    <dt>Media devices</dt>
+                    <dd>{voiceProbe.mediaDevicesSupported ? "Available" : "Missing"}</dd>
+                  </div>
+                  <div>
+                    <dt>getUserMedia</dt>
+                    <dd>{voiceProbe.getUserMediaSupported ? "Available" : "Missing"}</dd>
+                  </div>
+                  <div>
+                    <dt>Permissions API</dt>
+                    <dd>{voiceProbe.permissionsApiSupported ? "Available" : "Missing"}</dd>
+                  </div>
+                  <div>
+                    <dt>Speech API</dt>
+                    <dd>{voiceProbe.speechRecognition.api}</dd>
+                  </div>
+                  <div>
+                    <dt>Checked</dt>
+                    <dd>{voiceProbe.checkedAt}</dd>
+                  </div>
+                </dl>
+                {voiceProbe.microphones.length > 0 ? (
+                  <ul className="debug-device-list">
+                    {voiceProbe.microphones.map((microphone) => (
+                      <li key={microphone.id}>
+                        <span>{microphone.label}</span>
+                        <small>{microphone.isDefault ? "default" : "audio input"}</small>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="debug-muted">No microphone devices reported yet.</p>
+                )}
+              </>
+            ) : (
+              <p className="debug-muted">Voice capabilities have not been probed yet.</p>
+            )}
           </section>
 
           <section className="debug-section">
