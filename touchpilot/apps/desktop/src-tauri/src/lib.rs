@@ -134,13 +134,11 @@ pub fn run() {
             }
 
             if let Some(settings) = app.get_webview_window("settings") {
-                let _ = settings.set_title(" ");
+                let _ = settings.set_title("TouchPilot");
                 let _ = settings.hide();
-                let _ = settings.set_decorations(false);
+                let _ = settings.set_decorations(true);
                 let _ = settings.set_focusable(true);
-                let _ = settings.set_skip_taskbar(true);
-                #[cfg(windows)]
-                prepare_windows_utility_window(&settings, false);
+                let _ = settings.set_skip_taskbar(false);
             }
 
             if let Some(debug) = app.get_webview_window("debug") {
