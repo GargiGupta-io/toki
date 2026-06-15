@@ -48,10 +48,10 @@ html {
 
 .settings-shell {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  display: block;
+  overflow: hidden;
   background: transparent;
-  padding: 10px;
+  padding: 0;
 }
 
 .overlay-shell {
@@ -82,8 +82,10 @@ html {
 }
 
 .settings-shell .settings-popup {
-  position: static;
-  width: min(360px, 100%);
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  min-height: 100vh;
   transform: none;
 }
 
