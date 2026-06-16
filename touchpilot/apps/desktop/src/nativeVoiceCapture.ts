@@ -4,12 +4,18 @@ export type NativeVoiceCaptureStatus = {
   status: "idle" | "capturing";
   sessionId?: string;
   startedAtMs?: number;
+  sampleRate?: number;
+  channels?: number;
+  deviceName?: string;
   message: string;
 };
 
 export type NativeVoiceCaptureStartResult = {
   sessionId: string;
   startedAtMs: number;
+  sampleRate: number;
+  channels: number;
+  deviceName?: string;
   status: "capturing";
 };
 
@@ -19,6 +25,10 @@ export type NativeVoiceCaptureStopResult = {
   stoppedAtMs: number;
   durationMs: number;
   byteLength: number;
+  sampleRate: number;
+  channels: number;
+  deviceName?: string;
+  audioBase64: string;
   format: string;
   status: "stopped";
 };
