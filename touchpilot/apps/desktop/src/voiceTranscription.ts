@@ -14,16 +14,17 @@ export type VoiceTranscriptionResult =
 export async function transcribeNativeVoiceCapture(
   capture: NativeVoiceCaptureStopResult,
 ): Promise<VoiceTranscriptionResult> {
-  if (capture.byteLength === 0) {
+  if (!capture.audioBase64 || capture.byteLength <= 44) {
     return {
       status: "not_configured",
-      error:
-        "Native microphone capture is wired, but real audio recording is not connected yet.",
+      error: "Native microphone capture completed, but no usable audio was recorded.",
     };
   }
 
   return {
     status: "not_configured",
-    error: "Cloud transcription provider is not configured yet.",
+    error: `Native microphone captured ${(capture.byteLength / 1024).toFixed(
+      1,
+    )} KB of ${capture.format}; cloud transcription provider is not configured yet.`,
   };
 }
