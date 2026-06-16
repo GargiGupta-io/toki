@@ -231,6 +231,15 @@ function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDeta
     };
   }
 
+  if (voiceRuntime.status === "cancelled") {
+    return {
+      tone: "idle",
+      label: "Cancelled",
+      message: "Voice stopped",
+      visible: false,
+    };
+  }
+
   return {
     tone: "idle",
     label: "Voice",
@@ -815,6 +824,16 @@ function OverlayWindowApp() {
     }
   }
 
+  function cancelVoiceRuntime() {
+    voiceSessionRef.current?.abort();
+    voiceSessionRef.current = null;
+    routedVoiceCommandRef.current = null;
+    setVoiceRuntime({
+      ...createDefaultVoiceRuntimeState(),
+      status: "cancelled",
+    });
+  }
+
   useEffect(() => {
     overlayWindow.setIgnoreCursorEvents(true).catch(() => undefined);
     overlayWindow.setFocusable(false).catch(() => undefined);
@@ -872,6 +891,7 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "toggle-pause") {
+        cancelVoiceRuntime();
         setOverlayState((currentState) =>
           currentState === "paused" ? "guiding" : "paused",
         );
@@ -961,6 +981,7 @@ function OverlayWindowApp() {
             firedAt: new Date().toISOString(),
             sourceFrameId: classification.sourceFrameId,
           };
+          cancelVoiceRuntime();
           setOverlayState("paused");
         }
 
@@ -992,6 +1013,9 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "start-voice-listening") {
+        voiceSessionRef.current?.abort();
+        voiceSessionRef.current = null;
+        routedVoiceCommandRef.current = null;
         setVoiceRuntime({
           enabled: true,
           permission: "unknown",
@@ -1003,9 +1027,7 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "stop-voice-listening") {
-        voiceSessionRef.current?.stop();
-        voiceSessionRef.current = null;
-        setVoiceRuntime(createDefaultVoiceRuntimeState());
+        cancelVoiceRuntime();
         setOverlayState((currentState) =>
           currentState === "listening" ? "idle" : currentState,
         );
@@ -1756,7 +1778,11 @@ function DebugWindowApp() {
                 onClick={() => {
                   sendOverlayCommand({ type: "stop-voice-listening" });
                 }}
-                disabled={!snapshot.voiceRuntime.enabled}
+                disabled={
+                  !snapshot.voiceRuntime.enabled &&
+                  snapshot.voiceRuntime.status !== "command_ready" &&
+                  snapshot.voiceRuntime.status !== "transcribing"
+                }
               >
                 Stop
               </button>
