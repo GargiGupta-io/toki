@@ -100,6 +100,7 @@ type OverlayCommand =
   | { type: "set-gesture-classification"; classification: GestureClassification }
   | { type: "set-gestures-enabled"; enabled: boolean }
   | { type: "start-voice-listening"; source: VoiceActivationSource }
+  | { type: "submit-voice-listening" }
   | { type: "stop-voice-listening" };
 
 const overlayWindow = getCurrentWindow();
@@ -377,44 +378,30 @@ function SettingsPopup({
   overlayState,
   hasAcceptedGuidance,
   isRefreshingCapture,
-  gestureRuntime,
   voiceRuntime,
   onRefreshCapture,
   onPauseToggle,
-  onCameraToggle,
-  onGesturesToggle,
-  onVoiceToggle,
+  onVoicePressStart,
+  onVoicePressEnd,
   onStartDrag,
   onClose,
 }: {
   overlayState: OverlayState;
   hasAcceptedGuidance: boolean;
   isRefreshingCapture: boolean;
-  gestureRuntime: GestureRuntimeState;
   voiceRuntime: VoiceRuntimeState;
   onRefreshCapture: () => void;
   onPauseToggle: () => void;
-  onCameraToggle: (enabled: boolean) => void;
-  onGesturesToggle: (enabled: boolean) => void;
-  onVoiceToggle: (enabled: boolean) => void;
+  onVoicePressStart: () => void;
+  onVoicePressEnd: () => void;
   onStartDrag: (event: ReactPointerEvent<HTMLElement>) => void;
   onClose: () => void;
 }) {
   const isPaused = overlayState === "paused";
-  const cameraEnabled = gestureRuntime.camera.enabled;
-  const gesturesEnabled = gestureRuntime.enabled;
   const voiceListening =
     voiceRuntime.status === "listening" ||
     voiceRuntime.status === "requesting_microphone" ||
     voiceRuntime.status === "transcribing";
-  const voiceStatusText =
-    voiceRuntime.status === "command_ready"
-      ? "Command ready"
-      : voiceListening
-        ? "Listening"
-        : voiceRuntime.status === "error"
-          ? "Voice error"
-          : "Idle";
   const voiceStatusDetails = getVoiceStatusDetails(voiceRuntime);
   const settingsStatusText = hasAcceptedGuidance
     ? "Target locked."
@@ -475,53 +462,44 @@ function SettingsPopup({
 
       <div className="settings-separator" />
 
-      <p className="settings-instruction">Pinch to activate. Open palm to pause.</p>
+      <p className="settings-instruction">Hold to talk. Release to guide.</p>
 
-      <div className="settings-menu" aria-label="Gesture settings">
-        <label className="settings-menu-row">
-          <span>
-            <strong>Camera</strong>
-            <small>{cameraEnabled ? "Ready" : "Off"}</small>
-          </span>
-          <input
-            className="settings-switch"
-            type="checkbox"
-            checked={cameraEnabled}
-            onChange={(event) => {
-              onCameraToggle(event.currentTarget.checked);
-            }}
-          />
-        </label>
-        <label className="settings-menu-row">
-          <span>
-            <strong>Gestures</strong>
-            <small>{gesturesEnabled ? "Pinch/open palm enabled" : "Disabled"}</small>
-          </span>
-          <input
-            className="settings-switch"
-            type="checkbox"
-            checked={gesturesEnabled}
-            disabled={!cameraEnabled}
-            onChange={(event) => {
-              onGesturesToggle(event.currentTarget.checked);
-            }}
-          />
-        </label>
-        <label className="settings-menu-row" data-active={voiceListening}>
-          <span>
-            <strong>Voice</strong>
-            <small>{voiceStatusDetails.visible ? voiceStatusDetails.message : voiceStatusText}</small>
-          </span>
-          <input
-            className="settings-switch"
-            type="checkbox"
-            checked={voiceListening}
-            onChange={(event) => {
-              onVoiceToggle(event.currentTarget.checked);
-            }}
-          />
-        </label>
-      </div>
+      <button
+        className="settings-talk-button"
+        type="button"
+        data-active={voiceListening}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          onVoicePressStart();
+        }}
+        onPointerUp={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+
+          onVoicePressEnd();
+        }}
+        onPointerCancel={onVoicePressEnd}
+        onKeyDown={(event) => {
+          if (event.repeat) {
+            return;
+          }
+
+          if (event.key === " " || event.key === "Enter") {
+            event.preventDefault();
+            onVoicePressStart();
+          }
+        }}
+        onKeyUp={(event) => {
+          if (event.key === " " || event.key === "Enter") {
+            event.preventDefault();
+            onVoicePressEnd();
+          }
+        }}
+      >
+        <span>{voiceListening ? "Listening" : "Hold to talk"}</span>
+        <small>{voiceStatusDetails.visible ? voiceStatusDetails.message : "Ask what to do on this screen"}</small>
+      </button>
 
       <p className="settings-footnote">{settingsStatusText}</p>
 
@@ -1033,6 +1011,23 @@ function OverlayWindowApp() {
         );
         return;
       }
+
+      if (event.payload.type === "submit-voice-listening") {
+        voiceSessionRef.current?.stop();
+        voiceSessionRef.current = null;
+        setVoiceRuntime((currentState) =>
+          currentState.enabled
+            ? {
+                ...currentState,
+                status:
+                  currentState.status === "command_ready"
+                    ? "command_ready"
+                    : "transcribing",
+              }
+            : currentState,
+        );
+        return;
+      }
     })
       .then((cleanup) => {
         unlistenCommand = cleanup;
@@ -1048,6 +1043,17 @@ function OverlayWindowApp() {
 
   useEffect(() => {
     if (!voiceRuntime.enabled) {
+      return;
+    }
+
+    if (voiceRuntime.activationSource !== "debug") {
+      setVoiceRuntime((currentState) => ({
+        ...currentState,
+        enabled: false,
+        permission: "unknown",
+        status: "error",
+        error: "Native microphone capture is not connected yet.",
+      }));
       return;
     }
 
@@ -1195,9 +1201,6 @@ function SettingsWindowApp() {
   const [overlayState, setOverlayState] = useState<OverlayState>("idle");
   const [hasAcceptedGuidance, setHasAcceptedGuidance] = useState(false);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
-  const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
-    createDefaultGestureRuntimeState(),
-  );
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
   );
@@ -1230,7 +1233,6 @@ function SettingsWindowApp() {
       setOverlayState(event.payload.overlayState);
       setHasAcceptedGuidance(event.payload.hasAcceptedGuidance);
       setIsRefreshingCapture(event.payload.isRefreshingCapture);
-      setGestureRuntime(event.payload.gestureRuntime);
       setVoiceRuntime(event.payload.voiceRuntime);
     })
       .then((cleanup) => {
@@ -1313,7 +1315,6 @@ function SettingsWindowApp() {
         overlayState={overlayState}
         hasAcceptedGuidance={hasAcceptedGuidance}
         isRefreshingCapture={isRefreshingCapture}
-        gestureRuntime={gestureRuntime}
         voiceRuntime={voiceRuntime}
         onRefreshCapture={() => {
           emitTo("overlay", "touchpilot://overlay-command", {
@@ -1325,26 +1326,16 @@ function SettingsWindowApp() {
             type: "toggle-pause",
           } satisfies OverlayCommand).catch(() => undefined);
         }}
-        onCameraToggle={(enabled) => {
+        onVoicePressStart={() => {
           emitTo("overlay", "touchpilot://overlay-command", {
-            type: "set-camera-enabled",
-            enabled,
+            type: "start-voice-listening",
+            source: "settings",
           } satisfies OverlayCommand).catch(() => undefined);
         }}
-        onGesturesToggle={(enabled) => {
+        onVoicePressEnd={() => {
           emitTo("overlay", "touchpilot://overlay-command", {
-            type: "set-gestures-enabled",
-            enabled,
+            type: "submit-voice-listening",
           } satisfies OverlayCommand).catch(() => undefined);
-        }}
-        onVoiceToggle={(enabled) => {
-          const command: OverlayCommand = enabled
-            ? { type: "start-voice-listening", source: "settings" }
-            : { type: "stop-voice-listening" };
-
-          emitTo("overlay", "touchpilot://overlay-command", command).catch(
-            () => undefined,
-          );
         }}
         onStartDrag={startSettingsDrag}
         onClose={() => {
@@ -1771,7 +1762,7 @@ function DebugWindowApp() {
                 }}
                 disabled={snapshot.voiceRuntime.status === "listening"}
               >
-                Start listening
+                Start Web Speech
               </button>
               <button
                 type="button"
@@ -1814,8 +1805,8 @@ function DebugWindowApp() {
               </div>
             </dl>
             <p className="debug-muted">
-              {debugVoiceStatusDetails.message}. Final voice text is routed into
-              the current guidance loop as the screen goal.
+              {debugVoiceStatusDetails.message}. Web Speech is debug-only until
+              native microphone capture and cloud transcription are connected.
             </p>
           </section>
 
