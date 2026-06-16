@@ -186,6 +186,16 @@ type VoiceStatusDetails = {
   visible: boolean;
 };
 
+type DebugTab = "runtime" | "voice" | "gesture" | "capture" | "guidance";
+
+const debugTabs: Array<{ id: DebugTab; label: string }> = [
+  { id: "runtime", label: "Runtime" },
+  { id: "voice", label: "Voice" },
+  { id: "gesture", label: "Gesture" },
+  { id: "capture", label: "Capture" },
+  { id: "guidance", label: "Guidance" },
+];
+
 function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDetails {
   if (voiceRuntime.status === "requesting_microphone") {
     return {
@@ -1350,6 +1360,7 @@ function DebugWindowApp() {
   const [snapshot, setSnapshot] = useState<DebugSnapshot>(() =>
     createEmptyDebugSnapshot(),
   );
+  const [activeDebugTab, setActiveDebugTab] = useState<DebugTab>("runtime");
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceSummary[]>([]);
   const [cameraProbeStatus, setCameraProbeStatus] = useState<
     "idle" | "probing" | "ready" | "unsupported" | "error"
@@ -1404,6 +1415,14 @@ function DebugWindowApp() {
 
   function sendOverlayCommand(command: OverlayCommand) {
     emitTo("overlay", "touchpilot://overlay-command", command).catch(() => undefined);
+  }
+
+  function testGuidanceFixture() {
+    sendOverlayCommand({
+      type: "set-guidance-fixture",
+      fixture: "safe",
+    });
+    sendOverlayCommand({ type: "refresh-capture" });
   }
 
   function refreshVoiceCapabilities(requestMicrophone = false) {
@@ -1680,35 +1699,37 @@ function DebugWindowApp() {
           </button>
         </header>
 
+        <div className="debug-tabs" role="tablist" aria-label="Debug sections">
+          {debugTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeDebugTab === tab.id}
+              data-active={activeDebugTab === tab.id}
+              onClick={() => {
+                setActiveDebugTab(tab.id);
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         <div className="debug-actions">
-          <button
-            type="button"
-            onClick={() => {
-              sendOverlayCommand({ type: "refresh-capture" });
-            }}
-            disabled={snapshot.isRefreshingCapture}
-          >
-            {snapshot.isRefreshingCapture ? "Refreshing" : "Refresh capture"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              sendOverlayCommand({ type: "toggle-pause" });
-            }}
-          >
-            {snapshot.overlayState === "paused" ? "Resume overlay" : "Pause overlay"}
-          </button>
           <button
             type="button"
             onClick={() => {
               sendOverlayCommand({ type: "request-state" });
             }}
           >
-            Sync state
+            Sync
           </button>
         </div>
 
         <div className="debug-window-grid">
+          {activeDebugTab === "runtime" ? (
+            <>
           <section className="debug-section">
             <h2>State Controls</h2>
             <div className="debug-toggle-grid">
@@ -1748,6 +1769,42 @@ function DebugWindowApp() {
             </div>
           </section>
 
+          <section className="debug-section">
+            <h2>Runtime</h2>
+            <dl>
+              <div>
+                <dt>State</dt>
+                <dd>{stateMeta[snapshot.overlayState].label}</dd>
+              </div>
+              <div>
+                <dt>Target</dt>
+                <dd>{snapshot.hasAcceptedGuidance ? "Accepted" : "None"}</dd>
+              </div>
+              <div>
+                <dt>Viewport</dt>
+                <dd>
+                  {snapshot.viewport.width} x {snapshot.viewport.height}
+                </dd>
+              </div>
+              <div>
+                <dt>DPR</dt>
+                <dd>{snapshot.viewport.devicePixelRatio}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{snapshot.viewport.updatedAt}</dd>
+              </div>
+              <div>
+                <dt>Fixture</dt>
+                <dd>{snapshot.guidanceFixture}</dd>
+              </div>
+            </dl>
+          </section>
+            </>
+          ) : null}
+
+          {activeDebugTab === "voice" ? (
+            <>
           <section className="debug-section">
             <h2>Voice Runtime</h2>
             <div className="debug-section-header-row">
@@ -1884,6 +1941,11 @@ function DebugWindowApp() {
             )}
           </section>
 
+            </>
+          ) : null}
+
+          {activeDebugTab === "gesture" ? (
+            <>
           <section className="debug-section">
             <h2>Camera Devices</h2>
             <div className="debug-section-header-row">
@@ -2142,38 +2204,11 @@ function DebugWindowApp() {
             </dl>
           </section>
 
-          <section className="debug-section">
-            <h2>Runtime</h2>
-            <dl>
-              <div>
-                <dt>State</dt>
-                <dd>{stateMeta[snapshot.overlayState].label}</dd>
-              </div>
-              <div>
-                <dt>Target</dt>
-                <dd>{snapshot.hasAcceptedGuidance ? "Accepted" : "None"}</dd>
-              </div>
-              <div>
-                <dt>Viewport</dt>
-                <dd>
-                  {snapshot.viewport.width} x {snapshot.viewport.height}
-                </dd>
-              </div>
-              <div>
-                <dt>DPR</dt>
-                <dd>{snapshot.viewport.devicePixelRatio}</dd>
-              </div>
-              <div>
-                <dt>Updated</dt>
-                <dd>{snapshot.viewport.updatedAt}</dd>
-              </div>
-              <div>
-                <dt>Fixture</dt>
-                <dd>{snapshot.guidanceFixture}</dd>
-              </div>
-            </dl>
-          </section>
+            </>
+          ) : null}
 
+          {activeDebugTab === "capture" ? (
+            <>
           <section className="debug-section">
             <h2>Capture</h2>
             <dl>
@@ -2225,7 +2260,50 @@ function DebugWindowApp() {
           </section>
 
           <section className="debug-section">
+            <h2>Calibration</h2>
+            <dl>
+              <div>
+                <dt>Status</dt>
+                <dd>{snapshot.calibration.status}</dd>
+              </div>
+              <div>
+                <dt>Overlay</dt>
+                <dd>
+                  {snapshot.calibration.overlayWidth} x{" "}
+                  {snapshot.calibration.overlayHeight}
+                </dd>
+              </div>
+              <div>
+                <dt>Display</dt>
+                <dd>
+                  {snapshot.calibration.displayWidth} x{" "}
+                  {snapshot.calibration.displayHeight}
+                </dd>
+              </div>
+              <div>
+                <dt>Scale</dt>
+                <dd>{snapshot.calibration.scaleFactor}</dd>
+              </div>
+            </dl>
+            <p>{snapshot.calibration.notes}</p>
+          </section>
+            </>
+          ) : null}
+
+          {activeDebugTab === "guidance" ? (
+            <>
+          <section className="debug-section">
             <h2>Guidance</h2>
+            <div className="debug-section-header-row">
+              <span>{snapshot.guidanceResult ? "ready" : "waiting"}</span>
+              <button
+                type="button"
+                onClick={testGuidanceFixture}
+                disabled={snapshot.isRefreshingCapture}
+              >
+                {snapshot.isRefreshingCapture ? "Testing" : "Test guidance"}
+              </button>
+            </div>
             <dl>
               <div>
                 <dt>Request</dt>
@@ -2272,37 +2350,11 @@ function DebugWindowApp() {
             </dl>
           </section>
 
-          <section className="debug-section">
-            <h2>Calibration</h2>
-            <dl>
-              <div>
-                <dt>Status</dt>
-                <dd>{snapshot.calibration.status}</dd>
-              </div>
-              <div>
-                <dt>Overlay</dt>
-                <dd>
-                  {snapshot.calibration.overlayWidth} x{" "}
-                  {snapshot.calibration.overlayHeight}
-                </dd>
-              </div>
-              <div>
-                <dt>Display</dt>
-                <dd>
-                  {snapshot.calibration.displayWidth} x{" "}
-                  {snapshot.calibration.displayHeight}
-                </dd>
-              </div>
-              <div>
-                <dt>Scale</dt>
-                <dd>{snapshot.calibration.scaleFactor}</dd>
-              </div>
-            </dl>
-            <p>{snapshot.calibration.notes}</p>
-          </section>
+            </>
+          ) : null}
         </div>
 
-        {snapshot.guidanceIssues.length > 0 && (
+        {activeDebugTab === "guidance" && snapshot.guidanceIssues.length > 0 && (
           <section className="debug-section debug-section-wide">
             <h2>Validation Issues</h2>
             <ul>
