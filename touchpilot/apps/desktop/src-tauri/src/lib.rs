@@ -3,7 +3,7 @@ use touchpilot_capture::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -73,6 +73,31 @@ struct VoiceCaptureStopResult {
     audio_base64: String,
     format: &'static str,
     status: &'static str,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VoiceTranscriptionRequest {
+    audio_base64: String,
+    format: String,
+    sample_rate: u32,
+    channels: u16,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VoiceTranscriptionResponse {
+    text: String,
+    provider: &'static str,
+    model: String,
+    byte_length: usize,
+    sample_rate: u32,
+    channels: u16,
+}
+
+#[derive(Deserialize)]
+struct OpenAiTranscriptionResponse {
+    text: String,
 }
 
 fn now_ms() -> u128 {
@@ -471,6 +496,76 @@ fn native_voice_capture_stop(
     })
 }
 
+#[tauri::command]
+fn transcribe_voice_capture(
+    request: VoiceTranscriptionRequest,
+) -> Result<VoiceTranscriptionResponse, String> {
+    let api_key = std::env::var("OPENAI_API_KEY")
+        .map_err(|_| "OPENAI_API_KEY is not set for native voice transcription".to_string())?;
+    let endpoint = std::env::var("TOUCHPILOT_TRANSCRIPTION_URL")
+        .unwrap_or_else(|_| "https://api.openai.com/v1/audio/transcriptions".to_string());
+    let model = std::env::var("TOUCHPILOT_TRANSCRIPTION_MODEL")
+        .unwrap_or_else(|_| "gpt-4o-transcribe".to_string());
+    let audio_bytes = general_purpose::STANDARD
+        .decode(&request.audio_base64)
+        .map_err(|error| format!("native voice audio payload is not valid base64: {error}"))?;
+
+    if audio_bytes.len() <= 44 {
+        return Err("native voice audio payload does not contain usable WAV samples".to_string());
+    }
+
+    let mime_type = if request.format == "audio/wav" {
+        "audio/wav"
+    } else {
+        "application/octet-stream"
+    };
+    let audio_part = reqwest::blocking::multipart::Part::bytes(audio_bytes.clone())
+        .file_name("touchpilot-command.wav")
+        .mime_str(mime_type)
+        .map_err(|error| format!("failed to prepare transcription audio payload: {error}"))?;
+    let form = reqwest::blocking::multipart::Form::new()
+        .part("file", audio_part)
+        .text("model", model.clone())
+        .text("response_format", "json");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(45))
+        .build()
+        .map_err(|error| format!("failed to create transcription client: {error}"))?;
+    let response = client
+        .post(endpoint)
+        .bearer_auth(api_key)
+        .multipart(form)
+        .send()
+        .map_err(|error| format!("transcription request failed: {error}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .map_err(|error| format!("failed to read transcription response: {error}"))?;
+
+    if !status.is_success() {
+        return Err(format!(
+            "transcription provider returned {status}: {body}"
+        ));
+    }
+
+    let parsed: OpenAiTranscriptionResponse = serde_json::from_str(&body)
+        .map_err(|error| format!("failed to parse transcription response: {error}"))?;
+    let text = parsed.text.trim().to_string();
+
+    if text.is_empty() {
+        return Err("transcription provider returned an empty transcript".to_string());
+    }
+
+    Ok(VoiceTranscriptionResponse {
+        text,
+        provider: "openai",
+        model,
+        byte_length: audio_bytes.len(),
+        sample_rate: request.sample_rate,
+        channels: request.channels,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -547,7 +642,8 @@ pub fn run() {
             move_settings_window,
             native_voice_capture_status,
             native_voice_capture_start,
-            native_voice_capture_stop
+            native_voice_capture_stop,
+            transcribe_voice_capture
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
