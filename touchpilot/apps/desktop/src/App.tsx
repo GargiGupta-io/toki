@@ -39,6 +39,10 @@ import {
 } from "./gestureSmoothing";
 import { detectHandLandmarksForVideo, getHandLandmarker } from "./handLandmarker";
 import {
+  startNativeVoiceCapture,
+  stopNativeVoiceCapture,
+} from "./nativeVoiceCapture";
+import {
   getPointerShadowPosition,
   getPuckTargetVector,
 } from "./overlayGeometry";
@@ -52,6 +56,7 @@ import { probeVoiceCapabilities } from "./voiceCapabilities";
 import type { VoiceCapabilityProbe } from "./voiceCapabilities";
 import { startVoiceRecognition } from "./voiceRecognition";
 import type { VoiceRecognitionSession } from "./voiceRecognition";
+import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState, PuckMotionModel } from "./puckMotion";
 import "./App.css";
 
@@ -1011,6 +1016,29 @@ function OverlayWindowApp() {
           activationSource: event.payload.source,
         });
         setOverlayState("listening");
+
+        if (event.payload.source !== "debug") {
+          try {
+            await startNativeVoiceCapture();
+            setVoiceRuntime((currentState) => ({
+              ...currentState,
+              permission: "granted",
+              status: "listening",
+              transcript: undefined,
+              pendingCommand: undefined,
+              error: undefined,
+            }));
+          } catch (error) {
+            setVoiceRuntime((currentState) => ({
+              ...currentState,
+              enabled: false,
+              permission: "error",
+              status: "error",
+              error: error instanceof Error ? error.message : String(error),
+            }));
+          }
+        }
+
         return;
       }
 
@@ -1023,6 +1051,52 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "submit-voice-listening") {
+        if (voiceRuntime.activationSource !== "debug") {
+          setVoiceRuntime((currentState) => ({
+            ...currentState,
+            status: "transcribing",
+          }));
+
+          try {
+            const capture = await stopNativeVoiceCapture();
+            const transcription = await transcribeNativeVoiceCapture(capture);
+
+            if (transcription.status === "ready") {
+              const pendingCommand: VoiceCommandRequest = {
+                text: transcription.transcript.text,
+                source: voiceRuntime.activationSource ?? "settings",
+                createdAt: new Date().toISOString(),
+              };
+
+              setVoiceRuntime((currentState) => ({
+                ...currentState,
+                enabled: false,
+                permission: "granted",
+                status: "command_ready",
+                transcript: transcription.transcript,
+                pendingCommand,
+                error: undefined,
+              }));
+            } else {
+              setVoiceRuntime((currentState) => ({
+                ...currentState,
+                enabled: false,
+                status: "error",
+                error: transcription.error,
+              }));
+            }
+          } catch (error) {
+            setVoiceRuntime((currentState) => ({
+              ...currentState,
+              enabled: false,
+              status: "error",
+              error: error instanceof Error ? error.message : String(error),
+            }));
+          }
+
+          return;
+        }
+
         voiceSessionRef.current?.stop();
         voiceSessionRef.current = null;
         setVoiceRuntime((currentState) =>
@@ -1052,18 +1126,7 @@ function OverlayWindowApp() {
   }, [overlaySnapshot, debugSnapshot, viewport, guidanceResult]);
 
   useEffect(() => {
-    if (!voiceRuntime.enabled) {
-      return;
-    }
-
-    if (voiceRuntime.activationSource !== "debug") {
-      setVoiceRuntime((currentState) => ({
-        ...currentState,
-        enabled: false,
-        permission: "unknown",
-        status: "error",
-        error: "Native microphone capture is not connected yet.",
-      }));
+    if (!voiceRuntime.enabled || voiceRuntime.activationSource !== "debug") {
       return;
     }
 
@@ -1147,7 +1210,7 @@ function OverlayWindowApp() {
         voiceSessionRef.current = null;
       }
     };
-  }, [voiceRuntime.enabled]);
+  }, [voiceRuntime.enabled, voiceRuntime.activationSource]);
 
   useEffect(() => {
     const command = voiceRuntime.pendingCommand;
