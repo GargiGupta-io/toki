@@ -1,11 +1,60 @@
 use touchpilot_capture::{
     capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
 };
+use serde::Serialize;
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::MenuBuilder,
     tray::TrayIconBuilder,
-    Manager, PhysicalPosition, PhysicalSize, Position, Size,
+    Manager, PhysicalPosition, PhysicalSize, Position, Size, State,
 };
+
+#[derive(Default)]
+struct VoiceCaptureStore {
+    active_session: Option<VoiceCaptureSession>,
+}
+
+struct VoiceCaptureSession {
+    id: String,
+    started_at_ms: u128,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VoiceCaptureStatus {
+    status: &'static str,
+    session_id: Option<String>,
+    started_at_ms: Option<u128>,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VoiceCaptureStartResult {
+    session_id: String,
+    started_at_ms: u128,
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VoiceCaptureStopResult {
+    session_id: String,
+    started_at_ms: u128,
+    stopped_at_ms: u128,
+    duration_ms: u128,
+    byte_length: usize,
+    format: &'static str,
+    status: &'static str,
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_millis(0))
+        .as_millis()
+}
 
 #[cfg(windows)]
 fn prepare_windows_utility_window<R: tauri::Runtime>(
@@ -137,10 +186,75 @@ fn move_settings_window(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), Str
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn native_voice_capture_status(
+    store: State<'_, Mutex<VoiceCaptureStore>>,
+) -> Result<VoiceCaptureStatus, String> {
+    let store = store.lock().map_err(|_| "voice capture state is poisoned".to_string())?;
+
+    if let Some(session) = &store.active_session {
+        return Ok(VoiceCaptureStatus {
+            status: "capturing",
+            session_id: Some(session.id.clone()),
+            started_at_ms: Some(session.started_at_ms),
+            message: "Native microphone capture session is active.".to_string(),
+        });
+    }
+
+    Ok(VoiceCaptureStatus {
+        status: "idle",
+        session_id: None,
+        started_at_ms: None,
+        message: "Native microphone capture is idle.".to_string(),
+    })
+}
+
+#[tauri::command]
+fn native_voice_capture_start(
+    store: State<'_, Mutex<VoiceCaptureStore>>,
+) -> Result<VoiceCaptureStartResult, String> {
+    let mut store = store.lock().map_err(|_| "voice capture state is poisoned".to_string())?;
+    let started_at_ms = now_ms();
+    let session_id = format!("voice-{started_at_ms}");
+
+    store.active_session = Some(VoiceCaptureSession {
+        id: session_id.clone(),
+        started_at_ms,
+    });
+
+    Ok(VoiceCaptureStartResult {
+        session_id,
+        started_at_ms,
+        status: "capturing",
+    })
+}
+
+#[tauri::command]
+fn native_voice_capture_stop(
+    store: State<'_, Mutex<VoiceCaptureStore>>,
+) -> Result<VoiceCaptureStopResult, String> {
+    let mut store = store.lock().map_err(|_| "voice capture state is poisoned".to_string())?;
+    let Some(session) = store.active_session.take() else {
+        return Err("no active native voice capture session".to_string());
+    };
+    let stopped_at_ms = now_ms();
+
+    Ok(VoiceCaptureStopResult {
+        session_id: session.id,
+        started_at_ms: session.started_at_ms,
+        stopped_at_ms,
+        duration_ms: stopped_at_ms.saturating_sub(session.started_at_ms),
+        byte_length: 0,
+        format: "native-audio-placeholder",
+        status: "stopped",
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(Mutex::new(VoiceCaptureStore::default()))
         .setup(|app| {
             if let Some(overlay) = app.get_webview_window("overlay") {
                 let _ = overlay.set_title(" ");
@@ -209,7 +323,10 @@ pub fn run() {
             capture_metadata,
             capture_screenshot,
             hide_settings_window,
-            move_settings_window
+            move_settings_window,
+            native_voice_capture_status,
+            native_voice_capture_start,
+            native_voice_capture_stop
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
