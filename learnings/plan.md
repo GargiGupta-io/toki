@@ -948,7 +948,7 @@ Goal: Let the user speak their task, turn that speech into a command, capture th
 
 Decision:
 
-> Voice is the primary user input. Text command input is debug-only, used only to test the guidance loop when microphone or transcription behavior is unreliable.
+> Voice is the primary user input. The production path should use native Rust microphone capture plus cloud transcription, not Web Speech as the default. Text command input and Web Speech remain debug-only fallbacks.
 
 Tasks:
 
@@ -964,27 +964,53 @@ Tasks:
    - transcribing
    - command ready
    - error
-3. Probe WebView2 microphone and speech/transcription support on the Surface device.
-4. Add push-to-talk or toggle-to-talk from settings/debug.
-5. Show a minimal listening indicator without turning the overlay into an app window.
-6. Add a transcription adapter that converts speech into the shared command shape.
-7. Send the transcript into the screen capture and guidance loop.
-8. Add a debug-only text command fallback for QA.
-9. Connect pinch to start/listen and open palm to stop/pause after the voice loop works.
-10. Handle microphone denied, no microphone, empty transcript, failed transcription, and cancel.
-11. Run manual end-to-end QA:
-    - speak command
-    - capture screen
-    - target appears
-    - puck guides
-12. Document remaining mocked pieces and platform limits.
+3. Probe WebView2 microphone and speech support on the Surface device, but keep Web Speech as debug-only after QA showed it can expose unwanted browser/platform chrome.
+4. Replace the normal settings voice toggle with a push-to-talk control:
+   - press and hold to talk
+   - release to stop and submit
+   - escape/stop/pause cancels
+5. Move camera toggles out of normal settings:
+   - voice command can request camera/gesture activation
+   - debug remains the place for low-level camera controls
+6. Build native Rust microphone capture:
+   - request microphone permission
+   - capture audio while push-to-talk is held
+   - stop cleanly on release/cancel
+   - emit audio chunks or a completed audio payload to the frontend/runtime
+7. Add a cloud transcription adapter:
+   - send native-captured audio to the transcription provider
+   - return transcript text and confidence/error state
+   - keep provider keys out of the frontend
+8. Route the transcript into the screen capture and guidance loop.
+9. Add a debug-only Web Speech fallback:
+   - probe support
+   - start/stop manually
+   - report unsupported behavior clearly
+10. Add a debug-only text command fallback for QA.
+11. Simplify debug into tabs:
+   - Runtime
+   - Voice
+   - Gesture
+   - Capture
+   - Guidance
+12. Add a debug `Test guidance` action so the mock target can be tested without voice.
+13. Connect pinch to start/listen and open palm to stop/pause after the native voice loop works.
+14. Handle microphone denied, no microphone, empty transcript, failed transcription, blue-bar/platform UI regression, and cancel.
+15. Run manual end-to-end QA:
+     - speak command
+     - capture screen
+     - target appears
+     - puck guides
+16. Document remaining mocked pieces and platform limits.
 
 Done when:
 
 - the normal user flow is voice-first, not text-prompt-first
-- user can speak a task and trigger the guidance loop
-- debug can still test the guidance loop with text when voice fails
-- user can stop listening with gesture, settings, or keyboard
+- user can push-to-talk, speak a task, and trigger the guidance loop
+- default runtime does not show Web Speech/browser microphone chrome
+- normal settings do not expose confusing camera internals
+- debug can still test the guidance loop with text or Web Speech fallback when native/cloud voice fails
+- user can stop listening with release, gesture, settings, or keyboard
 - the overlay stays cursor-first and does not become a chatbot window
 
 ---
