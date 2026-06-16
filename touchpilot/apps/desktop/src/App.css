@@ -202,6 +202,14 @@ html {
   font-weight: 600;
 }
 
+.settings-menu-row[data-active="true"] strong {
+  color: rgba(255, 255, 255, 0.98);
+}
+
+.settings-menu-row[data-active="true"] small {
+  color: rgba(255, 255, 255, 0.74);
+}
+
 .settings-switch {
   width: 18px;
   height: 18px;
@@ -611,6 +619,68 @@ h1 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.voice-status-cue {
+  position: absolute;
+  right: 28px;
+  bottom: 128px;
+  max-width: min(260px, calc(100vw - 56px));
+  display: grid;
+  gap: 2px;
+  padding: 7px 10px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.025)),
+    rgba(9, 10, 12, 0.58);
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(18px);
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition:
+    left 70ms linear,
+    top 70ms linear,
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.voice-status-cue span {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.voice-status-cue small {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.66rem;
+  font-weight: 650;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-status-cue[data-tone="listening"] {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.voice-status-cue[data-tone="processing"] {
+  opacity: 0.88;
+}
+
+.voice-status-cue[data-tone="ready"] {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.voice-status-cue[data-tone="error"] {
+  border-color: rgba(255, 255, 255, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02)),
+    rgba(24, 12, 14, 0.64);
 }
 
 .assistant-puck {
