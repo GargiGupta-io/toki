@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This checklist verifies the first voice MVP path:
+This checklist originally verified the first Web Speech MVP path:
 
 - settings/debug can start and stop voice mode
 - microphone capability probing reports the real platform state
@@ -11,6 +11,17 @@ This checklist verifies the first voice MVP path:
 - voice can be interrupted without stale transcript state
 
 Phase 10 does not require production-quality voice yet. The pass bar is that the app clearly proves what this Windows WebView can and cannot support.
+
+Step 10.10 changed the target architecture. Web Speech is no longer the preferred default runtime path because manual QA showed it can reintroduce unwanted platform/browser chrome while voice is active.
+
+Corrected target:
+
+- native Rust microphone capture
+- cloud transcription
+- push-to-talk activation
+- Web Speech as debug-only fallback
+- tabbed debug UI
+- camera/gesture controls moved out of normal settings
 
 ## Preconditions
 
@@ -154,3 +165,49 @@ Phase 10 voice runtime QA passes when:
 - final command text routes into the guidance loop
 - stop/pause clears active voice state
 - overlay remains invisible/cursor-first
+
+## Step 10.10 Manual QA Result
+
+Status: failed as product acceptance, useful as diagnostic proof.
+
+Observed:
+
+- Speech recognition captured the command text.
+- Transcript and command state reached debug.
+- The mock guidance target appeared after the command.
+- Voice capability probing reported `SpeechRecognition` and microphone availability.
+- The overlay/puck still followed cursor behavior.
+
+Failures:
+
+1. A blue platform/browser strip appeared while voice mode was active.
+2. Voice behaved like a settings toggle instead of push-to-talk.
+3. Normal settings exposed Camera and Gestures as implementation toggles.
+4. The mock target was not useful enough as a user-facing proof of guidance.
+5. Debug was too crowded to read quickly.
+6. Debug used too many large boxed controls.
+
+Conclusion:
+
+- The current Web Speech path proves a possible transcript-to-guidance pipeline.
+- It should be kept for debug fallback only.
+- The product path should move to native microphone capture plus cloud transcription.
+
+## Replacement Step 10.10 Plan
+
+1. Keep the current Web Speech support behind debug-only controls.
+2. Replace the normal settings voice toggle with push-to-talk behavior.
+3. Hide Camera and Gestures toggles from normal settings.
+4. Add native Rust microphone capture commands.
+5. Add cloud transcription adapter behind the native audio path.
+6. Route cloud transcripts into the existing guidance loop.
+7. Add voice command handling for camera/gesture activation.
+8. Add debug `Test guidance` action for mock target checks.
+9. Convert debug to tabs:
+   - Runtime
+   - Voice
+   - Gesture
+   - Capture
+   - Guidance
+10. Remove oversized boxed button treatment where dense controls are enough.
+11. Re-run manual QA and fail if any platform/app strip appears during voice.
