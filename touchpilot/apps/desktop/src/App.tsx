@@ -176,6 +176,69 @@ const debugGuidanceFixtures: Array<{
   { fixture: "invalid", label: "Invalid" },
 ];
 
+type VoiceStatusTone = "idle" | "listening" | "processing" | "ready" | "error";
+
+type VoiceStatusDetails = {
+  tone: VoiceStatusTone;
+  label: string;
+  message: string;
+  visible: boolean;
+};
+
+function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDetails {
+  if (voiceRuntime.status === "requesting_microphone") {
+    return {
+      tone: "processing",
+      label: "Mic",
+      message: "Requesting microphone",
+      visible: true,
+    };
+  }
+
+  if (voiceRuntime.status === "listening") {
+    return {
+      tone: "listening",
+      label: "Listening",
+      message: voiceRuntime.transcript?.text || "Speak now",
+      visible: true,
+    };
+  }
+
+  if (voiceRuntime.status === "transcribing") {
+    return {
+      tone: "processing",
+      label: "Processing",
+      message: voiceRuntime.transcript?.text || "Reading command",
+      visible: true,
+    };
+  }
+
+  if (voiceRuntime.status === "command_ready") {
+    return {
+      tone: "ready",
+      label: "Command ready",
+      message: voiceRuntime.transcript?.text || "Routing to guidance",
+      visible: true,
+    };
+  }
+
+  if (voiceRuntime.status === "error") {
+    return {
+      tone: "error",
+      label: "Voice unavailable",
+      message: voiceRuntime.error || "Speech recognition failed",
+      visible: true,
+    };
+  }
+
+  return {
+    tone: "idle",
+    label: "Voice",
+    message: "Idle",
+    visible: false,
+  };
+}
+
 function AssistantPuck({
   state,
   motion,
@@ -224,6 +287,39 @@ function AssistantPuck({
         <span className="puck-shadow-tail" />
       </span>
     </div>
+  );
+}
+
+function VoiceStatusCue({
+  voiceRuntime,
+  pointerShadow,
+}: {
+  voiceRuntime: VoiceRuntimeState;
+  pointerShadow: PointerShadowPosition | null;
+}) {
+  const details = getVoiceStatusDetails(voiceRuntime);
+  const style =
+    pointerShadow == null
+      ? undefined
+      : ({
+          left: pointerShadow.x + 32,
+          top: pointerShadow.y + 28,
+        } as CSSProperties);
+
+  if (!details.visible) {
+    return null;
+  }
+
+  return (
+    <aside
+      className="voice-status-cue"
+      data-tone={details.tone}
+      style={style}
+      aria-label={`Voice status: ${details.label}`}
+    >
+      <span>{details.label}</span>
+      <small>{details.message}</small>
+    </aside>
   );
 }
 
@@ -310,6 +406,7 @@ function SettingsPopup({
         : voiceRuntime.status === "error"
           ? "Voice error"
           : "Idle";
+  const voiceStatusDetails = getVoiceStatusDetails(voiceRuntime);
   const settingsStatusText = hasAcceptedGuidance
     ? "Target locked."
     : isPaused
@@ -401,10 +498,10 @@ function SettingsPopup({
             }}
           />
         </label>
-        <label className="settings-menu-row">
+        <label className="settings-menu-row" data-active={voiceListening}>
           <span>
             <strong>Voice</strong>
-            <small>{voiceStatusText}</small>
+            <small>{voiceStatusDetails.visible ? voiceStatusDetails.message : voiceStatusText}</small>
           </span>
           <input
             className="settings-switch"
@@ -1028,7 +1125,20 @@ function OverlayWindowApp() {
     }
 
     routedVoiceCommandRef.current = commandKey;
-    void refreshCaptureMetadata(command.text);
+    setVoiceRuntime((currentState) => ({
+      ...currentState,
+      status: "transcribing",
+    }));
+    void refreshCaptureMetadata(command.text).finally(() => {
+      setVoiceRuntime((currentState) =>
+        currentState.pendingCommand?.createdAt === command.createdAt
+          ? {
+              ...currentState,
+              status: "command_ready",
+            }
+          : currentState,
+      );
+    });
   }, [
     voiceRuntime.status,
     voiceRuntime.pendingCommand,
@@ -1054,6 +1164,7 @@ function OverlayWindowApp() {
         pointerShadow={pointerShadow}
         targetVector={puckTargetVector}
       />
+      <VoiceStatusCue voiceRuntime={voiceRuntime} pointerShadow={pointerShadow} />
     </main>
   );
 }
@@ -1276,6 +1387,7 @@ function DebugWindowApp() {
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
+  const debugVoiceStatusDetails = getVoiceStatusDetails(snapshot.voiceRuntime);
 
   function sendOverlayCommand(command: OverlayCommand) {
     emitTo("overlay", "touchpilot://overlay-command", command).catch(() => undefined);
@@ -1626,7 +1738,7 @@ function DebugWindowApp() {
           <section className="debug-section">
             <h2>Voice Runtime</h2>
             <div className="debug-section-header-row">
-              <span>{snapshot.voiceRuntime.status}</span>
+              <span>{debugVoiceStatusDetails.label}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -1676,8 +1788,8 @@ function DebugWindowApp() {
               </div>
             </dl>
             <p className="debug-muted">
-              Final voice text is routed into the current guidance loop as the
-              screen goal.
+              {debugVoiceStatusDetails.message}. Final voice text is routed into
+              the current guidance loop as the screen goal.
             </p>
           </section>
 
