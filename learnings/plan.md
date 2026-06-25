@@ -1067,7 +1067,7 @@ Done when:
 
 ## Phase M1: macOS Runtime Shell
 
-Goal: Make TouchPilot behave like a macOS-first Clicky-style utility.
+Goal: Make Toki behave like a macOS-first Clicky-style utility.
 
 Reason:
 
@@ -1079,7 +1079,7 @@ Tasks:
 2. Verify the settings popup opens intentionally and behaves like a temporary utility popup.
 3. Verify the overlay window has no visible app chrome.
 4. Verify the overlay does not block normal desktop interaction.
-5. Make TouchPilot feel like a menu bar utility.
+5. Make Toki feel like a menu bar utility.
 6. Validate settings popup behavior on Mac.
 7. Validate transparent overlay behavior on Mac.
 8. Remove any Windows-only assumptions from the default runtime.
@@ -1089,7 +1089,7 @@ Tasks:
 
 Done when:
 
-- TouchPilot feels like a menu bar utility on Mac
+- Toki feels like a menu bar utility on Mac
 - settings does not feel like a normal app window
 - overlay is visually quiet and cursor-first
 - Windows-specific overlay fixes do not define the default Mac path
@@ -1148,7 +1148,37 @@ Done when:
 
 ---
 
-## Phase M4: Gesture Re-Test On Mac
+## Phase M4: Clicky Reference Alignment On Mac
+
+Goal: Port the useful Clicky behavior patterns into Toki's Mac runtime without copying the Swift app wholesale.
+
+Reason:
+
+Clicky is the closest product reference for the Mac feel we want: menu bar presence, compact panel, transparent cursor overlay, push-to-talk, and a clean separation between voice capture, transcription, command routing, and model/API access. Toki should use that as a behavior contract while keeping its Tauri/React/Rust architecture.
+
+Tasks:
+
+1. Make the app menu-bar-first on Mac.
+2. Improve or replace the menu bar icon so it is visible and cursor-like.
+3. Auto-open settings on first launch or dev launch so the app is discoverable.
+4. Refine settings into a compact Clicky-style panel.
+5. Keep debug as a separate internal window, not part of normal settings.
+6. Validate the transparent click-through cursor overlay against the Clicky reference.
+7. Add or plan native global push-to-talk using a Mac event-monitoring path.
+8. Preserve separation between mic capture, transcription provider, command routing, and guidance activation.
+9. Document the backend/proxy rule for paid API keys so provider keys never ship in production app builds.
+
+Done when:
+
+- Toki is discoverable from the Mac menu bar
+- settings feels like a compact utility panel instead of an app window
+- the transparent overlay remains cursor-first and click-through
+- push-to-talk architecture is aligned with the Clicky reference
+- paid API key handling is documented as backend/proxy-only for production
+
+---
+
+## Phase M5: Gesture Re-Test On Mac
 
 Goal: Re-test Phase 9 gesture behavior on the new Mac runtime.
 

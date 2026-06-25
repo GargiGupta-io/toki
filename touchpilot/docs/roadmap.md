@@ -86,7 +86,19 @@
 - Confirm transcript text drives the guidance loop.
 - Fix Mac-specific microphone permission or CPAL issues.
 
-## Phase M4: Gesture Re-Test On Mac
+## Phase M4: Clicky Reference Alignment On Mac
+
+- Make Toki menu-bar-first on Mac.
+- Improve the menu bar icon so it is visible and cursor-like.
+- Auto-open settings on first/dev launch so the app is discoverable.
+- Refine settings into a compact Clicky-style panel.
+- Keep debug as a separate internal window.
+- Validate the transparent click-through cursor overlay against Clicky.
+- Add or plan native global push-to-talk.
+- Keep mic capture, transcription, command routing, and guidance activation separated.
+- Document the backend/proxy rule for paid API keys.
+
+## Phase M5: Gesture Re-Test On Mac
 
 - Test camera enumeration on Mac.
 - Test MediaPipe hand landmarks.
