@@ -200,6 +200,34 @@ The app treats these messages as permission-related:
 
 This makes the capture failure path more useful without changing the underlying capture architecture.
 
+## Phase M2 Capture Coordinate Update
+
+Plain English: Retina screens report two related sizes. The app sees a logical desktop size for UI placement, while screenshots come back at physical pixel size.
+
+The Mac capture probe currently reports:
+
+```text
+display metadata: 1470x956 scale=2
+screenshot:       2940x1912
+```
+
+That is correct because:
+
+```text
+1470 * 2 = 2940
+956 * 2  = 1912
+```
+
+TouchPilot now checks this relationship when building calibration metadata. It still keeps the existing shared calibration shape, but the note/status now considers whether screenshot dimensions match `display * scaleFactor`.
+
+Why this matters:
+
+- the overlay/puck uses logical coordinates
+- the screenshot sent to guidance is pixel-dense
+- target coordinates must not accidentally mix those two spaces
+
+If the screenshot size does not match the expected Retina scale, calibration reports `needs_check` and the debug readout should surface the mismatch.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -231,3 +259,4 @@ Phase M1 should focus on:
 - 2026-06-25 - Removed user-facing Windows camera permission copy and added explicit Mac/Windows release script names.
 - 2026-06-25 - Added macOS capture probe and recorded successful Retina capture outside the sandbox.
 - 2026-06-25 - Added macOS Screen Recording guidance for permission-like capture failures.
+- 2026-06-25 - Added Retina screenshot scale validation to desktop calibration metadata.
