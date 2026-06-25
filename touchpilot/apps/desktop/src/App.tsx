@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
@@ -409,7 +409,7 @@ function SettingsPopup({
   onPauseToggle: () => void;
   onVoicePressStart: () => void;
   onVoicePressEnd: () => void;
-  onStartDrag: (event: ReactPointerEvent<HTMLElement>) => void;
+  onStartDrag: () => void;
   onClose: () => void;
 }) {
   const isPaused = overlayState === "paused";
@@ -439,7 +439,7 @@ function SettingsPopup({
             target instanceof HTMLElement &&
             !target.closest("button,input,label")
           ) {
-            onStartDrag(event);
+            onStartDrag();
           }
         }}
       >
@@ -1277,7 +1277,6 @@ function SettingsWindowApp() {
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
   );
-  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 
   function hideSettings() {
     invoke("hide_settings_window").catch(() => {
@@ -1285,18 +1284,10 @@ function SettingsWindowApp() {
     });
   }
 
-  function startSettingsDrag(event: ReactPointerEvent<HTMLElement>) {
+  function startSettingsDrag() {
     overlayWindow
-      .outerPosition()
-      .then((position) => {
-        dragOffsetRef.current = {
-          x: event.screenX - position.x,
-          y: event.screenY - position.y,
-        };
-      })
-      .catch(() => {
-        dragOffsetRef.current = null;
-      });
+      .startDragging()
+      .catch(() => undefined);
   }
 
   useEffect(() => {
@@ -1351,34 +1342,6 @@ function SettingsWindowApp() {
     return () => {
       unlistenFocus?.();
       window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
-  useEffect(() => {
-    function handlePointerMove(event: PointerEvent) {
-      const offset = dragOffsetRef.current;
-      if (offset == null) {
-        return;
-      }
-
-      invoke("move_settings_window", {
-        x: Math.round(event.screenX - offset.x),
-        y: Math.round(event.screenY - offset.y),
-      }).catch(() => undefined);
-    }
-
-    function stopDrag() {
-      dragOffsetRef.current = null;
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stopDrag);
-    window.addEventListener("pointercancel", stopDrag);
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", stopDrag);
-      window.removeEventListener("pointercancel", stopDrag);
     };
   }, []);
 

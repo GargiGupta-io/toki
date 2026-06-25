@@ -377,17 +377,6 @@ fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn move_settings_window(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
-    let Some(window) = app.get_webview_window("settings") else {
-        return Err("settings window not found".to_string());
-    };
-
-    window
-        .set_position(Position::Physical(PhysicalPosition { x, y }))
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 fn native_voice_capture_status(
     store: State<'_, Mutex<VoiceCaptureStore>>,
 ) -> Result<VoiceCaptureStatus, String> {
@@ -639,7 +628,6 @@ pub fn run() {
             capture_metadata,
             capture_screenshot,
             hide_settings_window,
-            move_settings_window,
             native_voice_capture_status,
             native_voice_capture_start,
             native_voice_capture_stop,
