@@ -1,4 +1,4 @@
-import type { VoicePermissionState } from "@touchpilot/shared";
+import type { VoicePermissionState } from "@toki/shared";
 
 type SpeechRecognitionLike = {
   continuous: boolean;

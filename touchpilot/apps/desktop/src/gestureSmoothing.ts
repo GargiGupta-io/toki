@@ -2,7 +2,7 @@ import type {
   GestureClassification,
   GestureLabel,
   GestureThresholds,
-} from "@touchpilot/shared";
+} from "@toki/shared";
 
 type GestureCandidate = Pick<
   GestureClassification,

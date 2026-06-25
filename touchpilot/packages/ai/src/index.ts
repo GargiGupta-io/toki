@@ -4,7 +4,7 @@ import type {
   GuidanceValidationIssue,
   GuidanceValidationResult,
   RiskClass,
-} from "@touchpilot/shared";
+} from "@toki/shared";
 
 const validRiskClasses: RiskClass[] = [
   "safe_navigation",

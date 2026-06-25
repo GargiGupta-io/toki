@@ -1,4 +1,4 @@
-import type { VoiceTranscript } from "@touchpilot/shared";
+import type { VoiceTranscript } from "@toki/shared";
 
 type BrowserSpeechRecognitionResult = {
   readonly 0: { transcript: string; confidence: number };

@@ -1,4 +1,4 @@
-import type { CameraDeviceKind, CameraDeviceSummary } from "@touchpilot/shared";
+import type { CameraDeviceKind, CameraDeviceSummary } from "@toki/shared";
 
 function classifyCameraDevice(label: string): CameraDeviceKind {
   const normalized = label.toLowerCase();

@@ -4,7 +4,7 @@ import type {
   HandLandmarkFrame,
   HandLandmarkName,
   HandLandmarkPoint,
-} from "@touchpilot/shared";
+} from "@toki/shared";
 
 const pinchThreshold = 0.34;
 const openPalmMinExtendedFingers = 4;

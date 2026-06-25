@@ -5,7 +5,7 @@ import type {
   HandLandmarkName,
   HandLandmarkPoint,
   Handedness,
-} from "@touchpilot/shared";
+} from "@toki/shared";
 
 const mediapipeVersion = "0.10.35";
 const wasmBaseUrl = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${mediapipeVersion}/wasm`;

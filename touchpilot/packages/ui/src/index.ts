@@ -1,1 +1,1 @@
-export const uiPackageName = "@touchpilot/ui";
+export const uiPackageName = "@toki/ui";

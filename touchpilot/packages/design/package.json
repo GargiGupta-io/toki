@@ -1,9 +1,9 @@
 {
-  "name": "@touchpilot/design",
+  "name": "@toki/design",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Design tokens, motion rules, and visual system primitives for TouchPilot.",
+  "description": "Design tokens, motion rules, and visual system primitives for Toki.",
   "scripts": {
     "typecheck": "tsc --project tsconfig.json"
   }

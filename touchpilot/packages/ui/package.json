@@ -1,9 +1,9 @@
 {
-  "name": "@touchpilot/ui",
+  "name": "@toki/ui",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Shared React UI components for the TouchPilot desktop overlay.",
+  "description": "Shared React UI components for the Toki desktop overlay.",
   "scripts": {
     "typecheck": "tsc --project tsconfig.json"
   }

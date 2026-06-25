@@ -1,4 +1,4 @@
-import type { TargetBox } from "@touchpilot/shared";
+import type { TargetBox } from "@toki/shared";
 
 export type ViewportMetrics = {
   width: number;

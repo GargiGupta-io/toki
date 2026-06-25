@@ -1,1 +1,1 @@
-export const designPackageName = "@touchpilot/design";
+export const designPackageName = "@toki/design";

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { VoiceTranscript } from "@touchpilot/shared";
+import type { VoiceTranscript } from "@toki/shared";
 import type { NativeVoiceCaptureStopResult } from "./nativeVoiceCapture";
 
 export type VoiceTranscriptionResult =

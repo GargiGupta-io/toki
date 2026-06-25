@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GuidanceResult, RiskClass } from "@touchpilot/shared";
+import type { GuidanceResult, RiskClass } from "@toki/shared";
 import {
   createInvalidMockGuidance,
   createMockGuidance,

@@ -8,7 +8,7 @@ import {
   createMockGuidance,
   createRiskyMockGuidance,
   validateGuidanceResult,
-} from "@touchpilot/ai";
+} from "@toki/ai";
 import type {
   CameraDeviceSummary,
   CameraPermissionState,
@@ -30,7 +30,7 @@ import type {
   VoiceCommandRequest,
   VoiceRuntimeState,
   VoiceTranscript,
-} from "@touchpilot/shared";
+} from "@toki/shared";
 import { probeCameraDevices } from "./cameraDevices";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
 import {
@@ -214,7 +214,7 @@ function formatCaptureError(error: unknown): string {
     return message;
   }
 
-  return `${message}. On macOS, grant Screen Recording permission to TouchPilot or the terminal app, then quit and relaunch it.`;
+  return `${message}. On macOS, grant Screen Recording permission to Toki or the terminal app, then quit and relaunch it.`;
 }
 
 function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDetails {
@@ -314,7 +314,7 @@ function AssistantPuck({
       data-pointer-shadow={motion.state === "shadow" && pointerShadow ? "active" : "idle"}
       data-target-droplets={motion.canSendTargetDroplets ? "enabled" : "disabled"}
       style={puckStyle}
-      aria-label={`TouchPilot is ${meta.label.toLowerCase()}`}
+      aria-label={`Toki is ${meta.label.toLowerCase()}`}
     >
       <span className="puck-orbit" aria-hidden="true" />
       <span className="puck-droplets" aria-hidden="true">
@@ -445,7 +445,7 @@ function SettingsPopup({
         : "Waiting for voice, prompt, or gesture.";
 
   return (
-    <section className="settings-popup" aria-label="TouchPilot settings">
+    <section className="settings-popup" aria-label="Toki settings">
       <div
         className="settings-popup-header"
         onPointerDown={(event) => {
@@ -466,7 +466,7 @@ function SettingsPopup({
             }`}
             aria-hidden="true"
           />
-          <h2>TouchPilot</h2>
+          <h2>Toki</h2>
         </div>
         <div className="settings-window-actions">
           <span className="settings-state-label">{isPaused ? "Paused" : "Active"}</span>
@@ -783,10 +783,10 @@ function OverlayWindowApp() {
   );
 
   async function publishRuntimeSnapshots() {
-    await emitTo("settings", "touchpilot://overlay-state", overlaySnapshot).catch(
+    await emitTo("settings", "toki://overlay-state", overlaySnapshot).catch(
       () => undefined,
     );
-    await emitTo("debug", "touchpilot://debug-state", debugSnapshot).catch(
+    await emitTo("debug", "toki://debug-state", debugSnapshot).catch(
       () => undefined,
     );
   }
@@ -902,7 +902,7 @@ function OverlayWindowApp() {
   useEffect(() => {
     let unlistenCommand: (() => void) | undefined;
 
-    listen<OverlayCommand>("touchpilot://overlay-command", async (event) => {
+    listen<OverlayCommand>("toki://overlay-command", async (event) => {
       if (event.payload.type === "refresh-capture") {
         await refreshCaptureMetadata();
         return;
@@ -1276,7 +1276,7 @@ function OverlayWindowApp() {
   return (
     <main
       className={`overlay-shell is-${stateMeta[overlayState].tone}`}
-      aria-label="TouchPilot overlay"
+      aria-label="Toki overlay"
     >
       {overlayState !== "idle" && hasAcceptedGuidance && (
         <>
@@ -1319,7 +1319,7 @@ function SettingsWindowApp() {
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
 
-    listen<OverlaySnapshot>("touchpilot://overlay-state", (event) => {
+    listen<OverlaySnapshot>("toki://overlay-state", (event) => {
       setOverlayState(event.payload.overlayState);
       setHasAcceptedGuidance(event.payload.hasAcceptedGuidance);
       setIsRefreshingCapture(event.payload.isRefreshingCapture);
@@ -1332,7 +1332,7 @@ function SettingsWindowApp() {
         unlistenState = undefined;
       });
 
-    emitTo("overlay", "touchpilot://overlay-command", {
+    emitTo("overlay", "toki://overlay-command", {
       type: "request-state",
     } satisfies OverlayCommand).catch(() => undefined);
 
@@ -1383,7 +1383,7 @@ function SettingsWindowApp() {
       ) {
         event.preventDefault();
         isSpaceVoiceHeldRef.current = true;
-        emitTo("overlay", "touchpilot://overlay-command", {
+        emitTo("overlay", "toki://overlay-command", {
           type: "start-voice-listening",
           source: "settings",
         } satisfies OverlayCommand).catch(() => undefined);
@@ -1394,7 +1394,7 @@ function SettingsWindowApp() {
       if (event.code === "Space" && isSpaceVoiceHeldRef.current) {
         event.preventDefault();
         isSpaceVoiceHeldRef.current = false;
-        emitTo("overlay", "touchpilot://overlay-command", {
+        emitTo("overlay", "toki://overlay-command", {
           type: "submit-voice-listening",
         } satisfies OverlayCommand).catch(() => undefined);
       }
@@ -1411,30 +1411,30 @@ function SettingsWindowApp() {
   }, []);
 
   return (
-    <main className="settings-shell" aria-label="TouchPilot settings window">
+    <main className="settings-shell" aria-label="Toki settings window">
       <SettingsPopup
         overlayState={overlayState}
         hasAcceptedGuidance={hasAcceptedGuidance}
         isRefreshingCapture={isRefreshingCapture}
         voiceRuntime={voiceRuntime}
         onRefreshCapture={() => {
-          emitTo("overlay", "touchpilot://overlay-command", {
+          emitTo("overlay", "toki://overlay-command", {
             type: "refresh-capture",
           } satisfies OverlayCommand).catch(() => undefined);
         }}
         onPauseToggle={() => {
-          emitTo("overlay", "touchpilot://overlay-command", {
+          emitTo("overlay", "toki://overlay-command", {
             type: "toggle-pause",
           } satisfies OverlayCommand).catch(() => undefined);
         }}
         onVoicePressStart={() => {
-          emitTo("overlay", "touchpilot://overlay-command", {
+          emitTo("overlay", "toki://overlay-command", {
             type: "start-voice-listening",
             source: "settings",
           } satisfies OverlayCommand).catch(() => undefined);
         }}
         onVoicePressEnd={() => {
-          emitTo("overlay", "touchpilot://overlay-command", {
+          emitTo("overlay", "toki://overlay-command", {
             type: "submit-voice-listening",
           } satisfies OverlayCommand).catch(() => undefined);
         }}
@@ -1505,7 +1505,7 @@ function DebugWindowApp() {
   const debugVoiceStatusDetails = getVoiceStatusDetails(snapshot.voiceRuntime);
 
   function sendOverlayCommand(command: OverlayCommand) {
-    emitTo("overlay", "touchpilot://overlay-command", command).catch(() => undefined);
+    emitTo("overlay", "toki://overlay-command", command).catch(() => undefined);
   }
 
   function testGuidanceFixture() {
@@ -1574,7 +1574,7 @@ function DebugWindowApp() {
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
 
-    listen<DebugSnapshot>("touchpilot://debug-state", (event) => {
+    listen<DebugSnapshot>("toki://debug-state", (event) => {
       setSnapshot(event.payload);
     })
       .then((cleanup) => {
@@ -1584,7 +1584,7 @@ function DebugWindowApp() {
         unlistenState = undefined;
       });
 
-    emitTo("overlay", "touchpilot://overlay-command", {
+    emitTo("overlay", "toki://overlay-command", {
       type: "request-state",
     } satisfies OverlayCommand).catch(() => undefined);
     refreshVoiceCapabilities(false);
@@ -1772,12 +1772,12 @@ function DebugWindowApp() {
   ]);
 
   return (
-    <main className="debug-shell" aria-label="TouchPilot debug window">
+    <main className="debug-shell" aria-label="Toki debug window">
       <section className="debug-window">
         <header className="debug-window-header">
           <div>
             <p>Internal</p>
-            <h1>TouchPilot Debug</h1>
+            <h1>Toki Debug</h1>
           </div>
           <button
             className="debug-close-button"
@@ -2098,7 +2098,7 @@ function DebugWindowApp() {
               </p>
             ) : cameraPreviewStatus === "no_camera" ? (
               <p className="debug-muted">
-                No usable camera was found. TouchPilot remains available through tray and
+                No usable camera was found. Toki remains available through tray and
                 manual controls.
               </p>
             ) : cameraPreviewStatus === "disabled" ? (
