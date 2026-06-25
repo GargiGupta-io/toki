@@ -31,11 +31,11 @@ Migration fixes:
 - Fixed Mac git push by replacing a copied Windows GitHub CLI credential helper path with the Mac GitHub CLI helper.
 - Repaired copied `node_modules` executable bits so TypeScript binaries can run on macOS.
 
-Known Mac runtime issue:
+Resolved Mac runtime issue:
 
-- Transparent Tauri windows warn that `macos-private-api` is not enabled.
-
-That warning belongs to Phase M1. It means the Mac runtime shell needs a deliberate transparent-window strategy instead of assuming the Windows overlay path will behave the same way.
+- Transparent Tauri windows no longer warn about `macos-private-api`.
+- `tauri.conf.json` enables `app.macOSPrivateApi`.
+- `Cargo.toml` enables the matching Tauri `macos-private-api` feature.
 
 ## Next Track
 
@@ -46,3 +46,9 @@ Phase M1 should focus on the macOS runtime shell:
 - transparent overlay behavior
 - cursor/puck tracking
 - removing Windows-specific assumptions from the default path
+
+Useful Mac commands:
+
+- `npm run desktop:dev`
+- `npm run desktop:release:mac`
+- `npm run qa:mac:runtime`
