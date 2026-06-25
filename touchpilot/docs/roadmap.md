@@ -55,6 +55,44 @@
 - Gesture-triggered voice mode after the voice loop works.
 - Stop/interruption command.
 
+## Phase M0: Mac Migration Sanity
+
+- Treat macOS as the primary product target for the next development stretch.
+- Separate real repo changes from Windows-to-Mac checkout churn.
+- Verify Node, npm, Rust, Cargo, TypeScript, Rust checks, and desktop web build on Mac.
+- Confirm the Tauri dev shell launches on macOS.
+- Record Mac-specific runtime warnings before continuing product work.
+
+## Phase M1: macOS Runtime Shell
+
+- Make TouchPilot feel like a macOS menu bar utility.
+- Validate settings popup behavior on Mac.
+- Validate transparent overlay behavior on Mac.
+- Remove Windows-only assumptions from the default runtime path.
+- Verify the puck follows the cursor on macOS.
+
+## Phase M2: macOS Capture And Permission Validation
+
+- Test screen capture on Mac.
+- Add or record Screen Recording permission behavior.
+- Verify capture dimensions.
+- Verify Retina/display scale behavior.
+- Confirm capture coordinates match overlay coordinates.
+
+## Phase M3: Phase 10 Voice On Mac
+
+- Test native mic capture on Mac.
+- Test `OPENAI_API_KEY` transcription from a Mac-launched app process.
+- Confirm transcript text drives the guidance loop.
+- Fix Mac-specific microphone permission or CPAL issues.
+
+## Phase M4: Gesture Re-Test On Mac
+
+- Test camera enumeration on Mac.
+- Test MediaPipe hand landmarks.
+- Re-check pinch and open palm.
+- Decide whether gestures remain Phase 9-complete or need Mac-specific fixes.
+
 ## Phase 7: Safety And Guardrails
 
 - Risk classifier.
