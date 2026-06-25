@@ -379,6 +379,13 @@ fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     window.hide().map_err(|error| error.to_string())
 }
 
+fn show_settings_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 #[tauri::command]
 fn native_voice_capture_status(
     store: State<'_, Mutex<VoiceCaptureStore>>,
@@ -735,10 +742,10 @@ pub fn run() {
             }
 
             let tray_menu = MenuBuilder::new(app)
-                .text("open_settings", "Open Settings")
+                .text("open_settings", "Open Toki")
                 .text("open_debug", "Open Debug")
                 .separator()
-                .text("quit", "Quit")
+                .text("quit", "Quit Toki")
                 .build()?;
 
             let default_icon = app.default_window_icon().cloned();
@@ -748,10 +755,7 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open_settings" => {
-                        if let Some(window) = app.get_webview_window("settings") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        show_settings_window(app);
                     }
                     "open_debug" => {
                         if let Some(window) = app.get_webview_window("debug") {
@@ -770,6 +774,10 @@ pub fn run() {
             }
 
             let _tray = tray.build(app)?;
+
+            #[cfg(target_os = "macos")]
+            show_settings_window(app.handle());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
