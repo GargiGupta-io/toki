@@ -1302,6 +1302,7 @@ function SettingsWindowApp() {
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
   );
+  const isSpaceVoiceHeldRef = useRef(false);
 
   function hideSettings() {
     invoke("hide_settings_window").catch(() => {
@@ -1356,17 +1357,56 @@ function SettingsWindowApp() {
         unlistenFocus = undefined;
       });
 
+    function shouldIgnorePushToTalkShortcut(event: KeyboardEvent) {
+      const target = event.target;
+      return (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        (target instanceof HTMLElement &&
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      );
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         hideSettings();
+        return;
+      }
+
+      if (
+        event.code === "Space" &&
+        !event.repeat &&
+        !isSpaceVoiceHeldRef.current &&
+        !shouldIgnorePushToTalkShortcut(event)
+      ) {
+        event.preventDefault();
+        isSpaceVoiceHeldRef.current = true;
+        emitTo("overlay", "touchpilot://overlay-command", {
+          type: "start-voice-listening",
+          source: "settings",
+        } satisfies OverlayCommand).catch(() => undefined);
+      }
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.code === "Space" && isSpaceVoiceHeldRef.current) {
+        event.preventDefault();
+        isSpaceVoiceHeldRef.current = false;
+        emitTo("overlay", "touchpilot://overlay-command", {
+          type: "submit-voice-listening",
+        } satisfies OverlayCommand).catch(() => undefined);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
 
     return () => {
       unlistenFocus?.();
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
     };
   }, []);
 
