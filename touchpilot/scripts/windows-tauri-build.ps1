@@ -20,5 +20,5 @@ if ($NoBundle) {
   $tauriArgs += "--no-bundle"
 }
 
-$npmArgs = @("--workspace", "@touchpilot/desktop", "run", "tauri", "--") + $tauriArgs
+$npmArgs = @("--workspace", "@toki/desktop", "run", "tauri", "--") + $tauriArgs
 & npm @npmArgs

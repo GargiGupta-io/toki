@@ -1,5 +1,5 @@
 param(
-  [string]$ProcessName = "touchpilot-desktop",
+  [string]$ProcessName = "toki-desktop",
   [int]$TolerancePx = 6
 )
 
@@ -12,7 +12,7 @@ if (-not $IsWindows -and $env:OS -ne "Windows_NT") {
 
 $processes = @(Get-Process -Name $ProcessName -ErrorAction SilentlyContinue)
 if ($processes.Count -eq 0) {
-  Write-Error "No running $ProcessName process found. Start TouchPilot first, then rerun this probe."
+  Write-Error "No running $ProcessName process found. Start Toki first, then rerun this probe."
   exit 1
 }
 
@@ -23,7 +23,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class TouchPilotWindowProbe {
+public static class TokiWindowProbe {
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
   [StructLayout(LayoutKind.Sequential)]
@@ -79,25 +79,25 @@ $constants = @{
 }
 
 function Get-WindowTitle([IntPtr]$Handle) {
-  $length = [TouchPilotWindowProbe]::GetWindowTextLengthW($Handle)
+  $length = [TokiWindowProbe]::GetWindowTextLengthW($Handle)
   if ($length -le 0) {
     return ""
   }
 
   $builder = [System.Text.StringBuilder]::new($length + 1)
-  [void][TouchPilotWindowProbe]::GetWindowTextW($Handle, $builder, $builder.Capacity)
+  [void][TokiWindowProbe]::GetWindowTextW($Handle, $builder, $builder.Capacity)
   return $builder.ToString()
 }
 
 function Get-WindowInfo([IntPtr]$Handle) {
   $windowProcessId = 0
-  [void][TouchPilotWindowProbe]::GetWindowThreadProcessId($Handle, [ref]$windowProcessId)
+  [void][TokiWindowProbe]::GetWindowThreadProcessId($Handle, [ref]$windowProcessId)
 
-  $rect = [TouchPilotWindowProbe+Rect]::new()
-  [void][TouchPilotWindowProbe]::GetWindowRect($Handle, [ref]$rect)
+  $rect = [TokiWindowProbe+Rect]::new()
+  [void][TokiWindowProbe]::GetWindowRect($Handle, [ref]$rect)
 
-  $style = [TouchPilotWindowProbe]::GetWindowLongPtr($Handle, $constants.GwlStyle).ToInt64()
-  $exStyle = [TouchPilotWindowProbe]::GetWindowLongPtr($Handle, $constants.GwlExStyle).ToInt64()
+  $style = [TokiWindowProbe]::GetWindowLongPtr($Handle, $constants.GwlStyle).ToInt64()
+  $exStyle = [TokiWindowProbe]::GetWindowLongPtr($Handle, $constants.GwlExStyle).ToInt64()
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
 
@@ -106,7 +106,7 @@ function Get-WindowInfo([IntPtr]$Handle) {
     HandleHex = "0x{0:X}" -f $Handle.ToInt64()
     ProcessId = [int]$windowProcessId
     Title = Get-WindowTitle $Handle
-    Visible = [TouchPilotWindowProbe]::IsWindowVisible($Handle)
+    Visible = [TokiWindowProbe]::IsWindowVisible($Handle)
     Left = $rect.Left
     Top = $rect.Top
     Right = $rect.Right
@@ -128,11 +128,11 @@ function Get-WindowInfo([IntPtr]$Handle) {
 
 $targetPids = @($processes | ForEach-Object { [int]$_.Id })
 $windows = New-Object System.Collections.Generic.List[object]
-$callback = [TouchPilotWindowProbe+EnumWindowsProc]{
+$callback = [TokiWindowProbe+EnumWindowsProc]{
   param([IntPtr]$hWnd, [IntPtr]$extraData)
 
   $windowProcessId = 0
-  [void][TouchPilotWindowProbe]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId)
+  [void][TokiWindowProbe]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId)
   if ($targetPids -contains [int]$windowProcessId) {
     $windows.Add((Get-WindowInfo $hWnd))
   }
@@ -140,10 +140,10 @@ $callback = [TouchPilotWindowProbe+EnumWindowsProc]{
   return $true
 }
 
-[void][TouchPilotWindowProbe]::EnumWindows($callback, [IntPtr]::Zero)
+[void][TokiWindowProbe]::EnumWindows($callback, [IntPtr]::Zero)
 
 if ($windows.Count -eq 0) {
-  Write-Error "No top-level TouchPilot windows were found for $ProcessName."
+  Write-Error "No top-level Toki windows were found for $ProcessName."
   exit 1
 }
 
@@ -211,23 +211,23 @@ $samplePoints = @(
 
 $hitFailures = New-Object System.Collections.Generic.List[string]
 foreach ($point in $samplePoints) {
-  $probePoint = [TouchPilotWindowProbe+Point]::new()
+  $probePoint = [TokiWindowProbe+Point]::new()
   $probePoint.X = [int]$point.X
   $probePoint.Y = [int]$point.Y
-  $hit = [TouchPilotWindowProbe]::WindowFromPoint($probePoint)
+  $hit = [TokiWindowProbe]::WindowFromPoint($probePoint)
   $hitPid = 0
   if ($hit -ne [IntPtr]::Zero) {
-    [void][TouchPilotWindowProbe]::GetWindowThreadProcessId($hit, [ref]$hitPid)
+    [void][TokiWindowProbe]::GetWindowThreadProcessId($hit, [ref]$hitPid)
   }
 
   if ($targetPids -contains [int]$hitPid) {
-    $hitFailures.Add(("point {0},{1} hit TouchPilot hwnd 0x{2:X}" -f $probePoint.X, $probePoint.Y, $hit.ToInt64()))
+    $hitFailures.Add(("point {0},{1} hit Toki hwnd 0x{2:X}" -f $probePoint.X, $probePoint.Y, $hit.ToInt64()))
   }
 }
 
 Add-Check $checks "overlay hit-test pass-through" ($hitFailures.Count -eq 0) (($hitFailures -join "; "))
 
-Write-Host "TouchPilot Windows runtime QA"
+Write-Host "Toki Windows runtime QA"
 Write-Host ""
 Write-Host "Process ids: $($targetPids -join ', ')"
 Write-Host "Overlay: $($overlay.HandleHex) $($overlay.Width)x$($overlay.Height)+$($overlay.Left)+$($overlay.Top)"

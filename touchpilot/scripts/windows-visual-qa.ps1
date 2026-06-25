@@ -1,6 +1,6 @@
 param(
-  [string]$ProcessName = "touchpilot-desktop",
-  [string]$OutputPath = (Join-Path $env:TEMP "touchpilot-visual-qa.png")
+  [string]$ProcessName = "toki-desktop",
+  [string]$OutputPath = (Join-Path $env:TEMP "toki-visual-qa.png")
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,7 +12,7 @@ if (-not $IsWindows -and $env:OS -ne "Windows_NT") {
 
 $processes = @(Get-Process -Name $ProcessName -ErrorAction SilentlyContinue)
 if ($processes.Count -eq 0) {
-  Write-Error "No running $ProcessName process found. Start TouchPilot first, then rerun this visual QA."
+  Write-Error "No running $ProcessName process found. Start Toki first, then rerun this visual QA."
   exit 1
 }
 
@@ -24,7 +24,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class TouchPilotVisualProbe {
+public static class TokiVisualProbe {
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
   [StructLayout(LayoutKind.Sequential)]
@@ -56,22 +56,22 @@ public static class TouchPilotVisualProbe {
 "@
 
 function Get-WindowTitle([IntPtr]$Handle) {
-  $length = [TouchPilotVisualProbe]::GetWindowTextLengthW($Handle)
+  $length = [TokiVisualProbe]::GetWindowTextLengthW($Handle)
   if ($length -le 0) {
     return ""
   }
 
   $builder = [System.Text.StringBuilder]::new($length + 1)
-  [void][TouchPilotVisualProbe]::GetWindowTextW($Handle, $builder, $builder.Capacity)
+  [void][TokiVisualProbe]::GetWindowTextW($Handle, $builder, $builder.Capacity)
   return $builder.ToString()
 }
 
 function Get-WindowInfo([IntPtr]$Handle) {
   $windowProcessId = 0
-  [void][TouchPilotVisualProbe]::GetWindowThreadProcessId($Handle, [ref]$windowProcessId)
+  [void][TokiVisualProbe]::GetWindowThreadProcessId($Handle, [ref]$windowProcessId)
 
-  $rect = [TouchPilotVisualProbe+Rect]::new()
-  [void][TouchPilotVisualProbe]::GetWindowRect($Handle, [ref]$rect)
+  $rect = [TokiVisualProbe+Rect]::new()
+  [void][TokiVisualProbe]::GetWindowRect($Handle, [ref]$rect)
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
 
@@ -80,7 +80,7 @@ function Get-WindowInfo([IntPtr]$Handle) {
     HandleHex = "0x{0:X}" -f $Handle.ToInt64()
     ProcessId = [int]$windowProcessId
     Title = Get-WindowTitle $Handle
-    Visible = [TouchPilotVisualProbe]::IsWindowVisible($Handle)
+    Visible = [TokiVisualProbe]::IsWindowVisible($Handle)
     Left = $rect.Left
     Top = $rect.Top
     Width = $width
@@ -99,11 +99,11 @@ function Add-Check([System.Collections.Generic.List[object]]$Checks, [string]$Na
 
 $targetPids = @($processes | ForEach-Object { [int]$_.Id })
 $windows = New-Object System.Collections.Generic.List[object]
-$callback = [TouchPilotVisualProbe+EnumWindowsProc]{
+$callback = [TokiVisualProbe+EnumWindowsProc]{
   param([IntPtr]$hWnd, [IntPtr]$extraData)
 
   $windowProcessId = 0
-  [void][TouchPilotVisualProbe]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId)
+  [void][TokiVisualProbe]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId)
   if ($targetPids -contains [int]$windowProcessId) {
     $windows.Add((Get-WindowInfo $hWnd))
   }
@@ -111,10 +111,10 @@ $callback = [TouchPilotVisualProbe+EnumWindowsProc]{
   return $true
 }
 
-[void][TouchPilotVisualProbe]::EnumWindows($callback, [IntPtr]::Zero)
+[void][TokiVisualProbe]::EnumWindows($callback, [IntPtr]::Zero)
 
 if ($windows.Count -eq 0) {
-  Write-Error "No TouchPilot windows were found for $ProcessName."
+  Write-Error "No Toki windows were found for $ProcessName."
   exit 1
 }
 
@@ -155,11 +155,11 @@ try {
 
 $checks = New-Object System.Collections.Generic.List[object]
 Add-Check $checks "screenshot captured" (Test-Path $OutputPath) $OutputPath
-Add-Check $checks "no visible TouchPilot title text" ($visibleTitles.Count -eq 0) (($visibleTitles | ForEach-Object { "$($_.Title) $($_.Width)x$($_.Height)" }) -join "; ")
+Add-Check $checks "no visible Toki title text" ($visibleTitles.Count -eq 0) (($visibleTitles | ForEach-Object { "$($_.Title) $($_.Width)x$($_.Height)" }) -join "; ")
 Add-Check $checks "no visible settings/debug panel by default" ($visiblePanels.Count -eq 0) (($visiblePanels | ForEach-Object { "$($_.Title) $($_.Width)x$($_.Height)" }) -join "; ")
 
 $forbiddenPhrases = @(
-  "TouchPilot Overlay",
+  "Toki Overlay",
   "CURRENT GUIDANCE",
   "DEBUG SCREENSHOT PREVIEW",
   "SAFE NAVIGATION"
@@ -167,7 +167,7 @@ $forbiddenPhrases = @(
 
 $tesseract = Get-Command tesseract -ErrorAction SilentlyContinue
 if ($tesseract) {
-  $ocrBase = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "touchpilot-visual-qa-ocr")
+  $ocrBase = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "toki-visual-qa-ocr")
   & $tesseract.Source $OutputPath $ocrBase --psm 6 2>$null | Out-Null
   $ocrPath = "$ocrBase.txt"
   $ocrText = if (Test-Path $ocrPath) { Get-Content -Raw $ocrPath } else { "" }
@@ -177,7 +177,7 @@ if ($tesseract) {
   Add-Check $checks "OCR forbidden text" $true "Skipped because tesseract is not installed. Review screenshot manually: $OutputPath"
 }
 
-Write-Host "TouchPilot Windows visual QA"
+Write-Host "Toki Windows visual QA"
 Write-Host ""
 Write-Host "Screenshot: $OutputPath"
 Write-Host "Overlay candidate: $($overlay.HandleHex) $($overlay.Width)x$($overlay.Height)+$($overlay.Left)+$($overlay.Top)"

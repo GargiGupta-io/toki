@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_PROCESS="${1:-touchpilot-desktop}"
+APP_PROCESS="${1:-toki-desktop}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "macOS runtime QA can only run on macOS." >&2
   exit 1
 fi
 
-echo "TouchPilot macOS runtime QA"
+echo "Toki macOS runtime QA"
 echo
 
 if ! command -v pgrep >/dev/null 2>&1; then
@@ -18,7 +18,7 @@ fi
 
 if ! PROCESS_LINES="$(pgrep -fl "$APP_PROCESS" 2>/dev/null)"; then
   echo "[FAIL] process exists - no running $APP_PROCESS process found"
-  echo "Start TouchPilot first, then rerun: npm run qa:mac:runtime"
+  echo "Start Toki first, then rerun: npm run qa:mac:runtime"
   exit 1
 fi
 
@@ -35,7 +35,7 @@ set +e
 WINDOW_REPORT="$(osascript <<APPLESCRIPT 2>&1
 tell application "System Events"
   set output to ""
-  set matchedProcesses to every process whose name contains "touchpilot"
+  set matchedProcesses to every process whose name contains "toki"
   repeat with appProcess in matchedProcesses
     set output to output & "process=" & name of appProcess & " visible=" & (visible of appProcess as text) & linefeed
     repeat with appWindow in windows of appProcess
@@ -61,7 +61,7 @@ if [[ "$OSA_STATUS" -ne 0 ]]; then
 fi
 
 if [[ -z "$WINDOW_REPORT" ]]; then
-  echo "[WARN] window probe returned no TouchPilot windows"
+  echo "[WARN] window probe returned no Toki windows"
   exit 0
 fi
 
