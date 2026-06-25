@@ -102,6 +102,20 @@ After both were set, `cargo check --workspace` passed and `tauri dev` launched w
 
 The tradeoff is important: macOS private APIs can affect App Store eligibility. For TouchPilot, this is acceptable for the current direction because the product needs a Clicky-style transparent desktop overlay, and distribution can target direct download/beta builds before App Store packaging is considered.
 
+## Phase M1 Settings Popup Update
+
+Plain English: the settings popup should move like one small native utility surface, not like a React element pretending to be a window.
+
+The previous settings drag path manually tracked pointer coordinates in the webview and called a custom Rust command to move the window. That path is brittle on macOS because a tiny transparent popup can lose pointer movement as soon as the cursor leaves its bounds.
+
+The better Mac-shell approach is to use Tauri's native window drag primitive:
+
+- the settings header calls `getCurrentWindow().startDragging()`
+- the old `move_settings_window` command was removed
+- the close command stays native through `hide_settings_window`
+
+This keeps the popup closer to a real macOS utility panel while avoiding custom coordinate movement code.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -128,3 +142,4 @@ Phase M1 should focus on:
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
 - 2026-06-25 - Added Phase M1 transparent-window fix: `app.macOSPrivateApi` plus the matching Tauri `macos-private-api` Cargo feature.
+- 2026-06-25 - Replaced custom settings popup movement with Tauri native window dragging for macOS shell behavior.
