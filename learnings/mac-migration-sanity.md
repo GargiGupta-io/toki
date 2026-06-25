@@ -314,6 +314,54 @@ For the Mac phase, the best path is:
 native mic capture -> local whisper.cpp QA -> later app integration -> optional backend/cloud provider
 ```
 
+## Phase M3 Local Whisper Install Update
+
+Plain English: the Mac now has a local Whisper engine installed for TouchPilot QA. This means the voice probe can run without OpenAI credits and without passing environment variables every time.
+
+What was installed locally:
+
+```text
+~/tools/whisper.cpp
+~/tools/whisper.cpp/build/bin/whisper-cli
+~/tools/whisper.cpp/models/ggml-base.en.bin
+```
+
+Homebrew was not installed on the Mac, so we avoided making a global package-manager change. The path used instead was:
+
+1. Clone official `ggml-org/whisper.cpp` under `~/tools`.
+2. Run `make base.en` to download the `base.en` model.
+3. Install user-local CMake through Python because the repo now requires CMake to build.
+4. Build only the `whisper-cli` target.
+5. Teach TouchPilot's QA probe to auto-detect the local `~/tools/whisper.cpp` binary and model.
+
+The command now works without extra environment variables:
+
+```bash
+npm run qa:mac:transcribe
+```
+
+The current result:
+
+```text
+[PASS] microphone captured
+[PASS] transcription - model=local-whisper:/Users/pumba/tools/whisper.cpp/models/ggml-base.en.bin
+Transcript: [BLANK_AUDIO]
+```
+
+This is a useful partial pass. It proves:
+
+- native microphone capture works
+- the local Whisper binary runs
+- the model is found automatically
+- TouchPilot can invoke the local transcription path
+
+It does not yet prove:
+
+- spoken command recognition is clean in a real user-run scenario
+- the transcript is routed into the main app voice loop
+
+The `[BLANK_AUDIO]` result likely means the tool-run recording did not capture clear speech. The next manual test should be run from the user's normal terminal while speaking clearly during the recording prompt.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -348,3 +396,4 @@ Phase M1 should focus on:
 - 2026-06-25 - Added Retina screenshot scale validation to desktop calibration metadata.
 - 2026-06-26 - Added macOS microphone capture probe and recorded successful native CPAL sample capture.
 - 2026-06-26 - Switched transcription QA to free local `whisper.cpp` by default after OpenAI quota blocked cloud transcription.
+- 2026-06-26 - Installed local `whisper.cpp`, auto-detected its binary/model from the QA probe, and confirmed the local transcription command runs without OpenAI.
