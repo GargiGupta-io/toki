@@ -36,6 +36,13 @@ Implementation direction for Toki:
 - Add a Mac dev/first-launch behavior that opens settings automatically.
 - Keep app controls out of the Dock-style window flow where possible.
 
+Current M4 status:
+
+- The menu bar/tray item is the stable control path.
+- The app now labels tray actions as Toki actions rather than generic settings/app actions.
+- On macOS, Toki opens the compact settings panel on launch so the user can discover the menu-bar app instead of wondering where it went.
+- The next native Mac shell improvement is to hide Dock presence more completely with an accessory/menu-bar activation policy once that path is verified in Tauri.
+
 ### 2. Custom Floating Panel
 
 Clicky uses a custom borderless `NSPanel` below the menu bar icon.
@@ -56,6 +63,12 @@ Implementation direction for Toki:
 - Auto-hide on outside click/blur.
 - Avoid big debug-like panel styling in settings.
 - Keep debug as a separate utility window.
+
+Current M4 status:
+
+- Settings stays compact and separate from debug.
+- Settings exposes the local push-to-talk path directly: hold Space or press the talk control, then release to route the voice command.
+- Debug remains a separate internal window instead of being mixed into the user panel.
 
 ### 3. Transparent Cursor Overlay
 
@@ -107,6 +120,12 @@ Implementation direction for Toki:
 - Keep OpenAI/cloud transcription as an explicit optional provider.
 - Route final transcript into guidance only after transcript quality checks pass.
 
+Current M4 status:
+
+- Native mic capture, transcription provider selection, and command routing remain separate parts of the pipeline.
+- Local Whisper is the current working free provider on Mac.
+- OpenAI/cloud transcription is optional and should route through a backend before any public app distribution.
+
 ### 6. API Key Handling
 
 Clicky uses a Cloudflare Worker proxy so API keys do not ship in the app binary.
@@ -117,6 +136,11 @@ Implementation direction for Toki:
 - For local dev, environment variables are acceptable.
 - For production, use a backend/proxy for paid cloud providers.
 - Local Whisper remains the free/private default path.
+
+Current M4 status:
+
+- Local Whisper is the default direction for free testing.
+- Paid cloud transcription must use a backend/proxy before release builds. The app should never bundle a shared paid API key.
 
 ## What We Should Not Port Directly
 
