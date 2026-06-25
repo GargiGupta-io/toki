@@ -477,6 +477,44 @@ https://github.com/GargiGupta-io/toki
 
 The local working folder may still be named `touchpilot` until the active dev process and local references are migrated. The app and repo identity are now Toki.
 
+## Phase M4 Clicky Reference Alignment Update
+
+Plain English: Toki is now using Clicky as the Mac behavior reference more directly. The goal is not to copy Clicky's Swift code. The goal is to match the shape of the product: a menu-bar utility, a compact panel, a transparent cursor overlay, and push-to-talk voice that routes into guidance.
+
+The M4 alignment decision is:
+
+```text
+menu bar control
+  -> compact Toki panel
+  -> transparent click-through overlay
+  -> push-to-talk voice
+  -> transcript
+  -> command routing
+  -> guidance cue
+```
+
+What changed in this slice:
+
+- The tray/menu action now says `Open Toki` instead of generic settings wording.
+- The quit action now says `Quit Toki`.
+- On macOS, the compact Toki panel opens automatically on launch so the app is discoverable even though it behaves like a menu-bar utility.
+- The settings copy now explicitly says the local shortcut: hold Space or press the talk control, then release to guide.
+- The Clicky reference notes now mark which pieces are already aligned and which remain as follow-up work.
+
+The important tradeoff is discoverability versus purity. A perfect menu-bar utility might launch silently and only live in the menu bar. That is clean, but it confused testing because the app looked like it had disappeared. For now, auto-opening the compact panel on Mac is the better development and first-run behavior. Later, this can become a first-launch-only behavior once onboarding exists.
+
+The other important tradeoff is Tauri shell versus native Swift shell. Clicky gets `NSPanel`, global shortcut monitoring, and menu-bar behavior directly from Swift/AppKit. Toki is staying in Tauri/Rust/React for now, so we recreate the same behavior with Tauri windows and native helpers. That keeps the cross-platform app architecture alive, but it means some Mac behaviors need careful native patches instead of being automatic.
+
+M4 does not yet finish every Clicky behavior. The main remaining items are:
+
+- a more visible cursor-like menu bar icon
+- a true native global push-to-talk shortcut, likely Control+Option hold
+- Accessibility permission UX for global shortcuts
+- deeper multi-monitor overlay validation
+- backend/proxy integration before any paid cloud API key ships in production
+
+The backend/proxy rule is now part of the product contract: local Whisper can stay as the free/private default, but paid cloud transcription keys must not be embedded into public desktop builds.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -516,3 +554,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Wired the desktop app runtime to use local `whisper.cpp` transcription by default for push-to-talk voice commands.
 - 2026-06-26 - Confirmed manual app voice test: spoken command activates guidance with local Whisper; target accuracy remains mock-guidance scope.
 - 2026-06-26 - Renamed the product and GitHub repository from TouchPilot/touchpilot to Toki/toki.
+- 2026-06-26 - Started Phase M4 Clicky reference alignment: Mac auto-opens the compact Toki panel, tray labels are product-specific, Space push-to-talk copy is explicit, and the Clicky reference notes now track current alignment plus remaining native Mac follow-ups.
