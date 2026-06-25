@@ -2028,7 +2028,7 @@ function DebugWindowApp() {
             </div>
             {cameraPreviewStatus === "permission_denied" ? (
               <p className="debug-muted">
-                Camera permission is denied. Enable camera access in Windows privacy
+                Camera permission is denied. Enable camera access in system privacy
                 settings before using gestures.
               </p>
             ) : cameraPreviewStatus === "no_camera" ? (
