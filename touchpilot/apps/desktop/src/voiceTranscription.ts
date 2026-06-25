@@ -14,7 +14,7 @@ export type VoiceTranscriptionResult =
 
 type NativeVoiceTranscriptionResponse = {
   text: string;
-  provider: "openai";
+  provider: "local-whisper" | "openai";
   model: string;
   byteLength: number;
   sampleRate: number;
