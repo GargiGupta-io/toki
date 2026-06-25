@@ -201,6 +201,22 @@ const debugTabs: Array<{ id: DebugTab; label: string }> = [
   { id: "guidance", label: "Guidance" },
 ];
 
+function formatCaptureError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalizedMessage = message.toLowerCase();
+  const looksPermissionRelated =
+    normalizedMessage.includes("no display available") ||
+    normalizedMessage.includes("permission") ||
+    normalizedMessage.includes("denied") ||
+    normalizedMessage.includes("not authorized");
+
+  if (!looksPermissionRelated) {
+    return message;
+  }
+
+  return `${message}. On macOS, grant Screen Recording permission to TouchPilot or the terminal app, then quit and relaunch it.`;
+}
+
 function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDetails {
   if (voiceRuntime.status === "requesting_microphone") {
     return {
@@ -806,8 +822,7 @@ function OverlayWindowApp() {
       setGuidanceResult(validation.valid ? nextGuidance : null);
       setOverlayState(validation.valid ? "guiding" : "error");
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setCaptureError(message);
+      setCaptureError(formatCaptureError(error));
       setGuidanceRequest(null);
       setGuidanceIssues([]);
       setGuidanceResult(null);
