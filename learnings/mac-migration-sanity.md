@@ -453,6 +453,30 @@ voice capture -> local Whisper transcript -> app command -> guidance activation
 
 works on Mac.
 
+## Product Rename Update
+
+Plain English: the product name changed from TouchPilot to Toki because the old name felt too enterprise and off-putting for a cute cursor companion.
+
+The rename now covers:
+
+- app product name
+- Tauri bundle product name
+- npm workspace/package names
+- Rust crate names
+- UI labels
+- QA script text
+- project docs
+- GitHub repository name
+- local git remote URL
+
+The GitHub repository is now:
+
+```text
+https://github.com/GargiGupta-io/toki
+```
+
+The local working folder may still be named `touchpilot` until the active dev process and local references are migrated. The app and repo identity are now Toki.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -491,3 +515,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Added strict transcript acceptance so placeholder speech results like `[BLANK_AUDIO]` fail the Mac voice QA probe.
 - 2026-06-26 - Wired the desktop app runtime to use local `whisper.cpp` transcription by default for push-to-talk voice commands.
 - 2026-06-26 - Confirmed manual app voice test: spoken command activates guidance with local Whisper; target accuracy remains mock-guidance scope.
+- 2026-06-26 - Renamed the product and GitHub repository from TouchPilot/touchpilot to Toki/toki.
