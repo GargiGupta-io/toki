@@ -431,6 +431,28 @@ Settings/debug voice control
 
 OpenAI remains a future/cloud option, but it is explicit instead of default.
 
+## Phase M3 Manual App Voice Test
+
+Plain English: the voice path now works inside the app, not just in terminal probes.
+
+Manual test result:
+
+```text
+Input: show me what to click
+Observed: TouchPilot entered guidance mode and rendered a mock target cue
+Status: passed for voice-to-guidance activation
+```
+
+The screenshot showed the target cue was not accurate. That is not a voice bug. It is the known limitation that guidance still uses the mock target path. Real target accuracy depends on the later screen-intelligence work: OCR, accessibility data, model target matching, and coordinate scoring.
+
+The important M3 conclusion is:
+
+```text
+voice capture -> local Whisper transcript -> app command -> guidance activation
+```
+
+works on Mac.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -468,3 +490,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Installed local `whisper.cpp`, auto-detected its binary/model from the QA probe, and confirmed the local transcription command runs without OpenAI.
 - 2026-06-26 - Added strict transcript acceptance so placeholder speech results like `[BLANK_AUDIO]` fail the Mac voice QA probe.
 - 2026-06-26 - Wired the desktop app runtime to use local `whisper.cpp` transcription by default for push-to-talk voice commands.
+- 2026-06-26 - Confirmed manual app voice test: spoken command activates guidance with local Whisper; target accuracy remains mock-guidance scope.
