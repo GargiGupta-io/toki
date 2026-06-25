@@ -1,6 +1,6 @@
 # Phase 10 Voice UX Spec
 
-Phase 10 makes TouchPilot voice-first. The user should speak what they want, and the app should turn that into screen guidance without opening a chatbot-style command prompt.
+Phase 10 makes Toki voice-first. The user should speak what they want, and the app should turn that into screen guidance without opening a chatbot-style command prompt.
 
 ## Decision
 
@@ -28,7 +28,7 @@ This means:
 
 ```text
 User is using any desktop app
-  -> TouchPilot puck is present but quiet
+  -> Toki puck is present but quiet
   -> user presses and holds push-to-talk
   -> small listening state appears
   -> user says what they want
@@ -199,7 +199,7 @@ These findings mean the current Web Speech path is useful for debug learning, bu
 
 Phase 10 is acceptable only when this can be tested:
 
-1. Open TouchPilot.
+1. Open Toki.
 2. Hold push-to-talk.
 3. Speak a task.
 4. Release push-to-talk.

@@ -1,6 +1,6 @@
 # Clicky Reference Porting Notes
 
-TouchPilot uses Clicky as a Mac behavior reference, not as a file-by-file codebase replacement.
+Toki uses Clicky as a Mac behavior reference, not as a file-by-file codebase replacement.
 
 ## Source
 
@@ -21,7 +21,7 @@ TouchPilot uses Clicky as a Mac behavior reference, not as a file-by-file codeba
 
 Clicky is a menu bar utility, not a normal Dock app.
 
-TouchPilot should match this behavior on Mac:
+Toki should match this behavior on Mac:
 
 - no normal main window on startup
 - menu bar icon is the stable control path
@@ -29,7 +29,7 @@ TouchPilot should match this behavior on Mac:
 - settings can auto-open on first launch/dev launch for discoverability
 - no permanent dashboard surface
 
-Implementation direction for TouchPilot:
+Implementation direction for Toki:
 
 - Keep Tauri tray/menu bar item.
 - Improve icon visibility using a simple template cursor-style icon.
@@ -49,7 +49,7 @@ Important behavior:
 - does not feel like a normal app window
 - avoids standard popover/window chrome
 
-Implementation direction for TouchPilot:
+Implementation direction for Toki:
 
 - Keep the Tauri settings window compact and borderless.
 - Position it near the menu bar/tray control where possible.
@@ -70,7 +70,7 @@ Important behavior:
 - no shadow/chrome
 - overlay only renders cursor/response/target affordances
 
-Implementation direction for TouchPilot:
+Implementation direction for Toki:
 
 - Keep overlay transparent and click-through.
 - On Mac, validate multi-monitor behavior rather than assuming one fullscreen window is enough.
@@ -89,7 +89,7 @@ Important behavior:
 - supports modifier-only shortcuts like Control+Option
 - requires Accessibility permission
 
-Implementation direction for TouchPilot:
+Implementation direction for Toki:
 
 - Current in-settings Space push-to-talk is only a local fallback.
 - Mac production should add a native global shortcut path.
@@ -100,7 +100,7 @@ Implementation direction for TouchPilot:
 
 Clicky separates capture, transcription provider, transcript finalization, and command routing.
 
-Implementation direction for TouchPilot:
+Implementation direction for Toki:
 
 - Keep native mic capture separate from transcription provider.
 - Keep local Whisper as the current free provider.
@@ -111,7 +111,7 @@ Implementation direction for TouchPilot:
 
 Clicky uses a Cloudflare Worker proxy so API keys do not ship in the app binary.
 
-Implementation direction for TouchPilot:
+Implementation direction for Toki:
 
 - Do not ship user-facing app builds with embedded OpenAI or model provider keys.
 - For local dev, environment variables are acceptable.
@@ -126,7 +126,7 @@ Implementation direction for TouchPilot:
 - Do not depend on macOS-only behavior for the whole cross-platform architecture.
 - Do not make global shortcuts mandatory before permission UX is ready.
 
-## TouchPilot Mac Backlog From Clicky Reference
+## Toki Mac Backlog From Clicky Reference
 
 1. Make Mac settings discoverable on launch.
 2. Improve menu bar icon visibility.
@@ -149,4 +149,4 @@ menu bar utility
   -> screenshot/guidance response
 ```
 
-TouchPilot should implement that contract with Tauri, React, and Rust instead of copying the Swift app structure directly.
+Toki should implement that contract with Tauri, React, and Rust instead of copying the Swift app structure directly.

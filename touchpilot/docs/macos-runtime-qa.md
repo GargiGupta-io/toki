@@ -1,10 +1,10 @@
 # macOS Runtime QA
 
-TouchPilot is now tested primarily on macOS, so the runtime checks need to prove the app feels like a menu-bar utility with an invisible overlay, not a normal desktop app window.
+Toki is now tested primarily on macOS, so the runtime checks need to prove the app feels like a menu-bar utility with an invisible overlay, not a normal desktop app window.
 
 ## Run The App
 
-From `touchpilot`:
+From `toki`:
 
 ```bash
 npm run desktop:dev
@@ -14,13 +14,13 @@ If the sandbox blocks localhost or GUI access, run it from a normal terminal.
 
 ## Runtime Probe
 
-With TouchPilot running:
+With Toki running:
 
 ```bash
 npm run qa:mac:runtime
 ```
 
-This checks that the app process is alive and, when macOS Accessibility allows it, lists the visible TouchPilot windows.
+This checks that the app process is alive and, when macOS Accessibility allows it, lists the visible Toki windows.
 
 If the script says System Events access failed, grant Accessibility permission to the terminal app and rerun. The script still leaves manual checks below as the final visual gate.
 
@@ -28,7 +28,7 @@ If the script says System Events access failed, grant Accessibility permission t
 
 The overlay passes when all of these are true:
 
-- No visible `TouchPilot Overlay` titlebar or app-name strip appears.
+- No visible `Toki Overlay` titlebar or app-name strip appears.
 - The overlay does not show a full-screen colored panel.
 - Apps under the overlay remain clickable.
 - The puck follows the cursor while the overlay is passive.
@@ -41,8 +41,8 @@ The overlay passes when all of these are true:
 
 The overlay fails if any of these are true:
 
-- A blue/native titlebar appears because TouchPilot created it.
-- TouchPilot blocks clicks on the desktop while idle.
+- A blue/native titlebar appears because Toki created it.
+- Toki blocks clicks on the desktop while idle.
 - The settings popup behaves like a stuck floating card instead of a movable utility panel.
 - Debug or camera panels open by default.
 - The puck disappears or stops following the cursor.

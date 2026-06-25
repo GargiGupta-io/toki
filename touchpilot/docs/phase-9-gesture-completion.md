@@ -1,6 +1,6 @@
 # Phase 9: Gesture MVP Completion
 
-Phase 9 added the first local camera gesture layer to TouchPilot.
+Phase 9 added the first local camera gesture layer to Toki.
 
 ## What Phase 9 Changed
 
@@ -29,7 +29,7 @@ Phase 9 keeps the Phase 8 runtime shape:
 
 ## Main Outcome
 
-TouchPilot now has a local gesture MVP path:
+Toki now has a local gesture MVP path:
 
 ```text
 getUserMedia
@@ -58,9 +58,9 @@ Phase 9 verification is recorded in:
 Checks that passed:
 
 ```powershell
-npm --workspace @touchpilot/desktop run typecheck
+npm --workspace @toki/desktop run typecheck
 cargo check --workspace
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/desktop run build
 ```
 
 ## Remaining Risks
@@ -73,7 +73,7 @@ npm --workspace @touchpilot/desktop run build
 
 ## What This Unlocks Next
 
-Phase 9 prepares TouchPilot for Phase 10 voice work:
+Phase 9 prepares Toki for Phase 10 voice work:
 
 - pinch can become the start of voice/input mode
 - open palm can remain the pause/cancel gesture

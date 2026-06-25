@@ -4,8 +4,8 @@ Phase 7 Step 8 verified the fluid puck implementation without changing runtime b
 
 ## Checks Run
 
-- `npm --workspace @touchpilot/desktop run typecheck`
-- `npm --workspace @touchpilot/desktop run build`
+- `npm --workspace @toki/desktop run typecheck`
+- `npm --workspace @toki/desktop run build`
 - `npm run check`
 - local server availability check at `http://127.0.0.1:1420`
 - source scan for target droplet gating

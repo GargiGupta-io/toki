@@ -1,10 +1,10 @@
 # macOS Voice QA
 
-TouchPilot's voice path starts with native microphone capture. Before transcription or command routing, the Mac must prove it can open a microphone and receive audio samples.
+Toki's voice path starts with native microphone capture. Before transcription or command routing, the Mac must prove it can open a microphone and receive audio samples.
 
 ## Native Mic Capture Probe
 
-From `touchpilot`:
+From `toki`:
 
 ```bash
 npm run qa:mac:mic
@@ -13,7 +13,7 @@ npm run qa:mac:mic
 Expected pass output looks like:
 
 ```text
-TouchPilot microphone capture probe
+Toki microphone capture probe
 
 [INFO] device - External Microphone, sample_rate=48000, channels=1, format=F32
 [INFO] recording - listening for 2 seconds
@@ -32,7 +32,7 @@ The probe uses the same native audio stack as the desktop app:
 It confirms:
 
 - macOS exposes a default microphone
-- TouchPilot can open the microphone stream
+- Toki can open the microphone stream
 - samples arrive from the microphone
 - the stream can be stopped cleanly
 
@@ -43,7 +43,7 @@ If the probe fails, check:
 - System Settings
 - Privacy & Security
 - Microphone
-- grant access to the terminal app or TouchPilot app
+- grant access to the terminal app or Toki app
 - quit and relaunch the app/terminal
 
 The relaunch matters because macOS privacy permissions often do not apply to already-running processes.
@@ -120,7 +120,7 @@ The desktop app uses the same provider rule as the QA probe:
 
 ```text
 default: local-whisper
-optional: TOUCHPILOT_TRANSCRIPTION_PROVIDER=openai
+optional: TOKI_TRANSCRIPTION_PROVIDER=openai
 ```
 
 That means push-to-talk can transcribe through the local `whisper.cpp` install without OpenAI credits. The app auto-detects the same local Mac paths:
@@ -147,7 +147,7 @@ OpenAI transcription is still available for later cloud testing, but it is not t
 To use it:
 
 ```bash
-export TOUCHPILOT_TRANSCRIPTION_PROVIDER="openai"
+export TOKI_TRANSCRIPTION_PROVIDER="openai"
 export OPENAI_API_KEY="your_key_here"
 npm run qa:mac:transcribe
 ```

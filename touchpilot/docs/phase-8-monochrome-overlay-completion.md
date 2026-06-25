@@ -1,6 +1,6 @@
 # Phase 8: Monochrome Overlay Reset Completion
 
-Phase 8 rebuilt the overlay presentation layer so TouchPilot now reads more like a monochrome mac-style desktop surface and less like a debug-heavy prototype.
+Phase 8 rebuilt the overlay presentation layer so Toki now reads more like a monochrome mac-style desktop surface and less like a debug-heavy prototype.
 
 ## What Phase 8 Changed
 
@@ -41,17 +41,17 @@ Phase 8 verification is recorded in:
 Checks that passed:
 
 ```bash
-npm --workspace @touchpilot/desktop run typecheck
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/desktop run typecheck
+npm --workspace @toki/desktop run build
 npm run check
 npm run desktop:build
 ```
 
 Native build artifacts were produced successfully, including:
 
-- `target/release/touchpilot-desktop.exe`
-- `target/release/bundle/msi/TouchPilot_0.1.0_x64_en-US.msi`
-- `target/release/bundle/nsis/TouchPilot_0.1.0_x64-setup.exe`
+- `target/release/toki-desktop.exe`
+- `target/release/bundle/msi/Toki_0.1.0_x64_en-US.msi`
+- `target/release/bundle/nsis/Toki_0.1.0_x64-setup.exe`
 
 ## Remaining Risk
 

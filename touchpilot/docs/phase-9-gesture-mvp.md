@@ -1,6 +1,6 @@
 # Phase 9: Gesture MVP
 
-Phase 9 adds the first local camera gesture controls to TouchPilot.
+Phase 9 adds the first local camera gesture controls to Toki.
 
 The product rule from Phase 8 still applies: the normal runtime must stay cursor-first. The camera is an activation layer, not a new visible app surface.
 
@@ -23,8 +23,8 @@ For Phase 9, that means the smallest gesture version that proves the interaction
 
 - camera permission can be requested
 - hand landmarks can be detected
-- pinch can activate TouchPilot
-- open palm can pause/stop TouchPilot
+- pinch can activate Toki
+- open palm can pause/stop Toki
 - false triggers are reduced
 - camera can be turned off
 - failure states are handled without breaking the overlay
@@ -38,7 +38,7 @@ Use:
 ```text
 getUserMedia
   -> MediaPipe Hand Landmarker
-  -> custom TouchPilot gesture classifier
+  -> custom Toki gesture classifier
   -> smoothing/cooldown
   -> assistant action
 ```
@@ -47,7 +47,7 @@ This means:
 
 - `navigator.mediaDevices.getUserMedia()` provides the camera stream.
 - MediaPipe Hand Landmarker finds 21 hand points.
-- TouchPilot classifies gestures from those points.
+- Toki classifies gestures from those points.
 - The normal overlay receives only final gesture events.
 
 ## Supported Gestures
@@ -140,7 +140,7 @@ Camera handling must be conservative:
 - debug preview appears only in the debug window
 - user can turn the camera off
 - permission denied must not crash the app
-- no camera fallback must still leave TouchPilot usable
+- no camera fallback must still leave Toki usable
 
 ## Runtime Surface Rules
 
@@ -218,8 +218,8 @@ Phase 9 is complete when:
 - camera can be disabled from settings
 - debug window can show camera status
 - MediaPipe landmarks run locally
-- pinch can activate TouchPilot
-- open palm can pause/stop TouchPilot
+- pinch can activate Toki
+- open palm can pause/stop Toki
 - smoothing and cooldown prevent obvious repeated triggers
 - permission denied/no camera cases are handled
 - normal overlay remains cursor-first and clean

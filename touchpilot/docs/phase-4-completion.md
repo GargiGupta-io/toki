@@ -1,6 +1,6 @@
 # Phase 4 Real Screen Capture Completion
 
-Phase 4 replaced the screenshot placeholder with a Windows-first real screen capture path. TouchPilot can now capture real pixels, encode them as PNG/base64, return them through the Tauri command boundary, and show screenshot metadata plus a debug preview in the overlay panel.
+Phase 4 replaced the screenshot placeholder with a Windows-first real screen capture path. Toki can now capture real pixels, encode them as PNG/base64, return them through the Tauri command boundary, and show screenshot metadata plus a debug preview in the overlay panel.
 
 ## What Exists Now
 
@@ -29,16 +29,16 @@ These commands passed:
 
 ```text
 npm run check
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/desktop run build
 npm run desktop:build
 ```
 
 The full native Tauri build produced:
 
 ```text
-target/release/touchpilot-desktop.exe
-target/release/bundle/msi/TouchPilot_0.1.0_x64_en-US.msi
-target/release/bundle/nsis/TouchPilot_0.1.0_x64-setup.exe
+target/release/toki-desktop.exe
+target/release/bundle/msi/Toki_0.1.0_x64_en-US.msi
+target/release/bundle/nsis/Toki_0.1.0_x64-setup.exe
 ```
 
 The release build took around 13m 48s after frontend build on the verification run.

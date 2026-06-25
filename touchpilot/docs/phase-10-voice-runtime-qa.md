@@ -43,7 +43,7 @@ or, for release-exe testing:
 
 ```powershell
 npm run desktop:release:exe
-Start-Process .\target\release\touchpilot-desktop.exe
+Start-Process .\target\release\toki-desktop.exe
 ```
 
 If release compilation stalls around the final Rust target, prefer `desktop:dev` for this QA pass. Full release packaging is not required to validate voice UI behavior.

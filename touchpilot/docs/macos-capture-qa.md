@@ -1,10 +1,10 @@
 # macOS Capture QA
 
-TouchPilot needs screen pixels before it can tell the user what to click. On macOS, that means the capture path must be tested from a real desktop process, not only from a sandboxed automation shell.
+Toki needs screen pixels before it can tell the user what to click. On macOS, that means the capture path must be tested from a real desktop process, not only from a sandboxed automation shell.
 
 ## Run The Probe
 
-From `touchpilot`:
+From `toki`:
 
 ```bash
 npm run qa:mac:capture
@@ -13,7 +13,7 @@ npm run qa:mac:capture
 Expected pass output looks like:
 
 ```text
-TouchPilot capture probe
+Toki capture probe
 
 [PASS] metadata - display=1 1470x956 scale=2
 [PASS] screenshot - image=2940x1912 bytes=2145981 base64_chars=2861308
@@ -52,17 +52,17 @@ If screenshot capture fails from a normal terminal, check:
 - System Settings
 - Privacy & Security
 - Screen Recording
-- grant access to the terminal app or TouchPilot app
+- grant access to the terminal app or Toki app
 - quit and relaunch the app/terminal
 
 The relaunch matters. macOS often does not apply Screen Recording permission to an already-running process.
 
 ## Expected Failure Copy
 
-If capture fails because macOS does not expose displays or denies capture, TouchPilot should show an actionable message:
+If capture fails because macOS does not expose displays or denies capture, Toki should show an actionable message:
 
 ```text
-no display available for capture. On macOS, grant Screen Recording permission to TouchPilot or the terminal app, then quit and relaunch it.
+no display available for capture. On macOS, grant Screen Recording permission to Toki or the terminal app, then quit and relaunch it.
 ```
 
 Any generic capture error without this Screen Recording hint should be treated as a bug in the permission guidance layer.
@@ -98,4 +98,4 @@ Expected screenshot size:
 
 So the capture path is internally consistent.
 
-TouchPilot now checks this relationship when it builds calibration metadata. A mismatch should show in the debug Capture/Guidance readout as `needs_check`.
+Toki now checks this relationship when it builds calibration metadata. A mismatch should show in the debug Capture/Guidance readout as `needs_check`.

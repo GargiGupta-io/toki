@@ -1,6 +1,6 @@
 # Phase 3 Screen Capture Foundation Completion
 
-Phase 3 created the first capture and coordinate-calibration foundation for TouchPilot. It does not yet capture real screen pixels, but the native and UI boundaries now exist for capture metadata and screenshot payloads.
+Phase 3 created the first capture and coordinate-calibration foundation for Toki. It does not yet capture real screen pixels, but the native and UI boundaries now exist for capture metadata and screenshot payloads.
 
 ## What Exists Now
 
@@ -19,16 +19,16 @@ These commands passed:
 
 ```text
 npm run check
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/desktop run build
 npm run desktop:build
 ```
 
 The full Tauri build produced:
 
 ```text
-target/release/touchpilot-desktop.exe
-target/release/bundle/msi/TouchPilot_0.1.0_x64_en-US.msi
-target/release/bundle/nsis/TouchPilot_0.1.0_x64-setup.exe
+target/release/toki-desktop.exe
+target/release/bundle/msi/Toki_0.1.0_x64_en-US.msi
+target/release/bundle/nsis/Toki_0.1.0_x64-setup.exe
 ```
 
 ## Current Capture Behavior
@@ -41,7 +41,7 @@ Current command output is placeholder metadata:
 - display: primary 1180 x 760,
 - scale factor: 1,
 - cursor: 640, 360,
-- active window: TouchPilot,
+- active window: Toki,
 - captured at: placeholder.
 
 The `capture_screenshot` command returns a typed placeholder screenshot payload with empty `imageBase64`.

@@ -1,6 +1,6 @@
 # Visual Acceptance
 
-TouchPilot should feel like a cursor-native assistant, not a normal app window sitting on top of the desktop.
+Toki should feel like a cursor-native assistant, not a normal app window sitting on top of the desktop.
 
 This document is the visual gate for Phase 8 and every later overlay change. If the running app violates this file, the implementation is not ready even if TypeScript, Rust, and packaging checks pass.
 
@@ -11,7 +11,7 @@ This document is the visual gate for Phase 8 and every later overlay change. If 
 - Clicky demo GIF in repository: https://github.com/farzaa/clicky/blob/main/clicky-demo.gif
 - User-provided visual reference: https://www.youtube.com/watch?v=ZX9A31WoBEs
 
-The Clicky README describes the product as an AI teacher that lives next to the cursor, appears in the macOS menu bar rather than the dock, and uses one small control panel plus one fullscreen transparent cursor overlay. TouchPilot should borrow that product shape while staying cross-platform.
+The Clicky README describes the product as an AI teacher that lives next to the cursor, appears in the macOS menu bar rather than the dock, and uses one small control panel plus one fullscreen transparent cursor overlay. Toki should borrow that product shape while staying cross-platform.
 
 ## Product Shape
 
@@ -39,7 +39,7 @@ taskbar app
 
 Any one of these is enough to fail Phase 8 visual acceptance.
 
-1. A visible titlebar says `TouchPilot`, `TouchPilot Overlay`, or any app/window label in the normal runtime.
+1. A visible titlebar says `Toki`, `Toki Overlay`, or any app/window label in the normal runtime.
 2. The default runtime shows a permanent panel, dashboard, debug surface, or bottom-right card.
 3. The overlay blocks normal desktop clicks outside intentional controls.
 4. The overlay appears as a normal app window in the taskbar/dock/app switcher.
@@ -55,7 +55,7 @@ Any one of these is enough to fail Phase 8 visual acceptance.
 Phase 8 passes only when all of these are true.
 
 1. On launch, the screen looks like the normal desktop plus a tiny cursor-adjacent assistant presence.
-2. TouchPilot adds no visible titlebar, app-name strip, or native window chrome to the overlay.
+2. Toki adds no visible titlebar, app-name strip, or native window chrome to the overlay.
 3. The default overlay is visually quiet and click-through.
 4. The puck is small, white/monochrome, and cursor-shadow shaped.
 5. The settings popup is hidden by default and appears only when intentionally opened.
@@ -136,8 +136,8 @@ Use this checklist before closing Phase 8.
 
 ```text
 [ ] launch the release or dev app
-[ ] confirm no `TouchPilot Overlay` strip is visible
-[ ] confirm no titlebar/app-name text is visible from TouchPilot
+[ ] confirm no `Toki Overlay` strip is visible
+[ ] confirm no titlebar/app-name text is visible from Toki
 [ ] confirm no debug panel is visible
 [ ] confirm no bottom-right guidance card is visible
 [ ] confirm puck is tiny and cursor-adjacent
@@ -174,7 +174,7 @@ settings window:
   AppWindow: false
 ```
 
-Hit-testing should show the underlying app receives clicks outside intentional TouchPilot controls.
+Hit-testing should show the underlying app receives clicks outside intentional Toki controls.
 
 ## Puck Baseline
 
@@ -201,8 +201,8 @@ Deferred:
 
 The visual screenshot check should fail if it detects:
 
-- `TouchPilot Overlay`
-- visible native titlebar from TouchPilot
+- `Toki Overlay`
+- visible native titlebar from Toki
 - visible app-like dashboard
 - debug panel in normal runtime
 - capture preview in normal runtime
@@ -214,6 +214,6 @@ This check is not a replacement for manual taste review, but it catches the wors
 
 The product should optimize for this sentence:
 
-> TouchPilot is the tiny assistant next to the cursor, not an app window on the screen.
+> Toki is the tiny assistant next to the cursor, not an app window on the screen.
 
 That is the Phase 8 visual acceptance bar.

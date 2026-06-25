@@ -17,7 +17,7 @@ Build the first AI guidance loop foundation:
 
 ## Why This Phase Matters
 
-TouchPilot now has an overlay and real screenshots. The next product milestone is connecting those pieces:
+Toki now has an overlay and real screenshots. The next product milestone is connecting those pieces:
 
 ```text
 user goal

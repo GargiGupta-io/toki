@@ -1,11 +1,11 @@
 # Phase 2 Overlay Prototype Completion
 
-Phase 2 created the first working overlay prototype for TouchPilot. The app is no longer a generic Tauri starter; it now behaves like the beginning of a desktop guidance layer.
+Phase 2 created the first working overlay prototype for Toki. The app is no longer a generic Tauri starter; it now behaves like the beginning of a desktop guidance layer.
 
 ## What Exists Now
 
 - Overlay behavior spec in `docs/phase-2-overlay.md`.
-- TouchPilot-branded overlay shell.
+- Toki-branded overlay shell.
 - Assistant puck with status label and pulse treatment.
 - Typed overlay state model.
 - Overlay-style Tauri window configuration.
@@ -20,7 +20,7 @@ These commands passed:
 
 ```text
 npm run check
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/desktop run build
 ```
 
 ## Current Prototype Behavior

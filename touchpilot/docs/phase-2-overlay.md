@@ -1,12 +1,12 @@
 # Phase 2 Overlay Prototype
 
-Phase 2 proves that TouchPilot can behave like a desktop guidance layer instead of a normal app window.
+Phase 2 proves that Toki can behave like a desktop guidance layer instead of a normal app window.
 
 ## Goal
 
 Build the first overlay prototype:
 
-1. replace the starter app UI with a TouchPilot shell,
+1. replace the starter app UI with a Toki shell,
 2. create a floating assistant puck,
 3. show a pointer ring at test coordinates,
 4. attach a step bubble to the target,
@@ -49,7 +49,7 @@ Phase 2 should start with interactive mode because it is easier to debug. Pass-t
 
 ### Assistant Puck
 
-The assistant puck is the main floating control. It should show that TouchPilot is alive and provide an obvious place for future voice, gesture, and prompt interactions.
+The assistant puck is the main floating control. It should show that Toki is alive and provide an obvious place for future voice, gesture, and prompt interactions.
 
 Initial behavior:
 
@@ -135,7 +135,7 @@ The debug panel should be easy to remove or hide before production polish.
 Phase 2 is complete when:
 
 - the starter Tauri UI is replaced,
-- the app shows a TouchPilot overlay shell,
+- the app shows a Toki overlay shell,
 - an assistant puck is visible,
 - a pointer ring renders at a fixed target,
 - a step bubble explains the target,

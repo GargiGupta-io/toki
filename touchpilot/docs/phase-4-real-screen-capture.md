@@ -16,7 +16,7 @@ Build the first real screenshot capture path:
 
 ## Why This Phase Matters
 
-TouchPilot cannot guide the user visually without seeing the screen. The overlay already knows how to mark a target, and Phase 3 added capture contracts. Phase 4 starts feeding real pixels into that pipeline.
+Toki cannot guide the user visually without seeing the screen. The overlay already knows how to mark a target, and Phase 3 added capture contracts. Phase 4 starts feeding real pixels into that pipeline.
 
 The eventual flow is:
 
@@ -96,8 +96,8 @@ The real `capture_screenshot` payload should return:
     "y": 360
   },
   "activeWindow": {
-    "title": "TouchPilot",
-    "appName": "TouchPilot"
+    "title": "Toki",
+    "appName": "Toki"
   },
   "capturedAt": "2026-06-01T00:00:00.000Z",
   "format": "png",

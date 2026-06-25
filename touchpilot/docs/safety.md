@@ -1,6 +1,6 @@
 # Safety Model
 
-TouchPilot guides users through real software. That means it can point users toward actions with real consequences. The safety layer exists to slow down risky steps, explain consequences, and require confirmation.
+Toki guides users through real software. That means it can point users toward actions with real consequences. The safety layer exists to slow down risky steps, explain consequences, and require confirmation.
 
 ## Risk Classes
 

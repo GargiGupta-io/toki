@@ -1,6 +1,6 @@
 # Gesture Control
 
-TouchPilot uses camera gestures as a control layer. The camera should not be the main intelligence system; it should trigger assistant commands while screen understanding and the AI model decide what guidance to show.
+Toki uses camera gestures as a control layer. The camera should not be the main intelligence system; it should trigger assistant commands while screen understanding and the AI model decide what guidance to show.
 
 ## First Gestures
 

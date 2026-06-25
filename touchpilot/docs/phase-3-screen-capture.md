@@ -23,7 +23,7 @@ physical display
   -> overlay CSS coordinates
 ```
 
-If any conversion is wrong, TouchPilot will point to the wrong place even if the AI chooses the right element.
+If any conversion is wrong, Toki will point to the wrong place even if the AI chooses the right element.
 
 ## Phase 3 Non-Goals
 
@@ -56,8 +56,8 @@ The app should move toward this shape:
     "y": 360
   },
   "activeWindow": {
-    "title": "TouchPilot",
-    "appName": "TouchPilot"
+    "title": "Toki",
+    "appName": "Toki"
   },
   "capturedAt": "2026-05-31T00:00:00.000Z"
 }

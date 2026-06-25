@@ -131,9 +131,9 @@ Expected outcome:
 Minimum automated checks for Phase 6:
 
 ```bash
-npm --workspace @touchpilot/ai run typecheck
-npm --workspace @touchpilot/desktop run typecheck
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/ai run typecheck
+npm --workspace @toki/desktop run typecheck
+npm --workspace @toki/desktop run build
 npm run check
 cargo fmt --all --check
 cargo test --workspace
@@ -152,9 +152,9 @@ Use this checklist whenever Phase 6 runtime behavior needs to be manually verifi
 Run the automated checks first:
 
 ```bash
-npm --workspace @touchpilot/ai run test
-npm --workspace @touchpilot/desktop run typecheck
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/ai run test
+npm --workspace @toki/desktop run typecheck
+npm --workspace @toki/desktop run build
 npm run check
 ```
 

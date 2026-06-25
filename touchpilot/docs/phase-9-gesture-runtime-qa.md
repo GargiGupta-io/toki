@@ -59,14 +59,14 @@ Do not treat offline packaged gesture support as proven yet.
 Run from:
 
 ```powershell
-C:\Users\Pumba\Documents\codex\clicky\touchpilot
+C:\Users\Pumba\Documents\codex\clicky\toki
 ```
 
 Recommended checks:
 
 ```powershell
-npm --workspace @touchpilot/desktop run typecheck
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/desktop run typecheck
+npm --workspace @toki/desktop run build
 ```
 
 If native packaging is needed:
@@ -78,12 +78,12 @@ npm run desktop:build:windows
 If only launching the current built executable:
 
 ```powershell
-Start-Process .\target\release\touchpilot-desktop.exe
+Start-Process .\target\release\toki-desktop.exe
 ```
 
 ## Open Debug Surface
 
-1. Launch TouchPilot.
+1. Launch Toki.
 2. Use the tray menu.
 3. Open the debug window.
 4. Confirm the normal overlay still has no camera panel or debug panel.

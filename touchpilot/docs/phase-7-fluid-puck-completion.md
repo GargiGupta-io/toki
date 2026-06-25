@@ -72,8 +72,8 @@ Phase 7 verification is recorded in:
 Checks that passed:
 
 ```bash
-npm --workspace @touchpilot/desktop run typecheck
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/desktop run typecheck
+npm --workspace @toki/desktop run build
 npm run check
 ```
 

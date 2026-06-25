@@ -1,6 +1,6 @@
 # Mac Migration Track
 
-TouchPilot is now being developed on macOS as the primary product target.
+Toki is now being developed on macOS as the primary product target.
 
 The goal of this track is not to abandon Windows or Linux. The goal is to make the Clicky-style experience feel correct on the machine we can test every day, while keeping platform-specific behavior isolated enough that Windows and Linux can remain supported.
 
@@ -12,17 +12,17 @@ The goal of this track is not to abandon Windows or Linux. The goal is to make t
 
 ## Phase M0 Findings
 
-M0 verified that the Mac environment can build and launch TouchPilot.
+M0 verified that the Mac environment can build and launch Toki.
 
 Passed:
 
 - Node is installed.
 - npm is installed.
 - Rust was installed through rustup.
-- `npm --workspace @touchpilot/shared run typecheck` passed.
-- `npm --workspace @touchpilot/desktop run typecheck` passed.
+- `npm --workspace @toki/shared run typecheck` passed.
+- `npm --workspace @toki/desktop run typecheck` passed.
 - `cargo check --workspace` passed on macOS.
-- `npm --workspace @touchpilot/desktop run build` passed.
+- `npm --workspace @toki/desktop run build` passed.
 - `tauri dev` launched the desktop shell on macOS when run outside the sandbox.
 
 Migration fixes:

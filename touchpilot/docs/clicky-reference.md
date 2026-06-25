@@ -1,6 +1,6 @@
 # Clicky Reference
 
-Clicky is a useful reference for product flow, but TouchPilot should not be built on top of its codebase.
+Clicky is a useful reference for product flow, but Toki should not be built on top of its codebase.
 
 ## Decision
 
@@ -9,9 +9,9 @@ Use Clicky as a reference implementation, not a foundation.
 ## Why
 
 - Clicky is Swift/macOS-first.
-- TouchPilot must support Windows, macOS, and Linux.
+- Toki must support Windows, macOS, and Linux.
 - Clicky's capture and overlay decisions are tied to Apple APIs.
-- TouchPilot needs camera gestures, React overlay visuals, Rust native modules, and cross-platform packaging from the start.
+- Toki needs camera gestures, React overlay visuals, Rust native modules, and cross-platform packaging from the start.
 
 ## Useful Ideas To Borrow
 
@@ -32,9 +32,9 @@ Use Clicky as a reference implementation, not a foundation.
 - Hardcoded provider choices.
 - Chat-first UI if it competes with overlay-first guidance.
 
-## TouchPilot Direction
+## Toki Direction
 
-TouchPilot should feel like a cross-platform OS-level guidance layer:
+Toki should feel like a cross-platform OS-level guidance layer:
 
 ```text
 screen understanding

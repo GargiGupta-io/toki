@@ -1,6 +1,6 @@
-# TouchPilot Architecture
+# Toki Architecture
 
-TouchPilot is a cross-platform desktop assistant that understands the current screen and guides users through software with visual overlays, voice, and camera gestures.
+Toki is a cross-platform desktop assistant that understands the current screen and guides users through software with visual overlays, voice, and camera gestures.
 
 ## Product Loop
 

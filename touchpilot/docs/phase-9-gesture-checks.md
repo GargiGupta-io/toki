@@ -7,19 +7,19 @@ Phase 9 compile and build checks passed on June 14, 2026.
 Run from:
 
 ```powershell
-C:\Users\Pumba\Documents\codex\clicky\touchpilot
+C:\Users\Pumba\Documents\codex\clicky\toki
 ```
 
 ### Desktop Typecheck
 
 ```powershell
-npm --workspace @touchpilot/desktop run typecheck
+npm --workspace @toki/desktop run typecheck
 ```
 
 Result:
 
 ```text
-> @touchpilot/desktop@0.1.0 typecheck
+> @toki/desktop@0.1.0 typecheck
 > tsc --noEmit
 ```
 
@@ -42,13 +42,13 @@ Status: passed.
 ### Desktop Web Build
 
 ```powershell
-npm --workspace @touchpilot/desktop run build
+npm --workspace @toki/desktop run build
 ```
 
 Result:
 
 ```text
-> @touchpilot/desktop@0.1.0 build
+> @toki/desktop@0.1.0 build
 > tsc && vite build
 
 vite v7.3.3 building client environment for production...
@@ -76,7 +76,7 @@ This proves the gesture contracts, camera controls, debug camera preview, MediaP
 The manual runtime QA checklist is documented in:
 
 ```text
-touchpilot/docs/phase-9-gesture-runtime-qa.md
+toki/docs/phase-9-gesture-runtime-qa.md
 ```
 
 Still requiring hands-on runtime confirmation:

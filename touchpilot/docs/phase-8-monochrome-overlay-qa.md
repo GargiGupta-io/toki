@@ -4,8 +4,8 @@ Phase 8 Step 8 verified that the monochrome overlay redesign still compiles, bui
 
 ## Checks Run
 
-- `npm --workspace @touchpilot/desktop run typecheck`
-- `npm --workspace @touchpilot/desktop run build`
+- `npm --workspace @toki/desktop run typecheck`
+- `npm --workspace @toki/desktop run build`
 - `npm run check`
 - `npm run desktop:build`
 
@@ -27,9 +27,9 @@ The full workspace check completed successfully, including:
 
 The native desktop package build completed successfully and produced:
 
-- `target/release/touchpilot-desktop.exe`
-- `target/release/bundle/msi/TouchPilot_0.1.0_x64_en-US.msi`
-- `target/release/bundle/nsis/TouchPilot_0.1.0_x64-setup.exe`
+- `target/release/toki-desktop.exe`
+- `target/release/bundle/msi/Toki_0.1.0_x64_en-US.msi`
+- `target/release/bundle/nsis/Toki_0.1.0_x64-setup.exe`
 
 ## What This Proves
 

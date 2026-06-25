@@ -1,6 +1,6 @@
-# TouchPilot Desktop
+# Toki Desktop
 
-Cross-platform Tauri desktop shell for the TouchPilot AI screen guide.
+Cross-platform Tauri desktop shell for the Toki AI screen guide.
 
 ## Recommended IDE Setup
 

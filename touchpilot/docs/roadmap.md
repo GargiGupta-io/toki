@@ -65,7 +65,7 @@
 
 ## Phase M1: macOS Runtime Shell
 
-- Make TouchPilot feel like a macOS menu bar utility.
+- Make Toki feel like a macOS menu bar utility.
 - Validate settings popup behavior on Mac.
 - Validate transparent overlay behavior on Mac.
 - Remove Windows-only assumptions from the default runtime path.
