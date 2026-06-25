@@ -497,6 +497,7 @@ What changed in this slice:
 
 - The tray/menu action now says `Open Toki` instead of generic settings wording.
 - The quit action now says `Quit Toki`.
+- The tray icon is now marked as a macOS template icon, which lets the system render it like a menu-bar utility icon instead of treating it as a colored app badge.
 - On macOS, the compact Toki panel opens automatically on launch so the app is discoverable even though it behaves like a menu-bar utility.
 - The settings copy now explicitly says the local shortcut: hold Space or press the talk control, then release to guide.
 - The Clicky reference notes now mark which pieces are already aligned and which remain as follow-up work.
@@ -507,7 +508,7 @@ The other important tradeoff is Tauri shell versus native Swift shell. Clicky ge
 
 M4 does not yet finish every Clicky behavior. The main remaining items are:
 
-- a more visible cursor-like menu bar icon
+- a custom cursor-like template artwork if the current app icon still does not read clearly enough in the menu bar
 - a true native global push-to-talk shortcut, likely Control+Option hold
 - Accessibility permission UX for global shortcuts
 - deeper multi-monitor overlay validation
@@ -555,3 +556,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Confirmed manual app voice test: spoken command activates guidance with local Whisper; target accuracy remains mock-guidance scope.
 - 2026-06-26 - Renamed the product and GitHub repository from TouchPilot/touchpilot to Toki/toki.
 - 2026-06-26 - Started Phase M4 Clicky reference alignment: Mac auto-opens the compact Toki panel, tray labels are product-specific, Space push-to-talk copy is explicit, and the Clicky reference notes now track current alignment plus remaining native Mac follow-ups.
+- 2026-06-26 - Marked the Toki tray icon as a macOS template icon so it behaves more like a native menu-bar utility icon.
