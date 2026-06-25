@@ -179,6 +179,27 @@ npm run qa:mac:capture
 
 If this fails from a normal terminal, the likely next issue is macOS Screen Recording permission.
 
+## Phase M2 Screen Recording Permission Update
+
+Plain English: when Mac capture fails, the app should tell the user exactly where to fix it instead of showing a raw technical error.
+
+TouchPilot now formats permission-like capture failures with a macOS-specific hint:
+
+```text
+On macOS, grant Screen Recording permission to TouchPilot or the terminal app, then quit and relaunch it.
+```
+
+The relaunch part matters because macOS privacy permissions usually do not apply to already-running processes.
+
+The app treats these messages as permission-related:
+
+- `no display available`
+- `permission`
+- `denied`
+- `not authorized`
+
+This makes the capture failure path more useful without changing the underlying capture architecture.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -209,3 +230,4 @@ Phase M1 should focus on:
 - 2026-06-25 - Added macOS runtime QA script and manual overlay checklist for transparent overlay validation.
 - 2026-06-25 - Removed user-facing Windows camera permission copy and added explicit Mac/Windows release script names.
 - 2026-06-25 - Added macOS capture probe and recorded successful Retina capture outside the sandbox.
+- 2026-06-25 - Added macOS Screen Recording guidance for permission-like capture failures.
