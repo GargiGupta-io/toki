@@ -499,10 +499,13 @@ What changed in this slice:
 - The quit action now says `Quit Toki`.
 - The tray icon is now marked as a macOS template icon, which lets the system render it like a menu-bar utility icon instead of treating it as a colored app badge.
 - On macOS, the compact Toki panel opens automatically on launch so the app is discoverable even though it behaves like a menu-bar utility.
+- When opened on macOS, the compact Toki panel is now placed near the top-right menu bar area instead of centered on the screen.
 - The settings copy now explicitly says the local shortcut: hold Space or press the talk control, then release to guide.
 - The Clicky reference notes now mark which pieces are already aligned and which remain as follow-up work.
 
 The important tradeoff is discoverability versus purity. A perfect menu-bar utility might launch silently and only live in the menu bar. That is clean, but it confused testing because the app looked like it had disappeared. For now, auto-opening the compact panel on Mac is the better development and first-run behavior. Later, this can become a first-launch-only behavior once onboarding exists.
+
+The panel placement tradeoff is similar. Clicky can anchor its panel to the exact menu-bar icon because it owns a native AppKit `NSPanel` flow. Toki is still using Tauri windows, so the practical M4 version positions the panel near the top-right menu-bar area using monitor bounds and the real window size. That is not a perfect native popover anchor yet, but it already stops the panel from feeling like a normal centered app window.
 
 The other important tradeoff is Tauri shell versus native Swift shell. Clicky gets `NSPanel`, global shortcut monitoring, and menu-bar behavior directly from Swift/AppKit. Toki is staying in Tauri/Rust/React for now, so we recreate the same behavior with Tauri windows and native helpers. That keeps the cross-platform app architecture alive, but it means some Mac behaviors need careful native patches instead of being automatic.
 
@@ -557,3 +560,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Renamed the product and GitHub repository from TouchPilot/touchpilot to Toki/toki.
 - 2026-06-26 - Started Phase M4 Clicky reference alignment: Mac auto-opens the compact Toki panel, tray labels are product-specific, Space push-to-talk copy is explicit, and the Clicky reference notes now track current alignment plus remaining native Mac follow-ups.
 - 2026-06-26 - Marked the Toki tray icon as a macOS template icon so it behaves more like a native menu-bar utility icon.
+- 2026-06-26 - Positioned the macOS settings panel near the top-right menu bar area when opened, using monitor bounds and the real panel size.
