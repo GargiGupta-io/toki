@@ -567,12 +567,19 @@ function getViewportMetrics(): ViewportMetrics {
 function getCalibration(
   captureMetadata: CaptureMetadata | null,
   viewport: ViewportMetrics,
+  screenshot?: Pick<ScreenshotMetadata, "imageWidth" | "imageHeight"> | null,
 ): CoordinateCalibration {
   const overlayWidth = viewport.width;
   const overlayHeight = viewport.height;
   const displayWidth = captureMetadata?.display.width ?? 0;
   const displayHeight = captureMetadata?.display.height ?? 0;
   const scaleFactor = captureMetadata?.display.scaleFactor ?? 1;
+  const expectedImageWidth = Math.round(displayWidth * scaleFactor);
+  const expectedImageHeight = Math.round(displayHeight * scaleFactor);
+  const imageMatchesScale =
+    screenshot == null ||
+    (screenshot.imageWidth === expectedImageWidth &&
+      screenshot.imageHeight === expectedImageHeight);
 
   if (!captureMetadata) {
     return {
@@ -588,9 +595,10 @@ function getCalibration(
 
   const sizeMatches = overlayWidth === displayWidth && overlayHeight === displayHeight;
   const scaleMatches = Math.abs(viewport.devicePixelRatio - scaleFactor) < 0.01;
+  const isAligned = sizeMatches && scaleMatches && imageMatchesScale;
 
   return {
-    status: sizeMatches && scaleMatches ? "aligned" : "needs_check",
+    status: isAligned ? "aligned" : "needs_check",
     overlayWidth,
     overlayHeight,
     displayWidth,
@@ -598,11 +606,13 @@ function getCalibration(
     scaleFactor,
     checkedAt: new Date().toISOString(),
     notes:
-      sizeMatches && scaleMatches
-        ? "Overlay viewport matches captured display dimensions and scale."
+      isAligned
+        ? "Overlay viewport matches captured display dimensions, DPR, and screenshot pixel scale."
         : `Overlay/display mismatch. Delta ${overlayWidth - displayWidth}, ${
             overlayHeight - displayHeight
-          }; DPR ${viewport.devicePixelRatio} vs capture scale ${scaleFactor}.`,
+          }; DPR ${viewport.devicePixelRatio} vs capture scale ${scaleFactor}; screenshot ${
+            screenshot?.imageWidth ?? "unknown"
+          }x${screenshot?.imageHeight ?? "unknown"} vs expected ${expectedImageWidth}x${expectedImageHeight}.`,
   };
 }
 
@@ -805,7 +815,7 @@ function OverlayWindowApp() {
           display: metadata.display,
           capture: metadata,
           screenshot: getScreenshotMetadata(screenshot),
-          calibration: getCalibration(metadata, viewport),
+          calibration: getCalibration(metadata, viewport, getScreenshotMetadata(screenshot)),
         },
         previousStep: guidanceResult?.step ?? null,
       };
