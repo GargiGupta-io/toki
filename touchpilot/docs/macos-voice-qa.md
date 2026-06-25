@@ -62,15 +62,21 @@ Native mic capture is working on Mac.
 
 ## Native Transcription Probe
 
-This checks microphone capture plus OpenAI transcription.
+This checks microphone capture plus transcription. The default provider is free local Whisper through `whisper.cpp`.
 
-First make sure the key is set in the same terminal:
+Required local setup:
 
 ```bash
-if [ -n "$OPENAI_API_KEY" ]; then echo set; else echo missing; fi
+brew install whisper-cpp
 ```
 
-Then run:
+Download a whisper.cpp model and point TouchPilot at it:
+
+```bash
+export WHISPER_CPP_MODEL="/path/to/ggml-base.en.bin"
+```
+
+Then run the probe:
 
 ```bash
 npm run qa:mac:transcribe
@@ -92,8 +98,24 @@ Expected pass output includes:
 
 ```text
 [PASS] microphone captured
-[PASS] transcription - model=gpt-4o-transcribe
+[PASS] transcription - model=local-whisper:/path/to/ggml-base.en.bin
 Transcript: show me what to click next
 ```
 
-If it fails with `OPENAI_API_KEY is not set`, the app or terminal was launched without the environment variable. Export the key again, then rerun the command from that same terminal.
+If it fails with `local Whisper binary not found`, install `whisper-cpp` or set `WHISPER_CPP_BIN`.
+
+If it fails with `WHISPER_CPP_MODEL is not set`, set `WHISPER_CPP_MODEL` to a local model file.
+
+## Optional OpenAI Transcription
+
+OpenAI transcription is still available for later cloud testing, but it is not the free/default path.
+
+To use it:
+
+```bash
+export TOUCHPILOT_TRANSCRIPTION_PROVIDER="openai"
+export OPENAI_API_KEY="your_key_here"
+npm run qa:mac:transcribe
+```
+
+If OpenAI returns `insufficient_quota`, the account needs billing or usable credits. Use local Whisper instead.
