@@ -4,6 +4,9 @@ use touchpilot_capture::{
 use base64::{engine::general_purpose, Engine as _};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -485,9 +488,9 @@ fn native_voice_capture_stop(
     })
 }
 
-#[tauri::command]
-fn transcribe_voice_capture(
-    request: VoiceTranscriptionRequest,
+fn transcribe_voice_capture_with_openai(
+    audio_bytes: Vec<u8>,
+    request: &VoiceTranscriptionRequest,
 ) -> Result<VoiceTranscriptionResponse, String> {
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| "OPENAI_API_KEY is not set for native voice transcription".to_string())?;
@@ -495,14 +498,6 @@ fn transcribe_voice_capture(
         .unwrap_or_else(|_| "https://api.openai.com/v1/audio/transcriptions".to_string());
     let model = std::env::var("TOUCHPILOT_TRANSCRIPTION_MODEL")
         .unwrap_or_else(|_| "gpt-4o-transcribe".to_string());
-    let audio_bytes = general_purpose::STANDARD
-        .decode(&request.audio_base64)
-        .map_err(|error| format!("native voice audio payload is not valid base64: {error}"))?;
-
-    if audio_bytes.len() <= 44 {
-        return Err("native voice audio payload does not contain usable WAV samples".to_string());
-    }
-
     let mime_type = if request.format == "audio/wav" {
         "audio/wav"
     } else {
@@ -553,6 +548,159 @@ fn transcribe_voice_capture(
         sample_rate: request.sample_rate,
         channels: request.channels,
     })
+}
+
+fn find_local_whisper_binary() -> Result<String, String> {
+    if let Ok(path) = std::env::var("WHISPER_CPP_BIN") {
+        return Ok(path);
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let local_path = PathBuf::from(home)
+            .join("tools")
+            .join("whisper.cpp")
+            .join("build")
+            .join("bin")
+            .join("whisper-cli");
+
+        if local_path.exists() {
+            return Ok(local_path.to_string_lossy().to_string());
+        }
+    }
+
+    for candidate in ["whisper-cli", "whisper-cpp", "whisper"] {
+        let status = Command::new("which")
+            .arg(candidate)
+            .output()
+            .map_err(|error| format!("failed to search for local Whisper binary: {error}"))?;
+
+        if status.status.success() {
+            let path = String::from_utf8_lossy(&status.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Ok(path);
+            }
+        }
+    }
+
+    Err(
+        "local Whisper binary not found. Build whisper.cpp or set WHISPER_CPP_BIN."
+            .to_string(),
+    )
+}
+
+fn local_whisper_model_path() -> Result<String, String> {
+    if let Ok(path) = std::env::var("WHISPER_CPP_MODEL") {
+        return Ok(path);
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let local_path = PathBuf::from(home)
+            .join("tools")
+            .join("whisper.cpp")
+            .join("models")
+            .join("ggml-base.en.bin");
+
+        if local_path.exists() {
+            return Ok(local_path.to_string_lossy().to_string());
+        }
+    }
+
+    Err(
+        "WHISPER_CPP_MODEL is not set and no ~/tools/whisper.cpp base.en model was found."
+            .to_string(),
+    )
+}
+
+fn validate_voice_transcript(text: &str) -> Result<(), String> {
+    let normalized = text.trim().to_ascii_lowercase();
+    let placeholder_transcripts = ["[blank_audio]", "[inaudible]", "[silence]", "(silence)"];
+
+    if placeholder_transcripts.contains(&normalized.as_str()) {
+        return Err(format!(
+            "transcription heard no clear speech: {text}. Try push-to-talk again and speak clearly."
+        ));
+    }
+
+    if text.trim().is_empty() {
+        return Err("transcription provider returned an empty transcript".to_string());
+    }
+
+    Ok(())
+}
+
+fn transcribe_voice_capture_with_local_whisper(
+    audio_bytes: Vec<u8>,
+    request: &VoiceTranscriptionRequest,
+) -> Result<VoiceTranscriptionResponse, String> {
+    let whisper_bin = find_local_whisper_binary()?;
+    let model_path = local_whisper_model_path()?;
+    let mut wav_path: PathBuf = std::env::temp_dir();
+    wav_path.push("touchpilot-app-voice-command.wav");
+    let mut output_prefix: PathBuf = std::env::temp_dir();
+    output_prefix.push("touchpilot-app-voice-command");
+    let txt_path = output_prefix.with_extension("txt");
+
+    let _ = fs::remove_file(&txt_path);
+    fs::write(&wav_path, &audio_bytes)
+        .map_err(|error| format!("failed to write local Whisper WAV file: {error}"))?;
+
+    let output = Command::new(&whisper_bin)
+        .arg("-m")
+        .arg(&model_path)
+        .arg("-f")
+        .arg(&wav_path)
+        .arg("-otxt")
+        .arg("-of")
+        .arg(&output_prefix)
+        .output()
+        .map_err(|error| format!("failed to run local Whisper binary: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "local Whisper failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let text = fs::read_to_string(&txt_path)
+        .map_err(|error| format!("failed to read local Whisper transcript: {error}"))?
+        .trim()
+        .to_string();
+    validate_voice_transcript(&text)?;
+
+    Ok(VoiceTranscriptionResponse {
+        text,
+        provider: "local-whisper",
+        model: format!("local-whisper:{model_path}"),
+        byte_length: audio_bytes.len(),
+        sample_rate: request.sample_rate,
+        channels: request.channels,
+    })
+}
+
+#[tauri::command]
+fn transcribe_voice_capture(
+    request: VoiceTranscriptionRequest,
+) -> Result<VoiceTranscriptionResponse, String> {
+    let audio_bytes = general_purpose::STANDARD
+        .decode(&request.audio_base64)
+        .map_err(|error| format!("native voice audio payload is not valid base64: {error}"))?;
+
+    if audio_bytes.len() <= 44 {
+        return Err("native voice audio payload does not contain usable WAV samples".to_string());
+    }
+
+    let provider = std::env::var("TOUCHPILOT_TRANSCRIPTION_PROVIDER")
+        .unwrap_or_else(|_| "local-whisper".to_string());
+
+    match provider.as_str() {
+        "openai" => transcribe_voice_capture_with_openai(audio_bytes, &request),
+        "local-whisper" => transcribe_voice_capture_with_local_whisper(audio_bytes, &request),
+        other => Err(format!(
+            "unsupported transcription provider: {other}. Use local-whisper or openai."
+        )),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
