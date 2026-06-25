@@ -752,6 +752,7 @@ pub fn run() {
             let mut tray = TrayIconBuilder::new()
                 .menu(&tray_menu)
                 .tooltip("Toki")
+                .icon_as_template(true)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open_settings" => {
