@@ -228,6 +228,34 @@ Why this matters:
 
 If the screenshot size does not match the expected Retina scale, calibration reports `needs_check` and the debug readout should surface the mismatch.
 
+## Phase M3 Native Mic Capture Update
+
+Plain English: the Mac can now prove that TouchPilot can hear audio before we ask OpenAI to transcribe anything.
+
+The new command is:
+
+```bash
+npm run qa:mac:mic
+```
+
+It opens the default CPAL microphone stream, records for two seconds, counts samples, and reports the peak audio level.
+
+The current Mac result:
+
+```text
+[INFO] device - External Microphone, sample_rate=48000, channels=1, format=F32
+[PASS] microphone captured - samples=96256 peak=0.0281
+```
+
+This means native microphone capture is working on macOS. If this probe fails later, the likely causes are:
+
+- no default microphone
+- macOS Microphone permission not granted
+- the terminal/app needs to be relaunched after permission changes
+- CPAL cannot open the selected input device
+
+This is intentionally separate from transcription. M3 Step 1 proves "can we record audio?" before M3 Step 2 proves "can we send that audio for transcription?"
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -260,3 +288,4 @@ Phase M1 should focus on:
 - 2026-06-25 - Added macOS capture probe and recorded successful Retina capture outside the sandbox.
 - 2026-06-25 - Added macOS Screen Recording guidance for permission-like capture failures.
 - 2026-06-25 - Added Retina screenshot scale validation to desktop calibration metadata.
+- 2026-06-26 - Added macOS microphone capture probe and recorded successful native CPAL sample capture.
