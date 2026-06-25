@@ -315,6 +315,25 @@ fn transcribe_audio(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
     }
 }
 
+fn validate_spoken_command(text: &str) -> Result<(), String> {
+    let normalized = text.trim().to_ascii_lowercase();
+    let placeholder_transcripts = ["[blank_audio]", "[inaudible]", "[silence]", "(silence)"];
+
+    if placeholder_transcripts.contains(&normalized.as_str()) {
+        return Err(format!(
+            "transcription heard no clear speech: {text}. Run the probe again and say \"show me what to click next\" during the recording window."
+        ));
+    }
+
+    if !normalized.contains("click") {
+        return Err(format!(
+            "transcription did not capture the expected command. Heard: {text}. Expected a phrase like \"show me what to click next\"."
+        ));
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<(), String> {
     println!("TouchPilot voice transcription probe");
     println!();
@@ -327,6 +346,7 @@ fn main() -> Result<(), String> {
     );
 
     let (model, text) = transcribe_audio(wav_bytes)?;
+    validate_spoken_command(&text)?;
 
     println!("[PASS] transcription - model={model}, sample_rate={sample_rate}, channels={channels}");
     println!("Transcript: {text}");
