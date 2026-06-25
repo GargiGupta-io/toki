@@ -256,6 +256,64 @@ This means native microphone capture is working on macOS. If this probe fails la
 
 This is intentionally separate from transcription. M3 Step 1 proves "can we record audio?" before M3 Step 2 proves "can we send that audio for transcription?"
 
+## Phase M3 Local Whisper Transcription Pivot
+
+Plain English: OpenAI transcription worked as a technical path, but the account quota blocked the test. TouchPilot now needs a free transcription path so voice work can continue without requiring paid OpenAI credits during development.
+
+The updated QA probe defaults to local `whisper.cpp` instead of OpenAI. That means the Mac records microphone audio locally, writes a temporary WAV file, sends it to a local Whisper binary, and reads the resulting transcript from disk.
+
+The default command stays the same:
+
+```bash
+npm run qa:mac:transcribe
+```
+
+But the expected default provider is now:
+
+```text
+local-whisper
+```
+
+The local setup requires:
+
+```bash
+brew install whisper-cpp
+export WHISPER_CPP_MODEL="/path/to/ggml-base.en.bin"
+```
+
+Optional environment variables:
+
+- `WHISPER_CPP_BIN` - points to a specific `whisper.cpp` binary if it is not on `PATH`.
+- `WHISPER_CPP_MODEL` - points to the downloaded Whisper model file.
+- `TOUCHPILOT_TRANSCRIPTION_PROVIDER=openai` - explicitly switches the probe back to OpenAI.
+
+The important design decision is that free local transcription is now the default for development. OpenAI remains available, but it is not the only path.
+
+### Why Not Wispr Flow Direct Integration
+
+Plain English: Wispr Flow is useful as a reference product, but it is not a clean engine dependency for TouchPilot.
+
+Wispr Flow behaves like a polished dictation app. Its command mode can write into other apps, but the public docs do not expose a stable developer API or CLI that TouchPilot can call directly as a transcription backend. Relying on it would mean brittle automation through focus, clipboard, accessibility events, or app-specific shortcuts.
+
+That would create the wrong dependency shape:
+
+- TouchPilot would depend on another desktop app being installed.
+- The integration would be hard to test in CI.
+- Command behavior could change when Wispr Flow updates.
+- It would not give us clean audio-in/transcript-out control.
+
+So Wispr Flow stays useful as UX inspiration, while `whisper.cpp` is the practical free transcription backend for local QA.
+
+### Tradeoff
+
+Local Whisper is free and private, but it requires a model download and can be slower than cloud transcription on weaker machines. OpenAI is simpler to call and usually faster, but it requires API quota and should eventually be routed through a backend, not embedded directly in a shipped desktop app.
+
+For the Mac phase, the best path is:
+
+```text
+native mic capture -> local whisper.cpp QA -> later app integration -> optional backend/cloud provider
+```
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -289,3 +347,4 @@ Phase M1 should focus on:
 - 2026-06-25 - Added macOS Screen Recording guidance for permission-like capture failures.
 - 2026-06-25 - Added Retina screenshot scale validation to desktop calibration metadata.
 - 2026-06-26 - Added macOS microphone capture probe and recorded successful native CPAL sample capture.
+- 2026-06-26 - Switched transcription QA to free local `whisper.cpp` by default after OpenAI quota blocked cloud transcription.
