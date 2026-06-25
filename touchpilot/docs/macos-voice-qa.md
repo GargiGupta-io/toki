@@ -64,16 +64,22 @@ Native mic capture is working on Mac.
 
 This checks microphone capture plus transcription. The default provider is free local Whisper through `whisper.cpp`.
 
-Required local setup:
+Recommended local setup for this Mac:
 
 ```bash
-brew install whisper-cpp
+git clone https://github.com/ggml-org/whisper.cpp.git ~/tools/whisper.cpp
+python3 -m pip install --user cmake
+cd ~/tools/whisper.cpp
+make base.en
+~/Library/Python/3.9/bin/cmake -B build
+~/Library/Python/3.9/bin/cmake --build build --target whisper-cli -j 4 --config Release
 ```
 
-Download a whisper.cpp model and point TouchPilot at it:
+The probe auto-detects:
 
-```bash
-export WHISPER_CPP_MODEL="/path/to/ggml-base.en.bin"
+```text
+~/tools/whisper.cpp/build/bin/whisper-cli
+~/tools/whisper.cpp/models/ggml-base.en.bin
 ```
 
 Then run the probe:
@@ -98,11 +104,11 @@ Expected pass output includes:
 
 ```text
 [PASS] microphone captured
-[PASS] transcription - model=local-whisper:/path/to/ggml-base.en.bin
+[PASS] transcription - model=local-whisper:/Users/pumba/tools/whisper.cpp/models/ggml-base.en.bin
 Transcript: show me what to click next
 ```
 
-If it fails with `local Whisper binary not found`, install `whisper-cpp` or set `WHISPER_CPP_BIN`.
+If it fails with `local Whisper binary not found`, build `whisper.cpp` or set `WHISPER_CPP_BIN`.
 
 If it fails with `WHISPER_CPP_MODEL is not set`, set `WHISPER_CPP_MODEL` to a local model file.
 
