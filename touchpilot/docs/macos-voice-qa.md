@@ -59,3 +59,41 @@ Current Mac result:
 - samples captured: `96256`
 
 Native mic capture is working on Mac.
+
+## Native Transcription Probe
+
+This checks microphone capture plus OpenAI transcription.
+
+First make sure the key is set in the same terminal:
+
+```bash
+if [ -n "$OPENAI_API_KEY" ]; then echo set; else echo missing; fi
+```
+
+Then run:
+
+```bash
+npm run qa:mac:transcribe
+```
+
+When it says:
+
+```text
+[INFO] recording - say: show me what to click next
+```
+
+say this out loud:
+
+```text
+show me what to click next
+```
+
+Expected pass output includes:
+
+```text
+[PASS] microphone captured
+[PASS] transcription - model=gpt-4o-transcribe
+Transcript: show me what to click next
+```
+
+If it fails with `OPENAI_API_KEY is not set`, the app or terminal was launched without the environment variable. Export the key again, then rerun the command from that same terminal.
