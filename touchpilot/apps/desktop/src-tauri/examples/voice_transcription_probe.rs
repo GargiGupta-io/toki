@@ -1,5 +1,8 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::Deserialize;
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -150,7 +153,7 @@ fn record_audio() -> Result<(Vec<u8>, u32, u16, String, usize, f32), String> {
     ))
 }
 
-fn transcribe_audio(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
+fn transcribe_with_openai(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| "OPENAI_API_KEY is not set for transcription QA".to_string())?;
     let endpoint = std::env::var("TOUCHPILOT_TRANSCRIPTION_URL")
@@ -192,6 +195,95 @@ fn transcribe_audio(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
     }
 
     Ok((model, text))
+}
+
+fn find_whisper_binary() -> Result<String, String> {
+    if let Ok(path) = std::env::var("WHISPER_CPP_BIN") {
+        return Ok(path);
+    }
+
+    for candidate in ["whisper-cli", "whisper-cpp", "whisper"] {
+        let status = Command::new("which")
+            .arg(candidate)
+            .output()
+            .map_err(|error| format!("failed to search for local Whisper binary: {error}"))?;
+
+        if status.status.success() {
+            let path = String::from_utf8_lossy(&status.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Ok(path);
+            }
+        }
+    }
+
+    Err(
+        "local Whisper binary not found. Install whisper.cpp, then set WHISPER_CPP_BIN or put whisper-cli on PATH."
+            .to_string(),
+    )
+}
+
+fn local_whisper_model_path() -> Result<String, String> {
+    std::env::var("WHISPER_CPP_MODEL").map_err(|_| {
+        "WHISPER_CPP_MODEL is not set. Set it to a local whisper.cpp model file, for example ggml-base.en.bin."
+            .to_string()
+    })
+}
+
+fn transcribe_with_local_whisper(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
+    let whisper_bin = find_whisper_binary()?;
+    let model_path = local_whisper_model_path()?;
+    let mut wav_path: PathBuf = std::env::temp_dir();
+    wav_path.push("touchpilot-local-whisper-command.wav");
+    let mut output_prefix: PathBuf = std::env::temp_dir();
+    output_prefix.push("touchpilot-local-whisper-command");
+    let txt_path = output_prefix.with_extension("txt");
+
+    let _ = fs::remove_file(&txt_path);
+    fs::write(&wav_path, wav_bytes)
+        .map_err(|error| format!("failed to write local Whisper WAV file: {error}"))?;
+
+    let output = Command::new(&whisper_bin)
+        .arg("-m")
+        .arg(&model_path)
+        .arg("-f")
+        .arg(&wav_path)
+        .arg("-otxt")
+        .arg("-of")
+        .arg(&output_prefix)
+        .output()
+        .map_err(|error| format!("failed to run local Whisper binary: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "local Whisper failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let text = fs::read_to_string(&txt_path)
+        .map_err(|error| format!("failed to read local Whisper transcript: {error}"))?
+        .trim()
+        .to_string();
+
+    if text.is_empty() {
+        return Err("local Whisper returned an empty transcript".to_string());
+    }
+
+    Ok((format!("local-whisper:{model_path}"), text))
+}
+
+fn transcribe_audio(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
+    let provider = std::env::var("TOUCHPILOT_TRANSCRIPTION_PROVIDER")
+        .unwrap_or_else(|_| "local-whisper".to_string());
+
+    match provider.as_str() {
+        "openai" => transcribe_with_openai(wav_bytes),
+        "local-whisper" => transcribe_with_local_whisper(wav_bytes),
+        other => Err(format!(
+            "unsupported transcription provider: {other}. Use local-whisper or openai."
+        )),
+    }
 }
 
 fn main() -> Result<(), String> {
