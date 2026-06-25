@@ -55,6 +55,18 @@ If screenshot capture fails from a normal terminal, check:
 - grant access to the terminal app or TouchPilot app
 - quit and relaunch the app/terminal
 
+The relaunch matters. macOS often does not apply Screen Recording permission to an already-running process.
+
+## Expected Failure Copy
+
+If capture fails because macOS does not expose displays or denies capture, TouchPilot should show an actionable message:
+
+```text
+no display available for capture. On macOS, grant Screen Recording permission to TouchPilot or the terminal app, then quit and relaunch it.
+```
+
+Any generic capture error without this Screen Recording hint should be treated as a bug in the permission guidance layer.
+
 ## Phase M2 Status
 
 Current Mac result:
