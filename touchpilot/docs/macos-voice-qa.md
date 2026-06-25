@@ -108,6 +108,8 @@ Expected pass output includes:
 Transcript: show me what to click next
 ```
 
+If the probe hears `[BLANK_AUDIO]`, `[inaudible]`, or text that does not include `click`, the command now fails intentionally. That means the local Whisper engine ran, but the recording did not capture a usable spoken command.
+
 If it fails with `local Whisper binary not found`, build `whisper.cpp` or set `WHISPER_CPP_BIN`.
 
 If it fails with `WHISPER_CPP_MODEL is not set`, set `WHISPER_CPP_MODEL` to a local model file.
