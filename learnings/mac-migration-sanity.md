@@ -116,6 +116,20 @@ The better Mac-shell approach is to use Tauri's native window drag primitive:
 
 This keeps the popup closer to a real macOS utility panel while avoiding custom coordinate movement code.
 
+## Phase M1 Overlay QA Update
+
+Plain English: the Mac overlay cannot be accepted only because the code says it is transparent. It needs a repeatable local check plus a manual visual gate, because the real product requirement is how the desktop feels while the overlay is running.
+
+The Mac overlay keeps the Windows Phase 8 Option 1 architecture: a monitor-sized borderless transparent popup instead of native fullscreen. That avoids the normal "fullscreen app window" path and better matches the Clicky-style product contract.
+
+The new runtime QA path is:
+
+- `npm run qa:mac:runtime` checks that TouchPilot is running.
+- when macOS allows System Events access, it reports TouchPilot window names, positions, and sizes.
+- `touchpilot/docs/macos-runtime-qa.md` defines the manual accept/fail checks for click-through, titlebar absence, puck following, and settings behavior.
+
+The important limitation is honest: this environment can compile and launch the app, but it cannot fully prove click-through and visual feel without looking at the real Mac desktop. That manual check remains required before accepting M1 overlay behavior.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -143,3 +157,4 @@ Phase M1 should focus on:
 - 2026-06-25 - Created after Phase M0 completed on macOS.
 - 2026-06-25 - Added Phase M1 transparent-window fix: `app.macOSPrivateApi` plus the matching Tauri `macos-private-api` Cargo feature.
 - 2026-06-25 - Replaced custom settings popup movement with Tauri native window dragging for macOS shell behavior.
+- 2026-06-25 - Added macOS runtime QA script and manual overlay checklist for transparent overlay validation.
