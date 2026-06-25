@@ -130,6 +130,22 @@ The new runtime QA path is:
 
 The important limitation is honest: this environment can compile and launch the app, but it cannot fully prove click-through and visual feel without looking at the real Mac desktop. That manual check remains required before accepting M1 overlay behavior.
 
+## Phase M1 Default Runtime Cleanup
+
+Plain English: after moving to Mac, the default app should not talk like it is still running on Windows.
+
+The app still had one user-facing Windows assumption in the debug camera permission message. If camera access was denied, it told the user to enable camera access in "Windows privacy settings." That is wrong on macOS and makes the product feel like a port rather than a native-feeling Mac utility.
+
+The copy now says "system privacy settings," which works on macOS, Windows, and Linux.
+
+The package scripts were also clarified:
+
+- `desktop:release:mac` builds the macOS app bundle.
+- `desktop:release:windows:exe` is the explicit Windows no-bundle executable path.
+- the older `desktop:release:exe` alias remains so existing Windows workflow notes do not break immediately.
+
+This does not remove Windows support. It removes Windows as the assumed default.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -158,3 +174,4 @@ Phase M1 should focus on:
 - 2026-06-25 - Added Phase M1 transparent-window fix: `app.macOSPrivateApi` plus the matching Tauri `macos-private-api` Cargo feature.
 - 2026-06-25 - Replaced custom settings popup movement with Tauri native window dragging for macOS shell behavior.
 - 2026-06-25 - Added macOS runtime QA script and manual overlay checklist for transparent overlay validation.
+- 2026-06-25 - Removed user-facing Windows camera permission copy and added explicit Mac/Windows release script names.
