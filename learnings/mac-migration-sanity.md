@@ -362,6 +362,32 @@ It does not yet prove:
 
 The `[BLANK_AUDIO]` result likely means the tool-run recording did not capture clear speech. The next manual test should be run from the user's normal terminal while speaking clearly during the recording prompt.
 
+## Phase M3 Voice Acceptance Update
+
+Plain English: a transcription engine running is not the same as the app understanding a usable command. TouchPilot now treats placeholder transcripts as failed QA so we do not accidentally accept a broken voice path.
+
+The probe now rejects these placeholder results:
+
+- `[BLANK_AUDIO]`
+- `[inaudible]`
+- `[silence]`
+- `(silence)`
+
+It also expects the transcript to include `click`, because the current manual test phrase is:
+
+```text
+show me what to click next
+```
+
+This changes the QA meaning:
+
+```text
+old behavior: engine ran -> pass
+new behavior: engine ran and heard a useful command -> pass
+```
+
+That is stricter and better for the product. Phase M3 is about proving that voice can drive the guidance loop, not just proving that a microphone can send bytes to a speech engine.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -397,3 +423,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Added macOS microphone capture probe and recorded successful native CPAL sample capture.
 - 2026-06-26 - Switched transcription QA to free local `whisper.cpp` by default after OpenAI quota blocked cloud transcription.
 - 2026-06-26 - Installed local `whisper.cpp`, auto-detected its binary/model from the QA probe, and confirmed the local transcription command runs without OpenAI.
+- 2026-06-26 - Added strict transcript acceptance so placeholder speech results like `[BLANK_AUDIO]` fail the Mac voice QA probe.
