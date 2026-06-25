@@ -1,4 +1,4 @@
-use touchpilot_capture::{
+use toki_capture::{
     capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
 };
 use base64::{engine::general_purpose, Engine as _};
@@ -494,9 +494,9 @@ fn transcribe_voice_capture_with_openai(
 ) -> Result<VoiceTranscriptionResponse, String> {
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| "OPENAI_API_KEY is not set for native voice transcription".to_string())?;
-    let endpoint = std::env::var("TOUCHPILOT_TRANSCRIPTION_URL")
+    let endpoint = std::env::var("TOKI_TRANSCRIPTION_URL")
         .unwrap_or_else(|_| "https://api.openai.com/v1/audio/transcriptions".to_string());
-    let model = std::env::var("TOUCHPILOT_TRANSCRIPTION_MODEL")
+    let model = std::env::var("TOKI_TRANSCRIPTION_MODEL")
         .unwrap_or_else(|_| "gpt-4o-transcribe".to_string());
     let mime_type = if request.format == "audio/wav" {
         "audio/wav"
@@ -504,7 +504,7 @@ fn transcribe_voice_capture_with_openai(
         "application/octet-stream"
     };
     let audio_part = reqwest::blocking::multipart::Part::bytes(audio_bytes.clone())
-        .file_name("touchpilot-command.wav")
+        .file_name("toki-command.wav")
         .mime_str(mime_type)
         .map_err(|error| format!("failed to prepare transcription audio payload: {error}"))?;
     let form = reqwest::blocking::multipart::Form::new()
@@ -635,9 +635,9 @@ fn transcribe_voice_capture_with_local_whisper(
     let whisper_bin = find_local_whisper_binary()?;
     let model_path = local_whisper_model_path()?;
     let mut wav_path: PathBuf = std::env::temp_dir();
-    wav_path.push("touchpilot-app-voice-command.wav");
+    wav_path.push("toki-app-voice-command.wav");
     let mut output_prefix: PathBuf = std::env::temp_dir();
-    output_prefix.push("touchpilot-app-voice-command");
+    output_prefix.push("toki-app-voice-command");
     let txt_path = output_prefix.with_extension("txt");
 
     let _ = fs::remove_file(&txt_path);
@@ -691,7 +691,7 @@ fn transcribe_voice_capture(
         return Err("native voice audio payload does not contain usable WAV samples".to_string());
     }
 
-    let provider = std::env::var("TOUCHPILOT_TRANSCRIPTION_PROVIDER")
+    let provider = std::env::var("TOKI_TRANSCRIPTION_PROVIDER")
         .unwrap_or_else(|_| "local-whisper".to_string());
 
     match provider.as_str() {
@@ -744,7 +744,7 @@ pub fn run() {
             let default_icon = app.default_window_icon().cloned();
             let mut tray = TrayIconBuilder::new()
                 .menu(&tray_menu)
-                .tooltip("TouchPilot")
+                .tooltip("Toki")
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open_settings" => {

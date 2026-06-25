@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "TouchPilot",
+  "productName": "Toki",
   "version": "0.1.0",
-  "identifier": "app.touchpilot.desktop",
+  "identifier": "app.toki.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -43,7 +43,7 @@
       },
       {
         "label": "debug",
-        "title": "TouchPilot Debug",
+        "title": "Toki Debug",
         "width": 760,
         "height": 620,
         "center": true,

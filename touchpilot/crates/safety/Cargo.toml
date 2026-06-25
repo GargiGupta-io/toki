@@ -1,5 +1,5 @@
 [package]
-name = "touchpilot-safety"
+name = "toki-safety"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

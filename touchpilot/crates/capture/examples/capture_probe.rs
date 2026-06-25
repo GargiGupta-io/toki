@@ -1,7 +1,7 @@
-use touchpilot_capture::{capture_primary_display, capture_primary_display_metadata};
+use toki_capture::{capture_primary_display, capture_primary_display_metadata};
 
 fn main() {
-    println!("TouchPilot capture probe");
+    println!("Toki capture probe");
     println!();
 
     match capture_primary_display_metadata() {

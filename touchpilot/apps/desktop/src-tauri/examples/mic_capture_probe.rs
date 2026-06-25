@@ -17,7 +17,7 @@ fn update_stats(stats: &Arc<Mutex<ProbeStats>>, sample: f32) {
 }
 
 fn main() -> Result<(), String> {
-    println!("TouchPilot microphone capture probe");
+    println!("Toki microphone capture probe");
     println!();
 
     let host = cpal::default_host();

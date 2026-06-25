@@ -1,5 +1,5 @@
 [package]
-name = "touchpilot-gestures"
+name = "toki-gestures"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

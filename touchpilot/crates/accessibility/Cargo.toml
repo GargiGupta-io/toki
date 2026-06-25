@@ -1,5 +1,5 @@
 [package]
-name = "touchpilot-accessibility"
+name = "toki-accessibility"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

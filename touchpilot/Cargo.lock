@@ -4953,6 +4953,56 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "toki-accessibility"
+version = "0.1.0"
+
+[[package]]
+name = "toki-capture"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "image 0.25.10",
+ "screenshots",
+ "serde",
+]
+
+[[package]]
+name = "toki-desktop"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "cpal",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "toki-capture",
+]
+
+[[package]]
+name = "toki-gestures"
+version = "0.1.0"
+
+[[package]]
+name = "toki-input"
+version = "0.1.0"
+
+[[package]]
+name = "toki-overlay-native"
+version = "0.1.0"
+
+[[package]]
+name = "toki-safety"
+version = "0.1.0"
+
+[[package]]
+name = "toki-storage"
+version = "0.1.0"
+
+[[package]]
 name = "tokio"
 version = "1.52.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5108,56 +5158,6 @@ name = "toml_writer"
 version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
-
-[[package]]
-name = "touchpilot-accessibility"
-version = "0.1.0"
-
-[[package]]
-name = "touchpilot-capture"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "image 0.25.10",
- "screenshots",
- "serde",
-]
-
-[[package]]
-name = "touchpilot-desktop"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "cpal",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "touchpilot-capture",
-]
-
-[[package]]
-name = "touchpilot-gestures"
-version = "0.1.0"
-
-[[package]]
-name = "touchpilot-input"
-version = "0.1.0"
-
-[[package]]
-name = "touchpilot-overlay-native"
-version = "0.1.0"
-
-[[package]]
-name = "touchpilot-safety"
-version = "0.1.0"
-
-[[package]]
-name = "touchpilot-storage"
-version = "0.1.0"
 
 [[package]]
 name = "tower"

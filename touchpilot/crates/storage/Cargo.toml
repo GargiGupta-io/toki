@@ -1,5 +1,5 @@
 [package]
-name = "touchpilot-storage"
+name = "toki-storage"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

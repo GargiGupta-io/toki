@@ -1,5 +1,5 @@
 [package]
-name = "touchpilot-capture"
+name = "toki-capture"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

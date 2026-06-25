@@ -156,12 +156,12 @@ fn record_audio() -> Result<(Vec<u8>, u32, u16, String, usize, f32), String> {
 fn transcribe_with_openai(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| "OPENAI_API_KEY is not set for transcription QA".to_string())?;
-    let endpoint = std::env::var("TOUCHPILOT_TRANSCRIPTION_URL")
+    let endpoint = std::env::var("TOKI_TRANSCRIPTION_URL")
         .unwrap_or_else(|_| "https://api.openai.com/v1/audio/transcriptions".to_string());
-    let model = std::env::var("TOUCHPILOT_TRANSCRIPTION_MODEL")
+    let model = std::env::var("TOKI_TRANSCRIPTION_MODEL")
         .unwrap_or_else(|_| "gpt-4o-transcribe".to_string());
     let audio_part = reqwest::blocking::multipart::Part::bytes(wav_bytes)
-        .file_name("touchpilot-qa-command.wav")
+        .file_name("toki-qa-command.wav")
         .mime_str("audio/wav")
         .map_err(|error| format!("failed to prepare audio payload: {error}"))?;
     let form = reqwest::blocking::multipart::Form::new()
@@ -262,9 +262,9 @@ fn transcribe_with_local_whisper(wav_bytes: Vec<u8>) -> Result<(String, String),
     let whisper_bin = find_whisper_binary()?;
     let model_path = local_whisper_model_path()?;
     let mut wav_path: PathBuf = std::env::temp_dir();
-    wav_path.push("touchpilot-local-whisper-command.wav");
+    wav_path.push("toki-local-whisper-command.wav");
     let mut output_prefix: PathBuf = std::env::temp_dir();
-    output_prefix.push("touchpilot-local-whisper-command");
+    output_prefix.push("toki-local-whisper-command");
     let txt_path = output_prefix.with_extension("txt");
 
     let _ = fs::remove_file(&txt_path);
@@ -303,7 +303,7 @@ fn transcribe_with_local_whisper(wav_bytes: Vec<u8>) -> Result<(String, String),
 }
 
 fn transcribe_audio(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
-    let provider = std::env::var("TOUCHPILOT_TRANSCRIPTION_PROVIDER")
+    let provider = std::env::var("TOKI_TRANSCRIPTION_PROVIDER")
         .unwrap_or_else(|_| "local-whisper".to_string());
 
     match provider.as_str() {
@@ -335,7 +335,7 @@ fn validate_spoken_command(text: &str) -> Result<(), String> {
 }
 
 fn main() -> Result<(), String> {
-    println!("TouchPilot voice transcription probe");
+    println!("Toki voice transcription probe");
     println!();
 
     let (wav_bytes, sample_rate, channels, device_name, samples, peak) = record_audio()?;

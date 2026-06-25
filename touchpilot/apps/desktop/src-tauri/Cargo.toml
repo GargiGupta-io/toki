@@ -1,5 +1,5 @@
 [package]
-name = "touchpilot-desktop"
+name = "toki-desktop"
 version = "0.1.0"
 description = "Cross-platform AI screen guide desktop shell"
 authors = ["you"]
@@ -11,7 +11,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "touchpilot_desktop_lib"
+name = "toki_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -25,4 +25,4 @@ serde_json = "1"
 base64 = "0.22"
 cpal = "0.15"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
-touchpilot-capture = { path = "../../../crates/capture" }
+toki-capture = { path = "../../../crates/capture" }
