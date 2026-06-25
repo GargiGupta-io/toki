@@ -388,6 +388,49 @@ new behavior: engine ran and heard a useful command -> pass
 
 That is stricter and better for the product. Phase M3 is about proving that voice can drive the guidance loop, not just proving that a microphone can send bytes to a speech engine.
 
+## Phase M3 App Runtime Local Whisper Update
+
+Plain English: local Whisper is no longer only a standalone test. The actual desktop app now uses the same free local transcription path when push-to-talk submits recorded audio.
+
+The native app command `transcribe_voice_capture` now follows this provider rule:
+
+```text
+default: local-whisper
+optional: TOUCHPILOT_TRANSCRIPTION_PROVIDER=openai
+```
+
+This matters because the app runtime no longer depends on OpenAI quota for the normal Mac voice path. The user can press/hold the voice control, speak, and the captured WAV is routed through the locally installed `whisper.cpp` binary.
+
+The runtime auto-detects:
+
+```text
+~/tools/whisper.cpp/build/bin/whisper-cli
+~/tools/whisper.cpp/models/ggml-base.en.bin
+```
+
+The frontend transcription type now accepts both provider names:
+
+```text
+local-whisper
+openai
+```
+
+The architecture is now:
+
+```text
+Settings/debug voice control
+  -> native mic capture start
+  -> native mic capture stop
+  -> base64 WAV
+  -> transcribe_voice_capture
+  -> local whisper.cpp by default
+  -> transcript
+  -> pending voice command
+  -> guidance loop
+```
+
+OpenAI remains a future/cloud option, but it is explicit instead of default.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -424,3 +467,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Switched transcription QA to free local `whisper.cpp` by default after OpenAI quota blocked cloud transcription.
 - 2026-06-26 - Installed local `whisper.cpp`, auto-detected its binary/model from the QA probe, and confirmed the local transcription command runs without OpenAI.
 - 2026-06-26 - Added strict transcript acceptance so placeholder speech results like `[BLANK_AUDIO]` fail the Mac voice QA probe.
+- 2026-06-26 - Wired the desktop app runtime to use local `whisper.cpp` transcription by default for push-to-talk voice commands.
