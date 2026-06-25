@@ -52,3 +52,14 @@ Useful Mac commands:
 - `npm run desktop:dev`
 - `npm run desktop:release:mac`
 - `npm run qa:mac:runtime`
+- `npm run qa:mac:capture`
+
+## Phase M2 Capture Finding
+
+Mac screen capture works when the probe runs outside the restricted shell:
+
+- display metadata: `1470x956` at scale `2`
+- screenshot image: `2940x1912`
+- PNG/base64 encoding succeeds
+
+The same probe can report `no display available for capture` inside a restricted environment. Treat that as a sandbox/process-visibility problem unless it also fails from a normal terminal or launched app.
