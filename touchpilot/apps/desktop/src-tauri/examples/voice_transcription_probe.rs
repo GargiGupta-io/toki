@@ -202,6 +202,19 @@ fn find_whisper_binary() -> Result<String, String> {
         return Ok(path);
     }
 
+    if let Ok(home) = std::env::var("HOME") {
+        let local_path = PathBuf::from(home)
+            .join("tools")
+            .join("whisper.cpp")
+            .join("build")
+            .join("bin")
+            .join("whisper-cli");
+
+        if local_path.exists() {
+            return Ok(local_path.to_string_lossy().to_string());
+        }
+    }
+
     for candidate in ["whisper-cli", "whisper-cpp", "whisper"] {
         let status = Command::new("which")
             .arg(candidate)
@@ -223,10 +236,26 @@ fn find_whisper_binary() -> Result<String, String> {
 }
 
 fn local_whisper_model_path() -> Result<String, String> {
-    std::env::var("WHISPER_CPP_MODEL").map_err(|_| {
-        "WHISPER_CPP_MODEL is not set. Set it to a local whisper.cpp model file, for example ggml-base.en.bin."
-            .to_string()
-    })
+    if let Ok(path) = std::env::var("WHISPER_CPP_MODEL") {
+        return Ok(path);
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let local_path = PathBuf::from(home)
+            .join("tools")
+            .join("whisper.cpp")
+            .join("models")
+            .join("ggml-base.en.bin");
+
+        if local_path.exists() {
+            return Ok(local_path.to_string_lossy().to_string());
+        }
+    }
+
+    Err(
+        "WHISPER_CPP_MODEL is not set and no ~/tools/whisper.cpp base.en model was found. Set WHISPER_CPP_MODEL to a local ggml model file."
+            .to_string(),
+    )
 }
 
 fn transcribe_with_local_whisper(wav_bytes: Vec<u8>) -> Result<(String, String), String> {
