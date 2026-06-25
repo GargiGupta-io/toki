@@ -176,6 +176,29 @@ Why:
 - React is better for complex overlay UI and motion-heavy controls.
 - The app can stay lighter than Electron while still using web UI.
 
+### Platform Strategy After Mac Migration
+
+Use macOS as the primary product target for the next development stretch.
+
+Why:
+
+- The reference product shape is macOS-native: menu bar utility, small popup, transparent cursor overlay.
+- The Windows overlay work proved that Windows can work, but it costs a lot of effort to make it feel invisible and non-app-like.
+- The current development machine is now a Mac, so manual QA should follow the machine that can actually be tested daily.
+- The product should feel right before we spend another month hardening secondary platform quirks.
+
+Platform priority:
+
+1. macOS primary runtime and product feel.
+2. Windows kept green through CI and later manual QA.
+3. Linux compile/best-effort until the core product is stable.
+
+This does not mean abandoning Windows or Linux. It means not letting platforms we cannot manually test block the product's main loop.
+
+The new rule:
+
+> Build and verify the best TouchPilot experience on macOS first, while keeping shared code cross-platform and isolating platform-specific overlay/capture behavior behind native boundaries.
+
 ### AI
 
 Use a provider abstraction, not one hardcoded model.
@@ -1015,6 +1038,141 @@ Done when:
 
 ---
 
+## Phase M0: Mac Migration Sanity
+
+Goal: Make the Mac checkout trustworthy before continuing product work.
+
+Reason:
+
+The project moved from a Windows development machine to a Mac. Before adding more features, the repo state, dependencies, builds, and runtime assumptions must be verified on the new machine.
+
+Tasks:
+
+1. Inspect the dirty working tree and separate real changes from migration/check-out churn.
+2. Confirm the Mac repo is on the expected branch and includes the latest pushed Phase 10 commits.
+3. Run `npm install` or dependency sanity checks only if needed.
+4. Run typechecks and builds on Mac.
+5. Confirm the Tauri dev app launches on Mac.
+6. Update docs to declare Mac as the primary platform.
+7. Document what works, what fails, and what is platform-specific.
+
+Done when:
+
+- the Mac checkout has a known clean or intentionally dirty state
+- TypeScript and Rust checks pass on Mac
+- the app can launch on Mac
+- any migration-specific broken files are identified before more feature work continues
+
+---
+
+## Phase M1: macOS Runtime Shell
+
+Goal: Make TouchPilot behave like a macOS-first Clicky-style utility.
+
+Reason:
+
+On macOS, the ideal product shape is menu bar presence plus a small popup plus a transparent cursor overlay. That should become the primary runtime reference while Windows stays supported through its own native layer.
+
+Tasks:
+
+1. Add or verify menu bar/tray-style app presence on macOS.
+2. Verify the settings popup opens intentionally and behaves like a temporary utility popup.
+3. Verify the overlay window has no visible app chrome.
+4. Verify the overlay does not block normal desktop interaction.
+5. Make TouchPilot feel like a menu bar utility.
+6. Validate settings popup behavior on Mac.
+7. Validate transparent overlay behavior on Mac.
+8. Remove any Windows-only assumptions from the default runtime.
+9. Verify the puck follows the cursor on macOS.
+10. Move any Windows-only window behavior behind platform-specific branches.
+11. Document macOS overlay/window behavior separately from Windows Win32 behavior.
+
+Done when:
+
+- TouchPilot feels like a menu bar utility on Mac
+- settings does not feel like a normal app window
+- overlay is visually quiet and cursor-first
+- Windows-specific overlay fixes do not define the default Mac path
+
+---
+
+## Phase M2: macOS Capture And Permission Validation
+
+Goal: Prove screen capture and coordinate mapping on macOS.
+
+Reason:
+
+macOS has stricter screen recording permissions than Windows. TouchPilot cannot guide users if it cannot capture the visible screen or map capture coordinates to overlay coordinates.
+
+Tasks:
+
+1. Test the existing screen capture path on macOS.
+2. Record what permission prompts macOS shows.
+3. Add or document the Screen Recording permission flow.
+4. Verify screenshot dimensions.
+5. Verify display scale and Retina coordinate behavior.
+6. Compare screenshot coordinates with overlay coordinates.
+7. Document known multi-monitor risks on Mac.
+
+Done when:
+
+- Mac can capture real screenshot pixels
+- the app handles missing Screen Recording permission clearly
+- overlay and screenshot coordinates match on the primary display
+- Retina scaling behavior is documented
+
+---
+
+## Phase M3: Phase 10 Voice On Mac
+
+Goal: Re-test Phase 10 voice on the new Mac runtime.
+
+Reason:
+
+The Windows implementation proved architecture, but microphone capture, CPAL, permissions, and Tauri windows can behave differently on macOS. The voice loop must be revalidated before moving to safety and workflow phases.
+
+Tasks:
+
+1. Test native microphone capture on Mac.
+2. Test `OPENAI_API_KEY` transcription from a Mac-launched app process.
+3. Confirm transcript text routes into the existing guidance loop.
+4. Fix Mac-specific microphone permission or CPAL issues.
+5. Keep Web Speech and text command paths debug-only.
+6. Record any Mac-specific permission or device issues.
+
+Done when:
+
+- push-to-talk can record and transcribe on Mac
+- spoken command can trigger the guidance loop
+- the product loop can continue without relying on the old Windows machine
+
+---
+
+## Phase M4: Gesture Re-Test On Mac
+
+Goal: Re-test Phase 9 gesture behavior on the new Mac runtime.
+
+Reason:
+
+The Surface laptop gesture work proved the gesture architecture, but camera enumeration, MediaPipe, permissions, and lighting behavior can differ on macOS. Gestures should be treated as a revalidation track, not as part of Phase 10 voice itself.
+
+Tasks:
+
+1. Test camera enumeration on Mac.
+2. Test MediaPipe hand landmarks on Mac.
+3. Re-check pinch and open palm behavior.
+4. Decide whether gestures stay Phase 9-complete or need Mac-specific fixes.
+5. Record any Mac-specific permission or device issues.
+
+Done when:
+
+- the Mac camera list is understood
+- MediaPipe hand landmarks either work or have a documented blocker
+- pinch and open palm are revalidated or explicitly reopened for Mac fixes
+- the gesture phase status is honest after the platform move
+
+---
+
 ## Phase 11: Safety And Guardrails
 
 Goal: Prevent dangerous or misleading guidance.
@@ -1289,6 +1447,11 @@ The correct order:
 8. Cursor-first runtime reset with Windows monitor-sized popup overlay
 9. Gesture pinch/open palm
 10. Voice
+M0. Mac migration sanity
+M1. macOS runtime shell
+M2. macOS capture and permission validation
+M3. Phase 10 voice on Mac
+M4. Gesture re-test on Mac
 11. Safety
 12. OCR/accessibility
 13. Multi-step workflows
@@ -1305,6 +1468,12 @@ The most important early question is:
 > Can the app accurately understand the screen and point to the correct place across operating systems?
 
 Everything else builds on that.
+
+After the Mac migration, the immediate question becomes:
+
+> Can the app preserve the Clicky-style product feel on macOS while keeping the cross-platform architecture intact?
+
+That must be answered before moving into safety, OCR, multi-step workflows, or final visual polish.
 
 ---
 
