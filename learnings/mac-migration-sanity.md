@@ -146,6 +146,39 @@ The package scripts were also clarified:
 
 This does not remove Windows support. It removes Windows as the assumed default.
 
+## Phase M2 Capture QA Update
+
+Plain English: Mac screen capture works, but it must be tested from a process that macOS lets see the desktop.
+
+The first capture probe run inside the restricted shell failed with:
+
+```text
+[FAIL] metadata - no display available for capture
+```
+
+That looked like a capture failure, but it was actually an environment boundary. Running the same probe outside the sandbox succeeded:
+
+```text
+[PASS] metadata - display=1 1470x956 scale=2
+[PASS] screenshot - image=2940x1912 bytes=2145981 base64_chars=2861308
+```
+
+This proves the existing Rust capture crate can enumerate the Mac display and capture pixels. It also shows the Retina relationship clearly:
+
+- logical display size: `1470x956`
+- scale factor: `2`
+- captured image size: `2940x1912`
+
+That relationship matters for overlay coordinate mapping. The model/overlay may reason in logical coordinates while screenshots are pixel-dense Retina images.
+
+The new command is:
+
+```bash
+npm run qa:mac:capture
+```
+
+If this fails from a normal terminal, the likely next issue is macOS Screen Recording permission.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -175,3 +208,4 @@ Phase M1 should focus on:
 - 2026-06-25 - Replaced custom settings popup movement with Tauri native window dragging for macOS shell behavior.
 - 2026-06-25 - Added macOS runtime QA script and manual overlay checklist for transparent overlay validation.
 - 2026-06-25 - Removed user-facing Windows camera permission copy and added explicit Mac/Windows release script names.
+- 2026-06-25 - Added macOS capture probe and recorded successful Retina capture outside the sandbox.
