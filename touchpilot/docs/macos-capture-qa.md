@@ -76,3 +76,26 @@ Current Mac result:
 - screenshot image was `2940x1912`
 
 That means the capture dimensions line up with Retina scaling: logical display size multiplied by scale factor equals screenshot pixel size.
+
+## Coordinate Mapping Check
+
+The overlay/guidance layer works in logical screen coordinates. Retina screenshots are larger because each logical point can contain multiple physical pixels.
+
+For the current Mac:
+
+```text
+logical display: 1470 x 956
+scale factor:    2
+screenshot:      2940 x 1912
+```
+
+Expected screenshot size:
+
+```text
+1470 * 2 = 2940
+956 * 2  = 1912
+```
+
+So the capture path is internally consistent.
+
+TouchPilot now checks this relationship when it builds calibration metadata. A mismatch should show in the debug Capture/Guidance readout as `needs_check`.
