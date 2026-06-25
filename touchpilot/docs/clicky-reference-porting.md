@@ -39,6 +39,7 @@ Implementation direction for Toki:
 Current M4 status:
 
 - The menu bar/tray item is the stable control path.
+- The tray icon is marked as a macOS template icon so the system can render it like a menu-bar utility instead of a colored app badge.
 - The app now labels tray actions as Toki actions rather than generic settings/app actions.
 - On macOS, Toki opens the compact settings panel on launch so the user can discover the menu-bar app instead of wondering where it went.
 - The next native Mac shell improvement is to hide Dock presence more completely with an accessory/menu-bar activation policy once that path is verified in Tauri.
