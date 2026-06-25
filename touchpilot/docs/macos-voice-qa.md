@@ -114,6 +114,22 @@ If it fails with `local Whisper binary not found`, build `whisper.cpp` or set `W
 
 If it fails with `WHISPER_CPP_MODEL is not set`, set `WHISPER_CPP_MODEL` to a local model file.
 
+## App Runtime Transcription
+
+The desktop app uses the same provider rule as the QA probe:
+
+```text
+default: local-whisper
+optional: TOUCHPILOT_TRANSCRIPTION_PROVIDER=openai
+```
+
+That means push-to-talk can transcribe through the local `whisper.cpp` install without OpenAI credits. The app auto-detects the same local Mac paths:
+
+```text
+~/tools/whisper.cpp/build/bin/whisper-cli
+~/tools/whisper.cpp/models/ggml-base.en.bin
+```
+
 ## Optional OpenAI Transcription
 
 OpenAI transcription is still available for later cloud testing, but it is not the free/default path.
