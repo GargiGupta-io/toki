@@ -493,7 +493,7 @@ function SettingsPopup({
 
       <div className="settings-separator" />
 
-      <p className="settings-instruction">Hold to talk. Release to guide.</p>
+      <p className="settings-instruction">Hold Space or press below to talk. Release to guide.</p>
 
       <button
         className="settings-talk-button"
