@@ -130,6 +130,16 @@ That means push-to-talk can transcribe through the local `whisper.cpp` install w
 ~/tools/whisper.cpp/models/ggml-base.en.bin
 ```
 
+Manual app test result:
+
+```text
+Status: passed
+Input: show me what to click
+Observed: voice triggered guidance and rendered a mock target cue
+```
+
+The mock target may be inaccurate. That is expected at this phase because the target still comes from mock guidance, not real OCR/accessibility/model screen understanding.
+
 ## Optional OpenAI Transcription
 
 OpenAI transcription is still available for later cloud testing, but it is not the free/default path.
