@@ -68,6 +68,7 @@ Implementation direction for Toki:
 Current M4 status:
 
 - Settings stays compact and separate from debug.
+- On macOS, settings is positioned near the top-right menu bar area when opened, instead of appearing as a centered app window.
 - Settings exposes the local push-to-talk path directly: hold Space or press the talk control, then release to route the voice command.
 - Debug remains a separate internal window instead of being mixed into the user panel.
 
