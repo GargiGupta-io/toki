@@ -360,6 +360,34 @@ fn fit_overlay_to_monitor<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     }));
 }
 
+fn position_settings_panel<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+
+    let Some(monitor) = monitor else {
+        return;
+    };
+
+    let Ok(window_size) = window.outer_size() else {
+        return;
+    };
+
+    let monitor_position = monitor.position();
+    let monitor_size = monitor.size();
+    let margin = 22i32;
+    let menu_bar_gap = 46i32;
+    let x = monitor_position.x
+        + monitor_size.width as i32
+        - window_size.width as i32
+        - margin;
+    let y = monitor_position.y + menu_bar_gap;
+
+    let _ = window.set_position(Position::Physical(PhysicalPosition { x, y }));
+}
+
 #[tauri::command]
 fn capture_metadata() -> Result<CaptureMetadata, String> {
     capture_primary_display_metadata().map_err(|error| error.to_string())
@@ -381,6 +409,9 @@ fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 
 fn show_settings_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
+        #[cfg(target_os = "macos")]
+        position_settings_panel(&window);
+
         let _ = window.show();
         let _ = window.set_focus();
     }
