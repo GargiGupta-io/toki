@@ -429,10 +429,18 @@ Current known-screen run:
 | Goal | `Click the message input box at the bottom.` |
 | Scale | `2` |
 | Provider | `local-ollama` / `llava:latest` |
-| Returned target | None |
+| Returned target | Rejected: `Message input box` at normalized `0.389,0.781 0.520x0.412` |
 | Verdict | `unavailable` |
-| Failure type | invalid provider output rejected as an invalid `GuidanceResult` |
-| Next action | capture raw provider output and adjust the prompt/parser before judging coordinate accuracy |
+| Failure type | coordinate issue: provider returned normalized `0..1` values instead of CSS pixels |
+| Next action | add OCR/accessibility candidate evidence or change model/prompt strategy before judging coordinate accuracy |
+
+Step 10.6.4 update:
+
+- invalid provider responses now include capped `providerRawText`
+- the known-screen CLI prints validation issues and raw provider output
+- the Ollama prompt now explicitly forbids normalized coordinates and explains screenshot-pixel-to-CSS-pixel conversion
+- target widths/heights smaller than practical CSS-pixel sizes are rejected as likely normalized output
+- the retest reached `local-ollama`, but `llava:latest` still returned normalized coordinates, so the result correctly stayed `unavailable`
 
 Decision rule before Phase 11:
 
