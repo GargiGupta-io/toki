@@ -1458,6 +1458,9 @@ function DebugWindowApp() {
     createEmptyDebugSnapshot(),
   );
   const [activeDebugTab, setActiveDebugTab] = useState<DebugTab>("runtime");
+  const [guidanceTesterVerdict, setGuidanceTesterVerdict] = useState<
+    "untested" | "useful" | "wrong"
+  >("untested");
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceSummary[]>([]);
   const [cameraProbeStatus, setCameraProbeStatus] = useState<
     "idle" | "probing" | "ready" | "unsupported" | "error"
@@ -1512,6 +1515,10 @@ function DebugWindowApp() {
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
+  const guidanceGoal =
+    snapshot.guidanceRequest?.goal ??
+    snapshot.voiceRuntime.transcript?.text ??
+    "No goal submitted";
   const debugVoiceStatusDetails = getVoiceStatusDetails(snapshot.voiceRuntime);
 
   function sendOverlayCommand(command: OverlayCommand) {
@@ -1519,6 +1526,7 @@ function DebugWindowApp() {
   }
 
   function testGuidanceFixture() {
+    setGuidanceTesterVerdict("untested");
     sendOverlayCommand({
       type: "set-guidance-fixture",
       fixture: "safe",
@@ -2432,7 +2440,7 @@ function DebugWindowApp() {
               </div>
               <div>
                 <dt>Request</dt>
-                <dd>{snapshot.guidanceRequest ? "Present" : "None"}</dd>
+                <dd>{guidanceGoal}</dd>
               </div>
               <div>
                 <dt>Risk</dt>
@@ -2473,6 +2481,35 @@ function DebugWindowApp() {
                 </dd>
               </div>
             </dl>
+            <div className="debug-result-review">
+              <div>
+                <span>Target</span>
+                <strong>{target?.label ?? "None"}</strong>
+              </div>
+              <div>
+                <span>Coordinates</span>
+                <strong>
+                  {target
+                    ? `${target.x}, ${target.y}, ${target.width} x ${target.height}`
+                    : "None"}
+                </strong>
+              </div>
+              <div>
+                <span>Tester verdict</span>
+                <div className="debug-verdict-controls">
+                  {(["useful", "wrong"] as const).map((verdict) => (
+                    <button
+                      key={verdict}
+                      type="button"
+                      data-active={guidanceTesterVerdict === verdict}
+                      onClick={() => setGuidanceTesterVerdict(verdict)}
+                    >
+                      {verdict}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
             {snapshot.guidanceProviderMode === "mock" ? (
               <p className="debug-muted">
                 Mock guidance proves plumbing only. It is not real screen
