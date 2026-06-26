@@ -110,6 +110,14 @@ Add the provider adapter behind a backend/proxy rule.
 
 For local dev, a direct environment key can be used temporarily. For production, paid model calls go through a backend.
 
+Current status:
+
+- Added `docs/guidance-provider-adapter.md`.
+- Production rule is explicit: paid provider keys must live behind a backend/proxy, not inside the desktop app.
+- Local dev exception is explicit: direct cloud/local provider calls are allowed only for smoke tests.
+- Provider failure must show `unavailable`; it must not silently fall back to mock guidance.
+- First real smoke test should use screenshot + goal and return a validated `GuidanceResult`.
+
 ### VG.5 First Real Guidance Smoke Test
 
 Run one controlled screen:
