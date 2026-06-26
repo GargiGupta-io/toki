@@ -627,6 +627,19 @@ M5.1 adds a focused camera-enumeration QA path:
 
 That generic label is not a failure by itself. M5.1 only proves that a video input can be listed. M5.2 is where permission and camera activation should be tested.
 
+### M5.2 Camera Permission Flow
+
+Plain English: seeing a camera in the device list is not the same as being allowed to use it. macOS has a separate Camera privacy permission, and the app needs to explain that clearly.
+
+M5.2 adds a specific Mac permission acceptance path:
+
+- Camera permission should only be requested when Camera is enabled from debug/advanced controls.
+- The camera preview should only appear inside the debug window.
+- If permission is denied, Toki now tells the user to enable Camera access in macOS System Settings and relaunch.
+- The QA doc now separates camera enumeration from camera permission, so we do not confuse "device exists" with "stream is active."
+
+The important product decision remains: camera/gesture controls stay debug-first until landmark and gesture reliability are proven. The normal user surface should remain voice-first and cursor-first.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -651,3 +664,4 @@ That generic label is not a failure by itself. M5.1 only proves that a video inp
 - 2026-06-26 - Tightened macOS runtime QA for Clicky-style overlay acceptance and documented that the probe must be run after Toki is already running.
 - 2026-06-26 - Closed Phase M4 as a Clicky-reference alignment phase and moved global shortcut implementation, provider backend, icon artwork, and multi-monitor polish into follow-up phases.
 - 2026-06-26 - Started Phase M5 with Mac camera enumeration QA and added a debug hint for generic camera labels before permission is granted.
+- 2026-06-26 - Added M5.2 Mac camera permission QA and clearer macOS Camera privacy guidance in the debug preview path.
