@@ -442,6 +442,26 @@ Step 10.6.4 update:
 - target widths/heights smaller than practical CSS-pixel sizes are rejected as likely normalized output
 - the retest reached `local-ollama`, but `llava:latest` still returned normalized coordinates, so the result correctly stayed `unavailable`
 
+Step 10.6.5 candidate-assisted update:
+
+- requests may now include `screen.candidates`
+- each candidate carries `id`, `label`, `role`, and a trusted CSS-pixel box
+- the Ollama prompt lists candidates and asks the provider to choose one instead of inventing coordinates
+- if the provider returns a matching `candidateId` or label, Toki anchors the target to the trusted candidate box before validation
+- `TOKI_KNOWN_SCREEN_CANDIDATES` lets the known-screen runner attach candidate evidence during manual smoke tests
+
+Candidate-assisted known-screen run:
+
+| Field | Value |
+| --- | --- |
+| Screenshot | `/tmp/toki-known-screen.png` |
+| Goal | `Click the message input box at the bottom.` |
+| Candidate | `message-input`, `Message input box`, `textbox`, `20,790 1430x60` |
+| Provider | `local-ollama` / `llava:latest` |
+| Returned target | `Message input box at 20,790 1430x60` |
+| Verdict | `real` / candidate-assisted useful smoke |
+| Caveat | This proves candidate selection and anchoring, not automatic OCR/accessibility candidate generation yet. |
+
 Decision rule before Phase 11:
 
 - If one known-screen target is useful, Phase 10.5 can close as a smoke-level provider path.
