@@ -844,6 +844,22 @@ The important product decision is that mock and real are now separate buttons:
 
 This keeps our tests honest.
 
+### Voice Guidance Quality Closure
+
+Plain English: the voice-guidance quality gate is closed, but that does not mean Toki has perfect screen understanding yet.
+
+What is now true:
+
+- voice can route into guidance
+- mock guidance is visibly labeled as mock
+- real guidance has a separate smoke path
+- the app can carry screenshot payload and calibration data into a provider request
+- if no provider exists, Toki says `unavailable` instead of showing a fake target
+
+This closes the honesty problem. Earlier, voice working plus a mock ring could look like real intelligence. Now the product tells us whether we are seeing a mock fixture, a real result, or no provider.
+
+The next limitation is target quality. To make Toki actually useful, the next phases need either a real provider/backend or stronger screen intelligence such as OCR and accessibility mapping. Safety also matters before the app starts guiding users toward risky actions.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -880,3 +896,4 @@ This keeps our tests honest.
 - 2026-06-26 - Added VG.3 screenshot payload gate so real guidance readiness is visible before provider integration.
 - 2026-06-26 - Added VG.4 provider adapter plan with backend/proxy rule, local dev exception, payload strategy, and unavailable-mode failure behavior.
 - 2026-06-26 - Added VG.5 real smoke path that reports unavailable instead of rendering mock guidance when no provider endpoint is configured.
+- 2026-06-26 - Closed Voice Guidance Quality as an honesty/readiness gate; next work should focus on provider-backed guidance, safety, or screen intelligence.
