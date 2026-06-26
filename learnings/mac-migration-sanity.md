@@ -640,6 +640,19 @@ M5.2 adds a specific Mac permission acceptance path:
 
 The important product decision remains: camera/gesture controls stay debug-first until landmark and gesture reliability are proven. The normal user surface should remain voice-first and cursor-first.
 
+### M5.3 MediaPipe Landmark Flow
+
+Plain English: after the camera turns on, Toki needs to prove it can see a hand as structured points, not just display a webcam preview.
+
+M5.3 adds two safety improvements:
+
+- The MediaPipe hand landmarker now tries GPU first and falls back to CPU if GPU setup fails.
+- The debug window now explains `loading` and `no_hand` states so model loading is not confused with gesture failure.
+
+The acceptance target is one visible hand producing a 21-point landmark frame. If camera preview is active but landmarks never reach 21 points, the gesture layer is not ready.
+
+The important Mac/WebView tradeoff is that GPU acceleration may fail in a WebView even when the camera works. CPU fallback is slower, but it is the correct reliability baseline for this phase.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -665,3 +678,4 @@ The important product decision remains: camera/gesture controls stay debug-first
 - 2026-06-26 - Closed Phase M4 as a Clicky-reference alignment phase and moved global shortcut implementation, provider backend, icon artwork, and multi-monitor polish into follow-up phases.
 - 2026-06-26 - Started Phase M5 with Mac camera enumeration QA and added a debug hint for generic camera labels before permission is granted.
 - 2026-06-26 - Added M5.2 Mac camera permission QA and clearer macOS Camera privacy guidance in the debug preview path.
+- 2026-06-26 - Added M5.3 MediaPipe landmark QA, GPU-to-CPU fallback, and clearer debug hints for model loading versus no-hand states.
