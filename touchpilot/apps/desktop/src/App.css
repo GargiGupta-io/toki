@@ -479,6 +479,58 @@ html {
   color: rgba(255, 255, 255, 0.52);
 }
 
+.debug-result-review {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.debug-result-review > div {
+  display: grid;
+  gap: 4px;
+  min-height: 42px;
+  border-radius: 6px;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.debug-result-review span {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.debug-result-review strong {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.debug-verdict-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.debug-verdict-controls button {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.54);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.debug-verdict-controls button[data-active="true"] {
+  color: rgba(255, 255, 255, 0.94);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .debug-device-list {
   display: grid;
   gap: 8px;
