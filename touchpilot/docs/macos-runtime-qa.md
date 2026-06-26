@@ -24,6 +24,8 @@ This checks that the app process is alive and, when macOS Accessibility allows i
 
 If the script says System Events access failed, grant Accessibility permission to the terminal app and rerun. The script still leaves manual checks below as the final visual gate.
 
+The script can flag obvious app-chrome regressions, but it cannot fully prove the product feel. Click-through and puck motion still need a real desktop check.
+
 ## Manual Accept Checks
 
 The overlay passes when all of these are true:
@@ -33,6 +35,7 @@ The overlay passes when all of these are true:
 - Apps under the overlay remain clickable.
 - The puck follows the cursor while the overlay is passive.
 - The settings popup opens intentionally from the menu bar/tray path.
+- The settings popup appears near the menu bar area, not centered like a normal app window.
 - The settings popup can be dragged from its header.
 - The settings close control hides the popup.
 - Debug opens separately and is not part of default runtime.
@@ -58,3 +61,16 @@ The overlay uses a monitor-sized borderless transparent window instead of native
 - not a taskbar/dock-style surface
 
 The settings popup uses native Tauri window dragging instead of manual pointer-coordinate movement.
+
+## Clicky Reference Acceptance
+
+For M4, the Mac overlay should match the Clicky contract:
+
+```text
+menu bar utility
+  -> compact panel
+  -> transparent click-through cursor overlay
+  -> puck / small cue only
+```
+
+That means the overlay is accepted only if Toki itself does not add visible desktop chrome. Underlying app chrome is allowed because a transparent overlay shows the real desktop. Toki-created titlebars, centered app panels, debug surfaces, or full-window panels are failures.
