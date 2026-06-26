@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import test from "node:test";
 import {
   handleGuidanceSmokeRequest,
+  resolveGuidanceProviderConfig,
   validateGuidanceProviderRequest,
 } from "./guidance-smoke-server.mjs";
 
@@ -85,6 +86,42 @@ test("validateGuidanceProviderRequest requires screen evidence", () => {
   ]);
 });
 
+test("resolveGuidanceProviderConfig defaults to unavailable", () => {
+  assert.deepEqual(resolveGuidanceProviderConfig({}), {
+    provider: "unavailable",
+    providerName: "dev-smoke-server",
+    error:
+      "dev guidance smoke server is running, but no real provider is wired yet",
+  });
+});
+
+test("resolveGuidanceProviderConfig supports local Ollama", () => {
+  assert.deepEqual(
+    resolveGuidanceProviderConfig({
+      TOKI_GUIDANCE_PROVIDER: "local-ollama",
+      TOKI_OLLAMA_ENDPOINT: "http://localhost:11434/api/generate",
+      TOKI_OLLAMA_MODEL: "llava:13b",
+    }),
+    {
+      provider: "local-ollama",
+      providerName: "local-ollama",
+      endpoint: "http://localhost:11434/api/generate",
+      model: "llava:13b",
+    },
+  );
+});
+
+test("resolveGuidanceProviderConfig rejects unsupported providers safely", () => {
+  assert.deepEqual(
+    resolveGuidanceProviderConfig({ TOKI_GUIDANCE_PROVIDER: "cloud-dev" }),
+    {
+      provider: "unavailable",
+      providerName: "dev-smoke-server",
+      error: 'unsupported TOKI_GUIDANCE_PROVIDER "cloud-dev"',
+    },
+  );
+});
+
 test("guidance smoke server exposes health check", async () => {
   const response = createResponse();
 
@@ -93,6 +130,7 @@ test("guidance smoke server exposes health check", async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().ok, true);
   assert.equal(response.json().service, "toki-guidance-smoke");
+  assert.equal(response.json().provider, "unavailable");
 });
 
 test("guidance smoke server returns unavailable until provider is wired", async () => {
@@ -109,4 +147,29 @@ test("guidance smoke server returns unavailable until provider is wired", async 
   assert.equal(body.mode, "unavailable");
   assert.equal(body.providerName, "dev-smoke-server");
   assert.match(body.error, /no real provider is wired yet/);
+});
+
+test("guidance smoke server reports configured local Ollama placeholder", async () => {
+  const response = createResponse();
+
+  await handleGuidanceSmokeRequest(
+    createRequest("POST", "/api/guidance/smoke", JSON.stringify(validRequest)),
+    response,
+    {
+      env: {
+        TOKI_GUIDANCE_PROVIDER: "local-ollama",
+        TOKI_OLLAMA_ENDPOINT: "http://localhost:11434/api/generate",
+        TOKI_OLLAMA_MODEL: "llava:13b",
+      },
+    },
+  );
+
+  const body = response.json();
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(body.mode, "unavailable");
+  assert.equal(body.providerName, "local-ollama");
+  assert.equal(body.providerConfig.endpoint, "http://localhost:11434/api/generate");
+  assert.equal(body.providerConfig.model, "llava:13b");
+  assert.match(body.error, /adapter is not wired yet/);
 });
