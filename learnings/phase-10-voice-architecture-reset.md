@@ -220,6 +220,50 @@ Phase 10 now has the general voice architecture it was trying to reach:
 
 This doc intentionally does not track platform-specific setup, permission prompts, or local machine installation details. Those belong in the platform migration learning doc or in a future platform-specific doc if another platform is reopened.
 
+## Phase 10.5: Real Guidance Provider Backend Smoke
+
+Phase 10.5 is the bridge between voice and safety.
+
+Plain English: voice can now tell Toki what the user wants, but Toki still needs a real screen-understanding service to decide what should be clicked. Phase 10.5 gives that service a small backend/proxy path without putting paid provider keys inside the desktop app.
+
+The phase exists because a voice transcript alone is not useful enough. The app needs to send:
+
+- the spoken goal
+- screenshot metadata
+- screenshot payload
+- display/calibration information
+- previous step context when available
+
+and receive:
+
+- a structured `GuidanceResult`
+- one target box
+- confidence
+- risk class
+- confirmation requirement
+- a short instruction
+
+### Phase 10.5 Steps
+
+1. Define the provider backend contract.
+2. Add a small dev backend/proxy.
+3. Keep provider keys out of the desktop app.
+4. Connect Debug `Real smoke` to the backend endpoint.
+5. Run one known-screen provider test.
+6. Record provider errors, quota behavior, and target accuracy.
+
+### Tradeoffs
+
+| Choice | Why |
+| --- | --- |
+| Backend/proxy | Protects paid provider keys and gives us rate-limit/billing control |
+| Dev endpoint first | Lets us test target accuracy before building production auth |
+| Structured JSON only | Keeps provider output compatible with the existing validator |
+| One controlled smoke test | Avoids pretending the model is broadly accurate too early |
+| Keep mock mode | Still useful for UI regression checks, but not product proof |
+
+Done when Toki can run one real provider request from a screenshot plus goal, validate the returned target, and clearly show useful/wrong in Debug.
+
 ## Acceptance Rules
 
 Phase 10 should not pass unless:
@@ -246,3 +290,4 @@ Phase 11 safety will depend on voice commands becoming real task requests. That 
 - 2026-06-17 - Step 10.10D replaced the native voice placeholder with real CPAL microphone capture. The important implementation lesson was that `cpal::Stream` cannot live inside Tauri managed state because it is not `Send`; the working model is to keep the stream inside a dedicated recording thread and store only thread-safe controls in Tauri state. Push-to-talk now starts native capture, stop joins the worker, encodes the collected PCM as WAV, and returns base64 audio plus sample metadata to the frontend. Cloud transcription is still the next boundary.
 - 2026-06-17 - Step 10.10E connected the native WAV payload to cloud transcription through a Rust-side Tauri command. The API key stays out of the webview by reading `OPENAI_API_KEY` in Rust, the command sends multipart audio to OpenAI's transcription endpoint, and `voiceTranscription.ts` converts successful responses into final `VoiceTranscript` objects that already route through the existing guidance loop. This keeps the product path native capture plus cloud transcript, while Web Speech remains debug-only.
 - 2026-06-26 - Updated after the Toki rename and provider work: Phase 10 now describes a general transcription provider adapter instead of a cloud-only path, while platform-specific setup stays out of this doc.
+- 2026-06-26 - Added Phase 10.5 as the provider backend smoke bridge before Phase 11 Safety.
