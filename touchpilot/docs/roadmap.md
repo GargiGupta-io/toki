@@ -143,11 +143,14 @@ Status: Closed as a quality gate.
 ## Phase 10.6: Target Accuracy And Screen Intelligence
 
 - Goal: make real guidance point to the correct target before safety policy work.
-- Step 1 result: local provider is not ready on this machine.
+- Step 1 result: provider readiness check exists.
+- Step 2 result: local Ollama provider is ready on this machine.
 - Done: add `npm run guidance:provider:check` to verify local Ollama readiness.
-- Blocker: no Ollama app/binary was found, no `TOKI`/`OLLAMA` provider env was set, and `127.0.0.1:11434` was not reachable.
-- Next: install/start a local vision provider and rerun `npm run guidance:provider:check`.
-- Then verify one reachable local provider can return a useful known-screen target.
+- Done: install/start Ollama from the official macOS app path.
+- Done: pull `llava:latest`.
+- Done: verify `npm run guidance:provider:check` reports `[READY] local Ollama provider is reachable`.
+- Note: local provider checks may need to run outside the Codex sandbox because sandboxed local network calls to `127.0.0.1:11434` can fail even when Ollama is running.
+- Next: verify one reachable local provider can return a useful known-screen target.
 - If screenshot-only targeting is wrong, add OCR/accessibility evidence before Phase 11.
 - Build a candidate UI map from visible text, accessibility nodes, and bounding boxes.
 - Ask the provider to choose from structured candidates instead of raw pixels only.
