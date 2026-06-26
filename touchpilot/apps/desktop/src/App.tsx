@@ -2151,6 +2151,17 @@ function DebugWindowApp() {
             {handLandmarkerError ? (
               <p className="debug-muted">{handLandmarkerError}</p>
             ) : null}
+            {handLandmarkerStatus === "loading" ? (
+              <p className="debug-muted">
+                Loading MediaPipe hand model. Internet access is required for the
+                current model URL.
+              </p>
+            ) : handLandmarkerStatus === "no_hand" ? (
+              <p className="debug-muted">
+                Model is running. Put one open hand in the camera frame to detect
+                landmarks.
+              </p>
+            ) : null}
           </section>
 
           <section className="debug-section">
