@@ -1038,6 +1038,51 @@ Done when:
 
 ---
 
+## Phase 10.5: Real Guidance Provider Backend Smoke
+
+Goal: Connect Toki's existing voice + screenshot guidance request to a real provider path before starting safety policy work.
+
+Reason:
+
+Voice now reaches the guidance loop, and Debug can prove whether guidance is `mock`, `real`, or `unavailable`. The next missing piece is target accuracy. Phase 10.5 creates a small backend/proxy smoke path so Toki can send a screenshot plus spoken goal to a real provider and receive a validated `GuidanceResult`.
+
+Decision:
+
+> The desktop app must not ship paid provider keys. Local dev can call a configured endpoint, but production model calls go through a backend/proxy.
+
+Tasks:
+
+1. Define the provider backend contract:
+   - request body is the existing `GuidanceRequest`
+   - response body is a validated `GuidanceResult`
+   - failures return explicit unavailable/error state
+2. Add a small dev backend/proxy path:
+   - accepts screenshot + goal
+   - calls the chosen vision-language provider
+   - returns structured JSON only
+3. Add provider configuration:
+   - endpoint is explicit
+   - desktop does not contain paid API keys
+   - local dev can use environment variables outside the webview
+4. Connect Debug `Real smoke` to the backend endpoint.
+5. Run one known-screen manual test:
+   - open a known page
+   - say a simple goal
+   - send screenshot + goal
+   - render one provider target
+   - mark result useful or wrong
+6. Document provider errors, quota behavior, and accuracy limits.
+
+Done when:
+
+- mock and real provider paths are visibly separate
+- no fake target appears when the provider is missing
+- one real provider request can return a validated target
+- the target can be marked useful or wrong in Debug
+- paid provider keys are not embedded in the desktop app
+
+---
+
 ## Phase M0: Mac Migration Sanity
 
 Goal: Make the Mac checkout trustworthy before continuing product work.
