@@ -509,7 +509,7 @@ The panel placement tradeoff is similar. Clicky can anchor its panel to the exac
 
 The other important tradeoff is Tauri shell versus native Swift shell. Clicky gets `NSPanel`, global shortcut monitoring, and menu-bar behavior directly from Swift/AppKit. Toki is staying in Tauri/Rust/React for now, so we recreate the same behavior with Tauri windows and native helpers. That keeps the cross-platform app architecture alive, but it means some Mac behaviors need careful native patches instead of being automatic.
 
-M4 does not yet finish every Clicky behavior. The main remaining items are:
+M4 is complete as a reference-alignment phase. The remaining items are follow-up implementation work, not blockers for closing M4:
 
 - a custom cursor-like template artwork if the current app icon still does not read clearly enough in the menu bar
 - a true native global push-to-talk shortcut, likely Control+Option hold
@@ -570,6 +570,29 @@ If Toki is not running, this correctly fails with:
 
 That is not a code failure. It means the app must be launched first, then the runtime QA command rerun.
 
+### M4 Closure
+
+Plain English: M4 is now closed because the app has a documented Clicky-style Mac contract and the current shell follows it closely enough to move forward.
+
+Closed M4 outcomes:
+
+- Toki is menu-bar-first on Mac.
+- Toki uses template tray icon behavior.
+- The compact settings panel opens on launch for discoverability.
+- The settings panel opens near the menu-bar area instead of centered.
+- Debug stays separate from the user panel.
+- Transparent overlay QA is stricter and tied to the Clicky contract.
+- Native global push-to-talk is planned with the right permission model.
+- Local Whisper remains the free default.
+- Paid API keys must go through a backend/proxy before production.
+
+What remains after M4:
+
+- M5 should retest camera/gesture behavior on Mac.
+- Later Mac shell work should add true global Control+Option push-to-talk.
+- Later production work should add the backend/proxy for paid providers.
+- Later polish should improve the menu-bar artwork if the current icon still does not read clearly.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -584,13 +607,12 @@ M0 gives us a stable base:
 
 ## Next
 
-Phase M1 should focus on:
+Phase M5 should focus on:
 
-- menu bar utility behavior
-- settings popup behavior
-- transparent overlay behavior
-- cursor/puck tracking on macOS
-- isolating Windows-only overlay assumptions
+- camera enumeration on Mac
+- MediaPipe hand landmarks on Mac
+- pinch and open palm gesture checks
+- deciding whether gesture work remains complete or needs Mac-specific fixes
 
 ## Updates
 
@@ -614,3 +636,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Positioned the macOS settings panel near the top-right menu bar area when opened, using monitor bounds and the real panel size.
 - 2026-06-26 - Documented the macOS global push-to-talk contract: Control+Option hold is the target, Space/settings remains the fallback, and native event monitoring plus Accessibility permission UX is the preferred final path.
 - 2026-06-26 - Tightened macOS runtime QA for Clicky-style overlay acceptance and documented that the probe must be run after Toki is already running.
+- 2026-06-26 - Closed Phase M4 as a Clicky-reference alignment phase and moved global shortcut implementation, provider backend, icon artwork, and multi-monitor polish into follow-up phases.
