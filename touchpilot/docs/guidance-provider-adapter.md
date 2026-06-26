@@ -387,10 +387,11 @@ Manual acceptance:
 
 Current local note:
 
-- `ollama` was not visible in the shell path
-- `http://127.0.0.1:11434/api/tags` was not reachable
-- therefore the repeatable runner is added, but the real known-screen verdict is still pending until a local provider is running
-- Phase 10.6 Step 1 added `npm run guidance:provider:check` so this blocker can be checked directly before the known-screen runner
+- Ollama was installed from the official macOS app path and is available at `/Applications/Ollama.app`.
+- `llava:latest` was pulled successfully.
+- `npm run guidance:provider:check` reports `[READY] local Ollama provider is reachable`.
+- The Codex sandbox can still block local `127.0.0.1:11434` checks, so provider readiness should be checked outside the sandbox when needed.
+- the repeatable runner is ready, but the first useful/wrong known-screen verdict is still pending
 
 ## Accuracy Notes
 
@@ -402,7 +403,7 @@ Step 10.5.11 records the current target-accuracy state honestly:
 | Local vision adapter | Done | The server can send screenshot + goal to Ollama. |
 | Response validation | Done | Bad model output is rejected before reaching the overlay. |
 | Known-screen runner | Done | A repeatable screenshot + goal test path exists. |
-| Local provider availability | Blocked in this shell | Ollama was not reachable at `127.0.0.1:11434`. |
+| Local provider availability | Ready outside sandbox | Ollama is reachable at `127.0.0.1:11434` with `llava:latest`. |
 | First useful/wrong verdict | Pending | No real accuracy score exists yet. |
 
 This means Phase 10.5 has the provider pipeline, but not the product proof. A validated `GuidanceResult` only proves the response has the right shape. It does not prove the target is actually useful.
