@@ -305,3 +305,4 @@ Phase 11 safety will depend on voice commands becoming real task requests. That 
 - 2026-06-26 - Added the Phase 10.5 provider contract: request shape, response envelope, dev endpoint path, and unavailable-mode handling.
 - 2026-06-26 - Added the Phase 10.5 dev backend skeleton for `/api/guidance/smoke`; it validates requests and honestly returns unavailable until provider wiring exists.
 - 2026-06-26 - Added the Phase 10.5 provider configuration flow: typed desktop endpoint env var and a helper script for running the app against the local smoke server.
+- 2026-06-26 - Completed the first local provider smoke run: the desktop Debug `Real smoke` action reached `dev-smoke-server`, displayed `unavailable`, kept target/box/coordinates empty, and avoided rendering a fake mock target as a real provider result. The debug panel was also made scrollable and the smoke action was promoted near `Sync` because the original tab-only placement was too easy to miss.
