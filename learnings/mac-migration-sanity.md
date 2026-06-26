@@ -801,6 +801,23 @@ The debug Guidance tab shows these as a Payload Gate. This matters because voice
 
 The current tradeoff is that the payload is still raw base64. That is acceptable for a first smoke test, but large screenshots can become expensive or slow. The debug gate now flags payloads over 2 MB with a "Downscale before provider" plan so we do not accidentally build the final provider path around oversized images.
 
+### VG.4 Real Provider Adapter Plan
+
+Plain English: Toki now has a written rule for where real AI guidance should live and where it should not live.
+
+The key decision is:
+
+```text
+desktop app = capture, voice, overlay, debug
+backend/proxy = paid API keys, billing, rate limits, provider calls
+```
+
+This matters because a desktop app can be inspected by users. If we put a paid provider key directly inside the shipped app, someone can extract it and abuse it. So production guidance must go through a backend/proxy. Local development can still use a direct provider key temporarily for smoke tests, but that is only a developer shortcut.
+
+VG.4 also records how real guidance should fail. If the provider is unavailable, Toki should say `unavailable`; it should not quietly show a mock target and pretend guidance worked. Mock guidance remains a debug fixture, not a product result.
+
+The first real provider should be a vision-language model because it can take the screenshot plus voice goal and return a structured target fastest. Local-only screen intelligence can come later if cost, privacy, or offline use becomes the priority.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -835,3 +852,4 @@ The current tradeoff is that the payload is still raw base64. That is acceptable
 - 2026-06-26 - Added VG.1 provider-mode visibility so mock guidance is clearly labeled and cannot be mistaken for real screen understanding.
 - 2026-06-26 - Added VG.2 debug result review so manual voice guidance tests can mark a target useful or wrong.
 - 2026-06-26 - Added VG.3 screenshot payload gate so real guidance readiness is visible before provider integration.
+- 2026-06-26 - Added VG.4 provider adapter plan with backend/proxy rule, local dev exception, payload strategy, and unavailable-mode failure behavior.
