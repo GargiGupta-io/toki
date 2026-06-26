@@ -106,3 +106,53 @@ Camera permission fails when:
 ## Current M5.2 Decision
 
 Camera permission remains debug/advanced for now. The normal user flow should stay voice-first, and camera/gesture activation should become user-facing only after landmark and gesture reliability are proven.
+
+## Step M5.3 MediaPipe Hand Landmarks
+
+MediaPipe landmark testing checks whether Toki can turn the camera preview into hand points.
+
+### How To Test
+
+1. Complete M5.2 so Camera Preview is `active`.
+2. Keep Debug open on the Gesture tab.
+3. Find Hand Landmarks.
+4. Put one open hand clearly inside the camera frame.
+5. Watch Status, Frame, Hand, Confidence, and Landmarks.
+
+### Pass
+
+Hand landmarks pass when:
+
+- status becomes `running`
+- frame number increases
+- hand becomes `left`, `right`, or `unknown`
+- confidence is above `0`
+- landmarks count becomes `21`
+
+### Acceptable Intermediate States
+
+These states are not failures by themselves:
+
+- `loading`: MediaPipe model is downloading or initializing.
+- `no_hand`: the model is running, but no hand is visible enough.
+- `idle`: camera is off.
+
+### Fail
+
+Hand landmarks fail when:
+
+- status stays `loading` for a long time with internet available
+- status becomes `error`
+- status stays `no_hand` even with a well-lit open hand in frame
+- landmarks count never reaches `21`
+- camera preview is active but frame number never changes
+
+### Mac/WebView Note
+
+The hand landmarker tries GPU first and falls back to CPU. This matters because GPU delegates can fail inside some WebView/GPU combinations even when the camera stream itself works.
+
+The current model and WASM files load from MediaPipe CDN URLs. If the Mac is offline or the CDN is blocked, landmark loading can fail even though camera preview works.
+
+## Current M5.3 Decision
+
+M5.3 accepts CPU fallback as correct. Final performance tuning can happen later; this step only proves that a hand can become a 21-point landmark frame on Mac.
