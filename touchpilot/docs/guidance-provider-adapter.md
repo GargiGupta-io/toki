@@ -378,6 +378,46 @@ Current local note:
 - `http://127.0.0.1:11434/api/tags` was not reachable
 - therefore the repeatable runner is added, but the real known-screen verdict is still pending until a local provider is running
 
+## Accuracy Notes
+
+Step 10.5.11 records the current target-accuracy state honestly:
+
+| Check | Result | Meaning |
+| --- | --- | --- |
+| Provider mode config | Done | The server can choose `unavailable` or `local-ollama`. |
+| Local vision adapter | Done | The server can send screenshot + goal to Ollama. |
+| Response validation | Done | Bad model output is rejected before reaching the overlay. |
+| Known-screen runner | Done | A repeatable screenshot + goal test path exists. |
+| Local provider availability | Blocked in this shell | Ollama was not reachable at `127.0.0.1:11434`. |
+| First useful/wrong verdict | Pending | No real accuracy score exists yet. |
+
+This means Phase 10.5 has the provider pipeline, but not the product proof. A validated `GuidanceResult` only proves the response has the right shape. It does not prove the target is actually useful.
+
+When the local provider is reachable, record each known-screen run with:
+
+| Field | What to record |
+| --- | --- |
+| Screenshot | File path or page/app name |
+| Goal | The exact command sent to the provider |
+| Provider | Provider mode and model |
+| Returned target | Label and box |
+| Confidence | Provider confidence |
+| Verdict | `useful`, `wrong`, or `unavailable` |
+| Failure type | provider unavailable, invalid output, wrong target, coordinate issue, or unclear UI |
+| Next action | retry prompt, add OCR, add accessibility, or accept for smoke |
+
+Decision rule before Phase 11:
+
+- If one known-screen target is useful, Phase 10.5 can close as a smoke-level provider path.
+- If the provider returns valid JSON but the target is wrong, do not call it done. Record the miss and decide whether OCR/accessibility should move before Phase 11.
+- If the provider is unavailable, keep Phase 10.5 open or explicitly close it as "provider pipeline ready, accuracy unproven."
+
+Current best alternative if screenshot-only misses:
+
+- Add OCR/accessibility evidence before safety work.
+- Then ask the provider to choose from visible UI candidates instead of raw pixels only.
+- This should improve target accuracy and make safety classification easier because the model gets structured labels and bounds.
+
 ## Failure Behavior
 
 When the provider fails, Toki should not silently fall back to mock guidance.
