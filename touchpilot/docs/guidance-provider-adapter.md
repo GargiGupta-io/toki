@@ -334,6 +334,19 @@ Step 10.5.10 adds a repeatable manual runner:
 npm run guidance:known-screen
 ```
 
+Before running it, check provider readiness:
+
+```bash
+npm run guidance:provider:check
+```
+
+The readiness check verifies:
+
+- local Ollama HTTP availability
+- configured endpoint from `TOKI_OLLAMA_ENDPOINT`
+- configured model from `TOKI_OLLAMA_MODEL`
+- whether the next step should be provider setup or known-screen accuracy
+
 Required environment:
 
 | Env var | Meaning |
@@ -377,6 +390,7 @@ Current local note:
 - `ollama` was not visible in the shell path
 - `http://127.0.0.1:11434/api/tags` was not reachable
 - therefore the repeatable runner is added, but the real known-screen verdict is still pending until a local provider is running
+- Phase 10.6 Step 1 added `npm run guidance:provider:check` so this blocker can be checked directly before the known-screen runner
 
 ## Accuracy Notes
 
