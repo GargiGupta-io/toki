@@ -46,17 +46,31 @@ export async function getHandLandmarker(): Promise<HandLandmarker> {
 async function createHandLandmarker(): Promise<HandLandmarker> {
   const vision = await FilesetResolver.forVisionTasks(wasmBaseUrl);
 
-  return HandLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath: handLandmarkerModelUrl,
-      delegate: "GPU",
-    },
-    runningMode: "VIDEO",
+  const options = {
+    runningMode: "VIDEO" as const,
     numHands: 1,
     minHandDetectionConfidence: 0.6,
     minHandPresenceConfidence: 0.6,
     minTrackingConfidence: 0.5,
-  });
+  };
+
+  try {
+    return await HandLandmarker.createFromOptions(vision, {
+      ...options,
+      baseOptions: {
+        modelAssetPath: handLandmarkerModelUrl,
+        delegate: "GPU",
+      },
+    });
+  } catch {
+    return HandLandmarker.createFromOptions(vision, {
+      ...options,
+      baseOptions: {
+        modelAssetPath: handLandmarkerModelUrl,
+        delegate: "CPU",
+      },
+    });
+  }
 }
 
 export function detectHandLandmarksForVideo(
