@@ -210,3 +210,59 @@ For M5.4, the important result is not just `pinch` appearing once. The important
 ## Current M5.4 Decision
 
 Pinch remains debug-first until it is reliable under normal laptop lighting. If pinch is noisy, voice remains the primary activation path.
+
+## Step M5.5 Open Palm Gesture Test
+
+Open palm testing checks whether Toki can recognize a clear open hand and pause the assistant.
+
+### How To Test
+
+1. Complete M5.3 so Hand Landmarks is `running`.
+2. Enable Gestures from debug/advanced controls.
+3. Hold one hand in frame with fingers extended and spread.
+4. Watch Open Palm Classifier, Smoothed Gesture, and Gesture Action.
+
+### Pass
+
+Open palm passes when:
+
+- Open Palm Classifier label becomes `open_palm`
+- Fingers reaches at least `4 / 4`
+- Spread rises above Threshold
+- Smoothed Gesture becomes `open_palm`
+- Smoothed phase moves through `holding`
+- Smoothed phase reaches `recognized`
+- Gesture Action records `pause_assistant`
+- overlay state becomes paused
+
+### Fail
+
+Open palm fails when:
+
+- landmarks are running but Fingers never changes
+- Fingers reaches `4 / 4` and Spread exceeds Threshold but label stays `none`
+- label becomes `open_palm` but Smoothed Gesture never reaches `recognized`
+- open palm fires repeatedly without respecting cooldown
+- open palm triggers when the hand is closed or pinching
+- overlay does not pause after the action fires
+
+### Debug Reading Guide
+
+Open palm has the same three-layer reading as pinch:
+
+```text
+Open Palm Classifier
+  -> raw per-frame finger/spread check
+
+Smoothed Gesture
+  -> hold/cooldown logic
+
+Gesture Action
+  -> pause command actually fired
+```
+
+For M5.5, the important result is a stable open hand becoming one pause action. A flickering one-frame open palm is not enough.
+
+## Current M5.5 Decision
+
+Open palm remains debug-first until false positives are tested in normal laptop use. If it pauses accidentally, it should not become a primary user gesture yet.
