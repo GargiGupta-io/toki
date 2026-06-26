@@ -110,22 +110,82 @@ Longer-term options:
 
 ## Adapter Shape
 
-Conceptual interface:
+Phase 10.5 uses the existing `GuidanceRequest` as the provider request body. That keeps the desktop-to-provider boundary simple: whatever the overlay already uses for mock guidance is the same shape the real provider receives.
 
 ```ts
-type GuidanceProviderRequest = GuidanceRequest & {
-  providerMode: GuidanceProviderMode;
-};
+type GuidanceProviderRequest = GuidanceRequest;
 
 type GuidanceProviderResponse = {
   mode: GuidanceProviderMode;
   result?: GuidanceResult;
   error?: string;
-  rawProvider?: unknown;
+  validation?: GuidanceValidationResult;
+  providerName?: string;
 };
 ```
 
 The real adapter should validate provider output with the existing `validateGuidanceResult()` before anything renders in the overlay.
+
+## Dev Endpoint Contract
+
+The first backend/proxy endpoint should be intentionally small.
+
+```text
+POST /api/guidance/smoke
+content-type: application/json
+```
+
+Request body:
+
+```ts
+GuidanceProviderRequest
+```
+
+Required request fields for the first smoke test:
+
+- `goal`
+- `screen.display`
+- `screen.screenshot`
+- `screen.screenshotPayload`
+- `screen.calibration`
+
+Success response:
+
+```json
+{
+  "mode": "real",
+  "result": {
+    "mode": "guide",
+    "summary": "The next target is the Export button.",
+    "step": {
+      "instruction": "Click Export.",
+      "target": {
+        "label": "Export",
+        "x": 120,
+        "y": 80,
+        "width": 96,
+        "height": 40
+      },
+      "confidence": 0.72,
+      "risk": "safe_navigation",
+      "requiresConfirmation": false
+    }
+  },
+  "providerName": "dev-provider"
+}
+```
+
+Unavailable response:
+
+```json
+{
+  "mode": "unavailable",
+  "error": "provider quota exceeded",
+  "providerName": "dev-provider"
+}
+```
+
+Important rule: the desktop adapter must preserve `unavailable` instead of converting it into a mock target or a generic invalid-result error.
 
 ## First Provider Choice
 
@@ -157,4 +217,3 @@ VG.4 is complete when:
 - local dev exception is explicit
 - payload size strategy is explicit
 - failure behavior does not allow fake acceptance
-
