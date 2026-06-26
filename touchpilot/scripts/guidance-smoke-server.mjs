@@ -125,6 +125,117 @@ export function resolveGuidanceProviderConfig(env = process.env) {
   };
 }
 
+function createOllamaPrompt(request) {
+  const display = request.screen.display;
+  const calibration = request.screen.calibration;
+
+  return [
+    "You are Toki, a desktop screen guidance assistant.",
+    "Look at the screenshot and choose the single best UI target for the user's goal.",
+    "Return only JSON. Do not include markdown, prose, or code fences.",
+    "",
+    "Required JSON shape:",
+    "{",
+    '  "mode": "real",',
+    '  "providerName": "local-ollama",',
+    '  "result": {',
+    '    "mode": "guide",',
+    '    "summary": "short explanation",',
+    '    "step": {',
+    '      "instruction": "what the user should do next",',
+    '      "target": {',
+    '        "label": "visible target label",',
+    '        "x": 0,',
+    '        "y": 0,',
+    '        "width": 1,',
+    '        "height": 1',
+    "      },",
+    '      "confidence": 0.5,',
+    '      "risk": "safe_navigation",',
+    '      "requiresConfirmation": false',
+    "    }",
+    "  }",
+    "}",
+    "",
+    "Coordinate rules:",
+    `- Return target coordinates in overlay/display CSS pixels, not image pixels.`,
+    `- Display width: ${display.width}`,
+    `- Display height: ${display.height}`,
+    `- Display scale factor: ${display.scaleFactor}`,
+    `- Calibration status: ${calibration?.status ?? "unknown"}`,
+    "",
+    `User goal: ${request.goal}`,
+  ].join("\n");
+}
+
+function extractJsonObject(text) {
+  const trimmed = text.trim();
+
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    return JSON.parse(trimmed);
+  }
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("provider response did not contain a JSON object");
+  }
+
+  return JSON.parse(trimmed.slice(start, end + 1));
+}
+
+export async function requestLocalOllamaGuidance(
+  guidanceRequest,
+  providerConfig,
+  options = {},
+) {
+  const fetcher = options.fetchImpl ?? fetch;
+
+  try {
+    const ollamaRequest = {
+      model: providerConfig.model,
+      stream: false,
+      format: "json",
+      prompt: createOllamaPrompt(guidanceRequest),
+      images: [guidanceRequest.screen.screenshotPayload.imageBase64],
+    };
+
+    const response = await fetcher(providerConfig.endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(ollamaRequest),
+    });
+
+    if (!response.ok) {
+      return {
+        mode: "unavailable",
+        error: `local Ollama returned ${response.status} ${response.statusText}`,
+        providerName: providerConfig.providerName,
+      };
+    }
+
+    const body = await response.json();
+    const responseText =
+      typeof body.response === "string" ? body.response : JSON.stringify(body);
+    const providerBody = extractJsonObject(responseText);
+
+    return {
+      ...providerBody,
+      mode: providerBody.mode ?? "real",
+      providerName: providerBody.providerName ?? providerConfig.providerName,
+    };
+  } catch (error) {
+    return {
+      mode: "unavailable",
+      error: error instanceof Error ? error.message : String(error),
+      providerName: providerConfig.providerName,
+    };
+  }
+}
+
 export async function handleGuidanceSmokeRequest(request, response, options = {}) {
   const providerConfig = resolveGuidanceProviderConfig(options.env);
 
@@ -178,16 +289,11 @@ export async function handleGuidanceSmokeRequest(request, response, options = {}
   }
 
   if (providerConfig.provider === "local-ollama") {
-    sendJson(response, 200, {
-      mode: "unavailable",
-      error:
-        "TOKI_GUIDANCE_PROVIDER=local-ollama is configured, but the local Ollama adapter is not wired yet",
-      providerName: providerConfig.providerName,
-      providerConfig: {
-        endpoint: providerConfig.endpoint,
-        model: providerConfig.model,
-      },
+    const providerResponse = await requestLocalOllamaGuidance(body, providerConfig, {
+      fetchImpl: options.fetchImpl,
     });
+
+    sendJson(response, 200, providerResponse);
     return;
   }
 
