@@ -756,6 +756,19 @@ The new Voice Guidance Quality phase should add a clear acceptance gate:
 
 This keeps momentum focused on the actual user value: "I said what I want, and Toki showed me the right thing on screen."
 
+### VG.1 Provider Mode
+
+Plain English: Toki now labels whether guidance is mock or real, so we do not accidentally accept a fake target as product-quality guidance.
+
+The first Voice Guidance Quality change adds:
+
+- shared `GuidanceProviderMode`
+- current debug provider mode: `mock`
+- fixture visibility beside provider mode
+- a warning that mock guidance proves plumbing only
+
+This is small, but important. Before this, a tester could hear voice work, see a ring appear, and think the app understood the screen. Now Debug makes the truth visible: the current result is mock guidance until a real provider path is added.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -787,3 +800,4 @@ This keeps momentum focused on the actual user value: "I said what I want, and T
 - 2026-06-26 - Cleaned up the gesture debug tab by grouping pinch, open palm, smoothed state, and action into one recognition area.
 - 2026-06-26 - Closed Phase M5 with the decision that gestures remain debug-first and secondary to voice until manual Mac camera testing proves reliability.
 - 2026-06-26 - Added the Voice Guidance Quality phase as the next product step because voice works but target guidance is still mock-based.
+- 2026-06-26 - Added VG.1 provider-mode visibility so mock guidance is clearly labeled and cannot be mistaken for real screen understanding.
