@@ -519,6 +519,31 @@ M4 does not yet finish every Clicky behavior. The main remaining items are:
 
 The backend/proxy rule is now part of the product contract: local Whisper can stay as the free/private default, but paid cloud transcription keys must not be embedded into public desktop builds.
 
+### M4 Global Push-To-Talk Decision
+
+Plain English: Space works as a local fallback, but the final Mac product needs a shortcut that works while the user is inside another app.
+
+The chosen target is:
+
+```text
+hold Control+Option
+  -> start native mic capture
+release Control+Option
+  -> stop capture
+  -> transcribe
+  -> route command into guidance
+```
+
+The best final implementation is a native macOS event monitor or Swift/AppKit bridge, similar in spirit to Clicky's `CGEvent` monitor. This path can observe press/release transitions without making the settings panel stay focused.
+
+The shortcut must not be treated as complete until the permission flow is clear, because macOS requires Accessibility permission for global keyboard monitoring. The settings-panel push-to-talk button remains necessary as the fallback.
+
+The detailed contract now lives in:
+
+```text
+touchpilot/docs/macos-global-push-to-talk.md
+```
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -561,3 +586,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Started Phase M4 Clicky reference alignment: Mac auto-opens the compact Toki panel, tray labels are product-specific, Space push-to-talk copy is explicit, and the Clicky reference notes now track current alignment plus remaining native Mac follow-ups.
 - 2026-06-26 - Marked the Toki tray icon as a macOS template icon so it behaves more like a native menu-bar utility icon.
 - 2026-06-26 - Positioned the macOS settings panel near the top-right menu bar area when opened, using monitor bounds and the real panel size.
+- 2026-06-26 - Documented the macOS global push-to-talk contract: Control+Option hold is the target, Space/settings remains the fallback, and native event monitoring plus Accessibility permission UX is the preferred final path.
