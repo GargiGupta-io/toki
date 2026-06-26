@@ -225,6 +225,27 @@ To point the desktop smoke action at it during local development:
 VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev
 ```
 
+or use the helper script:
+
+```bash
+npm run desktop:dev:guidance-smoke
+```
+
+Local run flow:
+
+1. Terminal A: `npm run guidance:smoke:dev`
+2. Terminal B: `npm run desktop:dev:guidance-smoke`
+3. Open Debug.
+4. Go to Guidance.
+5. Click `Real smoke`.
+
+Expected result for this step:
+
+- the desktop sends the captured guidance request to the local smoke server
+- Debug shows provider mode `unavailable`
+- Debug shows `dev-smoke-server`
+- no fake mock target is rendered as a real result
+
 Later steps can wire a real provider inside the server without putting provider keys in the desktop app.
 
 ## First Provider Choice
