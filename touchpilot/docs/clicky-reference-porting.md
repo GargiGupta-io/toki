@@ -111,6 +111,12 @@ Implementation direction for Toki:
 - Preferred shortcut should be Clicky-like: Control+Option hold, or a configurable alternative.
 - Add explicit Accessibility permission UX before relying on global shortcut behavior.
 
+Current M4 status:
+
+- The local Space/settings push-to-talk path remains the fallback.
+- The native global shortcut contract is documented in `docs/macos-global-push-to-talk.md`.
+- The preferred implementation is a native macOS event monitor or Swift/AppKit bridge that detects Control+Option press/release without stealing input.
+
 ### 5. Voice Pipeline Shape
 
 Clicky separates capture, transcription provider, transcript finalization, and command routing.
