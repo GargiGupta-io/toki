@@ -153,3 +153,24 @@ npm run qa:mac:transcribe
 ```
 
 If OpenAI returns `insufficient_quota`, the account needs billing or usable credits. Use local Whisper instead.
+
+## Production API Key Rule
+
+Local development can use `OPENAI_API_KEY` from the shell environment, but production desktop builds must not ship with a shared paid API key.
+
+The production rule is:
+
+```text
+Toki desktop app
+  -> authenticated backend/proxy
+  -> paid transcription/model provider
+```
+
+Why:
+
+- Any key bundled into the desktop app can be extracted.
+- Abuse prevention needs to happen on a server you control.
+- Rate limits, user identity, billing, and revocation belong on the backend.
+- Local Whisper remains the free/private fallback when cloud transcription is unavailable.
+
+So OpenAI/cloud transcription is a provider option, not the default production secret-management strategy.
