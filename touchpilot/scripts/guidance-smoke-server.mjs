@@ -8,6 +8,7 @@ const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate";
 const DEFAULT_OLLAMA_MODEL = "llava:latest";
 const MAX_PROVIDER_RAW_TEXT_CHARS = 2000;
 const MIN_TARGET_SIZE_CSS_PX = 4;
+const MAX_SCREEN_CANDIDATES = 20;
 const SUPPORTED_GUIDANCE_PROVIDERS = new Set([
   "unavailable",
   "local-ollama",
@@ -112,6 +113,8 @@ export function validateGuidanceProviderRequest(body) {
     issues.push("screen.calibration is required");
   }
 
+  validateScreenCandidates(screen, issues);
+
   return issues;
 }
 
@@ -152,6 +155,11 @@ function createOllamaPrompt(request) {
   const display = request.screen.display;
   const screenshot = request.screen.screenshotPayload;
   const calibration = request.screen.calibration;
+  const candidates = getScreenCandidates(request);
+  const candidateLines = candidates.map(
+    (candidate) =>
+      `- id=${candidate.id}; label=${candidate.label}; role=${candidate.role}; box=${candidate.x},${candidate.y},${candidate.width}x${candidate.height}`,
+  );
 
   return [
     "You are Toki, a desktop screen guidance assistant.",
@@ -168,6 +176,7 @@ function createOllamaPrompt(request) {
     '    "step": {',
     '      "instruction": "what the user should do next",',
     '      "target": {',
+    '        "candidateId": "candidate id when candidates are provided",',
     '        "label": "visible target label",',
     '        "x": 0,',
     '        "y": 0,',
@@ -195,6 +204,17 @@ function createOllamaPrompt(request) {
     `- The target box must stay fully inside 0..${display.width} x 0..${display.height}.`,
     `- Use a small bounding box around the clickable element, not the whole card or window.`,
     `- Calibration status: ${calibration?.status ?? "unknown"}`,
+    "",
+    candidates.length > 0
+      ? "Candidate UI elements are provided. Prefer choosing one of these candidates instead of guessing coordinates:"
+      : "No candidate UI elements are provided.",
+    ...candidateLines,
+    ...(candidates.length > 0
+      ? [
+          "When using a candidate, copy its id into target.candidateId and copy its box exactly.",
+          "Do not invent new coordinates when a candidate matches the goal.",
+        ]
+      : []),
     "",
     `User goal: ${request.goal}`,
   ].join("\n");
@@ -233,6 +253,149 @@ function extractJsonObject(text) {
 
 function isObject(value) {
   return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateScreenCandidates(screen, issues) {
+  if (screen.candidates == null) {
+    return;
+  }
+
+  if (!Array.isArray(screen.candidates)) {
+    issues.push("screen.candidates must be an array when provided");
+    return;
+  }
+
+  if (screen.candidates.length > MAX_SCREEN_CANDIDATES) {
+    issues.push(`screen.candidates must contain ${MAX_SCREEN_CANDIDATES} or fewer items`);
+  }
+
+  const display = screen.display;
+
+  for (const [index, candidate] of screen.candidates.entries()) {
+    const path = `screen.candidates[${index}]`;
+
+    if (!isObject(candidate)) {
+      issues.push(`${path} must be an object`);
+      continue;
+    }
+
+    if (typeof candidate.label !== "string" || candidate.label.trim().length === 0) {
+      issues.push(`${path}.label is required`);
+    }
+
+    for (const field of ["x", "y", "width", "height"]) {
+      if (!Number.isFinite(candidate[field])) {
+        issues.push(`${path}.${field} must be a finite number`);
+      }
+    }
+
+    if (Number.isFinite(candidate.width) && candidate.width <= 0) {
+      issues.push(`${path}.width must be positive`);
+    }
+
+    if (Number.isFinite(candidate.height) && candidate.height <= 0) {
+      issues.push(`${path}.height must be positive`);
+    }
+
+    if (
+      isObject(display) &&
+      Number.isFinite(candidate.x) &&
+      Number.isFinite(candidate.y) &&
+      Number.isFinite(candidate.width) &&
+      Number.isFinite(candidate.height) &&
+      (candidate.x < 0 ||
+        candidate.y < 0 ||
+        candidate.x + candidate.width > display.width ||
+        candidate.y + candidate.height > display.height)
+    ) {
+      issues.push(`${path} must fit within display bounds`);
+    }
+  }
+}
+
+function getScreenCandidates(guidanceRequest) {
+  const candidates = guidanceRequest.screen?.candidates;
+
+  if (!Array.isArray(candidates)) {
+    return [];
+  }
+
+  return candidates
+    .filter((candidate) => isObject(candidate))
+    .slice(0, MAX_SCREEN_CANDIDATES)
+    .map((candidate, index) => ({
+      id:
+        typeof candidate.id === "string" && candidate.id.trim().length > 0
+          ? candidate.id.trim()
+          : `candidate-${index + 1}`,
+      label:
+        typeof candidate.label === "string" && candidate.label.trim().length > 0
+          ? candidate.label.trim()
+          : `Candidate ${index + 1}`,
+      role:
+        typeof candidate.role === "string" && candidate.role.trim().length > 0
+          ? candidate.role.trim()
+          : "unknown",
+      x: Number(candidate.x),
+      y: Number(candidate.y),
+      width: Number(candidate.width),
+      height: Number(candidate.height),
+    }));
+}
+
+function normalizeMatchKey(value) {
+  return typeof value === "string"
+    ? value.trim().toLowerCase().replace(/\s+/g, " ")
+    : "";
+}
+
+function findMatchingCandidate(target, guidanceRequest) {
+  if (!isObject(target)) {
+    return null;
+  }
+
+  const candidates = getScreenCandidates(guidanceRequest);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const targetCandidateId = normalizeMatchKey(target.candidateId);
+  const targetLabel = normalizeMatchKey(target.label);
+
+  return (
+    candidates.find((candidate) => normalizeMatchKey(candidate.id) === targetCandidateId) ??
+    candidates.find((candidate) => normalizeMatchKey(candidate.label) === targetLabel) ??
+    null
+  );
+}
+
+function applyCandidateAnchor(result, guidanceRequest) {
+  if (!isObject(result?.step?.target)) {
+    return result;
+  }
+
+  const candidate = findMatchingCandidate(result.step.target, guidanceRequest);
+
+  if (candidate == null) {
+    return result;
+  }
+
+  return {
+    ...result,
+    step: {
+      ...result.step,
+      target: {
+        ...result.step.target,
+        candidateId: candidate.id,
+        label: candidate.label,
+        x: candidate.x,
+        y: candidate.y,
+        width: candidate.width,
+        height: candidate.height,
+      },
+    },
+  };
 }
 
 export function validateProviderGuidanceResult(result, guidanceRequest) {
@@ -409,7 +572,8 @@ export function normalizeProviderGuidanceResponse(
     providerBody.mode === "real" && isObject(providerBody.result)
       ? providerBody.result
       : providerBody;
-  const validation = validateProviderGuidanceResult(result, guidanceRequest);
+  const anchoredResult = applyCandidateAnchor(result, guidanceRequest);
+  const validation = validateProviderGuidanceResult(anchoredResult, guidanceRequest);
 
   if (!validation.valid) {
     return {
@@ -424,7 +588,7 @@ export function normalizeProviderGuidanceResponse(
   return {
     mode: "real",
     providerName: providerBody.providerName ?? providerName,
-    result,
+    result: anchoredResult,
     validation,
     providerRawText,
   };
