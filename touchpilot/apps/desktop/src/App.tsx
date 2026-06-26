@@ -1894,6 +1894,10 @@ function DebugWindowApp() {
                 <dd>{snapshot.guidanceFixture}</dd>
               </div>
             </dl>
+            <p className="debug-muted">
+              Pinch recognizes when thumb and index distance drops below the
+              threshold, then the smoothed gesture reaches recognized.
+            </p>
           </section>
             </>
           ) : null}
