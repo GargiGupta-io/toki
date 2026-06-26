@@ -1898,6 +1898,16 @@ function DebugWindowApp() {
           >
             Sync
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveDebugTab("guidance");
+              testRealGuidanceSmoke();
+            }}
+            disabled={snapshot.isRefreshingCapture}
+          >
+            Real smoke
+          </button>
         </div>
 
         <div className="debug-window-grid">
