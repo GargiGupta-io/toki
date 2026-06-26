@@ -103,10 +103,14 @@
 
 ## Phase M5: Gesture Re-Test On Mac
 
-- Test camera enumeration on Mac.
-- Test MediaPipe hand landmarks.
-- Re-check pinch and open palm.
-- Decide whether gestures remain Phase 9-complete or need Mac-specific fixes.
+- Done: Add Mac camera enumeration QA.
+- Done: Add Mac camera permission QA.
+- Done: Add MediaPipe landmark QA with GPU-to-CPU fallback.
+- Done: Add pinch gesture QA criteria.
+- Done: Add open palm gesture QA criteria.
+- Done: Clean up gesture debug readouts.
+- Decision: gestures stay debug-first and secondary to voice until manual Mac camera tests prove reliability.
+- Follow-up: run real camera/lighting tests and tune thresholds before promoting gestures into the normal user flow.
 
 ## Phase 7: Safety And Guardrails
 
