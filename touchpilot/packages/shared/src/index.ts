@@ -82,6 +82,8 @@ export type GuidanceValidationResult = {
 
 export type GuidanceProviderMode = "mock" | "real" | "unavailable";
 
+export type GuidanceProviderRequest = GuidanceRequest;
+
 export type GuidanceProviderResponse = {
   mode: GuidanceProviderMode;
   result?: GuidanceResult;
