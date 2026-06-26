@@ -404,7 +404,7 @@ Step 10.5.11 records the current target-accuracy state honestly:
 | Response validation | Done | Bad model output is rejected before reaching the overlay. |
 | Known-screen runner | Done | A repeatable screenshot + goal test path exists. |
 | Local provider availability | Ready outside sandbox | Ollama is reachable at `127.0.0.1:11434` with `llava:latest`. |
-| First useful/wrong verdict | Pending | No real accuracy score exists yet. |
+| First useful/wrong verdict | Unavailable | The first reachable run failed strict provider response validation before returning a target. |
 
 This means Phase 10.5 has the provider pipeline, but not the product proof. A validated `GuidanceResult` only proves the response has the right shape. It does not prove the target is actually useful.
 
@@ -420,6 +420,19 @@ When the local provider is reachable, record each known-screen run with:
 | Verdict | `useful`, `wrong`, or `unavailable` |
 | Failure type | provider unavailable, invalid output, wrong target, coordinate issue, or unclear UI |
 | Next action | retry prompt, add OCR, add accessibility, or accept for smoke |
+
+Current known-screen run:
+
+| Field | Value |
+| --- | --- |
+| Screenshot | `/tmp/toki-known-screen.png` |
+| Goal | `Click the message input box at the bottom.` |
+| Scale | `2` |
+| Provider | `local-ollama` / `llava:latest` |
+| Returned target | None |
+| Verdict | `unavailable` |
+| Failure type | invalid provider output rejected as an invalid `GuidanceResult` |
+| Next action | capture raw provider output and adjust the prompt/parser before judging coordinate accuracy |
 
 Decision rule before Phase 11:
 
