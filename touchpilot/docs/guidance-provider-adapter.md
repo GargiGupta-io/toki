@@ -263,16 +263,41 @@ Later steps can wire a real provider inside the server without putting provider 
 
 The local smoke bridge is complete, but target accuracy is not complete yet. `dev-smoke-server` proves that the desktop can send a screenshot plus goal to a backend boundary; it intentionally does not choose a target.
 
+Step 10.5.7 adds explicit server-side provider mode config:
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `TOKI_GUIDANCE_PROVIDER` | `unavailable` | Chooses the server-side provider mode |
+| `TOKI_OLLAMA_ENDPOINT` | `http://127.0.0.1:11434/api/generate` | Local Ollama generate endpoint for the next adapter step |
+| `TOKI_OLLAMA_MODEL` | `llava:latest` | Local Ollama vision model name for the next adapter step |
+
+Supported provider modes:
+
+| Mode | Current behavior |
+| --- | --- |
+| `unavailable` | Safe default. Returns unavailable and no target. |
+| `local-ollama` | Configures endpoint/model but still returns unavailable until the adapter is wired. |
+
+Run the default safe server:
+
+```bash
+npm run guidance:smoke:dev
+```
+
+Run the server in local Ollama mode:
+
+```bash
+npm run guidance:smoke:ollama
+```
+
 The remaining Phase 10.5 work is:
 
-1. Add server-side provider mode config such as `TOKI_GUIDANCE_PROVIDER=local-ollama|unavailable`.
-2. Keep `unavailable` as the default so local runs never pretend accuracy exists.
-3. Add a local vision-provider adapter behind `/api/guidance/smoke`.
-4. Send the existing screenshot payload and goal to that provider.
-5. Parse the provider reply into strict `GuidanceResult` JSON.
-6. Validate the result before returning it to the desktop.
-7. Run one known-screen manual test and mark the result useful or wrong.
-8. Record whether misses are provider limits, coordinate issues, or evidence that OCR/accessibility is needed before Phase 11.
+1. Add a local vision-provider adapter behind `/api/guidance/smoke`.
+2. Send the existing screenshot payload and goal to that provider.
+3. Parse the provider reply into strict `GuidanceResult` JSON.
+4. Validate the result before returning it to the desktop.
+5. Run one known-screen manual test and mark the result useful or wrong.
+6. Record whether misses are provider limits, coordinate issues, or evidence that OCR/accessibility is needed before Phase 11.
 
 ## First Provider Choice
 
