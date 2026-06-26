@@ -187,6 +187,46 @@ Unavailable response:
 
 Important rule: the desktop adapter must preserve `unavailable` instead of converting it into a mock target or a generic invalid-result error.
 
+## Dev Smoke Server
+
+Phase 10.5 includes a tiny local server skeleton:
+
+```bash
+npm run guidance:smoke:dev
+```
+
+Default endpoint:
+
+```text
+http://127.0.0.1:8787/api/guidance/smoke
+```
+
+Health check:
+
+```text
+GET http://127.0.0.1:8787/health
+```
+
+The skeleton currently validates the request shape and returns:
+
+```json
+{
+  "mode": "unavailable",
+  "error": "dev guidance smoke server is running, but no real provider is wired yet",
+  "providerName": "dev-smoke-server"
+}
+```
+
+That is intentional. Step 10.5.3 proves the backend/proxy boundary exists without pretending target accuracy is solved.
+
+To point the desktop smoke action at it during local development:
+
+```bash
+VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev
+```
+
+Later steps can wire a real provider inside the server without putting provider keys in the desktop app.
+
 ## First Provider Choice
 
 Best first provider for smoke testing:
