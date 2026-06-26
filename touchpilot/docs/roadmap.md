@@ -126,18 +126,29 @@ Status: Closed as a quality gate.
 
 ## Phase 10.5: Provider Backend Smoke
 
-- Define backend/proxy contract for `GuidanceRequest` to `GuidanceResult`.
-- Keep paid provider keys out of the desktop app.
-- Connect Debug `Real smoke` to a configured provider endpoint.
+- Status: Closed as provider-pipeline-ready, not target-accuracy-complete.
+- Done: Define backend/proxy contract for `GuidanceRequest` to `GuidanceResult`.
+- Done: Keep paid provider keys out of the desktop app.
+- Done: Connect Debug `Real smoke` to a configured provider endpoint.
 - Done: prove the local smoke bridge reaches `dev-smoke-server` and preserves `unavailable`.
-- Next: add server-side provider mode config such as `local-ollama` or `unavailable`.
-- Next: wire a real local vision provider adapter behind the smoke endpoint.
-- Next: force provider output through strict `GuidanceResult` parsing and validation.
-- Next: run one known-screen target test.
-- Next: mark the result useful or wrong.
-- Next: record target accuracy, misses, model limits, and whether OCR/accessibility must come before safety.
+- Done: add server-side provider mode config such as `local-ollama` or `unavailable`.
+- Done: wire a local vision provider adapter behind the smoke endpoint.
+- Done: force provider output through strict `GuidanceResult` parsing and validation.
+- Done: add a repeatable known-screen runner.
+- Done: record target accuracy status, misses, model limits, and escalation rule.
 - Treat missing provider as `unavailable`, not mock fallback.
-- Do not start safety guardrails until one real provider target is tested or explicitly escalated.
+- Decision: target accuracy is unproven because the local provider endpoint was not reachable.
+- Decision: do not start safety guardrails yet; move into Phase 10.6 first.
+
+## Phase 10.6: Target Accuracy And Screen Intelligence
+
+- Goal: make real guidance point to the correct target before safety policy work.
+- Verify one reachable local provider can return a useful known-screen target.
+- If screenshot-only targeting is wrong, add OCR/accessibility evidence before Phase 11.
+- Build a candidate UI map from visible text, accessibility nodes, and bounding boxes.
+- Ask the provider to choose from structured candidates instead of raw pixels only.
+- Keep the useful/wrong verdict in Debug as the acceptance gate.
+- Done when one known-screen target is useful and the failure mode is recorded.
 
 ## Phase 7: Safety And Guardrails
 
