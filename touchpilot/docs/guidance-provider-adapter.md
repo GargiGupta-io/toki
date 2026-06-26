@@ -412,6 +412,15 @@ Decision rule before Phase 11:
 - If the provider returns valid JSON but the target is wrong, do not call it done. Record the miss and decide whether OCR/accessibility should move before Phase 11.
 - If the provider is unavailable, keep Phase 10.5 open or explicitly close it as "provider pipeline ready, accuracy unproven."
 
+Step 10.5.12 decision:
+
+- Phase 10.5 is closed as `provider pipeline ready`.
+- Phase 10.5 is not closed as `target accuracy proven`.
+- Phase 11 Safety should not start yet.
+- The next phase is Phase 10.6: Target Accuracy And Screen Intelligence.
+- Phase 10.6 should first try a reachable local provider against the known-screen runner.
+- If screenshot-only targeting misses, Phase 10.6 should add OCR/accessibility candidate evidence before returning to safety work.
+
 Current best alternative if screenshot-only misses:
 
 - Add OCR/accessibility evidence before safety work.
