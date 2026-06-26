@@ -272,6 +272,8 @@ Current status:
 - The AI adapter preserves explicit `unavailable` responses instead of hiding provider errors.
 - The local dev server skeleton runs with `npm run guidance:smoke:dev`.
 - The skeleton validates the request and returns `unavailable` until a real provider is wired.
+- The desktop smoke run script is `npm run desktop:dev:guidance-smoke`.
+- `VITE_TOKI_GUIDANCE_ENDPOINT` is the explicit local endpoint bridge between desktop and backend.
 
 ## Acceptance Rules
 
@@ -302,3 +304,4 @@ Phase 11 safety will depend on voice commands becoming real task requests. That 
 - 2026-06-26 - Added Phase 10.5 as the provider backend smoke bridge before Phase 11 Safety.
 - 2026-06-26 - Added the Phase 10.5 provider contract: request shape, response envelope, dev endpoint path, and unavailable-mode handling.
 - 2026-06-26 - Added the Phase 10.5 dev backend skeleton for `/api/guidance/smoke`; it validates requests and honestly returns unavailable until provider wiring exists.
+- 2026-06-26 - Added the Phase 10.5 provider configuration flow: typed desktop endpoint env var and a helper script for running the app against the local smoke server.
