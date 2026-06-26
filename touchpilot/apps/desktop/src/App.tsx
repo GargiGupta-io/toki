@@ -2196,6 +2196,10 @@ function DebugWindowApp() {
                 <dd>{pinchClassification.confidence.toFixed(2)}</dd>
               </div>
             </dl>
+            <p className="debug-muted">
+              Open palm recognizes when enough fingers are extended and spread,
+              then the smoothed gesture reaches recognized.
+            </p>
           </section>
 
           <section className="debug-section">
