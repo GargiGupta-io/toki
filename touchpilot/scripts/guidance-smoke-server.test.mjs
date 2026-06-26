@@ -53,6 +53,22 @@ const validRequest = {
   },
 };
 
+function withCandidates(request) {
+  const copy = JSON.parse(JSON.stringify(request));
+  copy.screen.candidates = [
+    {
+      id: "message-input",
+      label: "Message input box",
+      role: "textbox",
+      x: 520,
+      y: 790,
+      width: 420,
+      height: 44,
+    },
+  ];
+  return copy;
+}
+
 function createRequest(method, url, body = "") {
   const request = Readable.from(body ? [body] : []);
   request.method = method;
@@ -82,10 +98,23 @@ test("validateGuidanceProviderRequest accepts the smoke contract", () => {
   assert.deepEqual(validateGuidanceProviderRequest(validRequest), []);
 });
 
+test("validateGuidanceProviderRequest accepts candidate evidence", () => {
+  assert.deepEqual(validateGuidanceProviderRequest(withCandidates(validRequest)), []);
+});
+
 test("validateGuidanceProviderRequest requires screen evidence", () => {
   assert.deepEqual(validateGuidanceProviderRequest({ goal: "" }), [
     "goal is required",
     "screen is required",
+  ]);
+});
+
+test("validateGuidanceProviderRequest rejects bad candidate boxes", () => {
+  const request = withCandidates(validRequest);
+  request.screen.candidates[0].x = 1400;
+
+  assert.deepEqual(validateGuidanceProviderRequest(request), [
+    "screen.candidates[0] must fit within display bounds",
   ]);
 });
 
@@ -212,6 +241,58 @@ test("requestLocalOllamaGuidance sends screenshot and goal to Ollama", async () 
   assert.equal(response.providerName, "local-ollama");
   assert.equal(response.validation.valid, true);
   assert.equal(response.result.step.target.label, "Search");
+});
+
+test("requestLocalOllamaGuidance sends candidate evidence to Ollama", async () => {
+  const calls = [];
+  await requestLocalOllamaGuidance(
+    withCandidates(validRequest),
+    {
+      provider: "local-ollama",
+      providerName: "local-ollama",
+      endpoint: "http://localhost:11434/api/generate",
+      model: "llava:13b",
+    },
+    {
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+
+        return new Response(
+          JSON.stringify({
+            response: JSON.stringify({
+              mode: "real",
+              providerName: "local-ollama",
+              result: {
+                mode: "guide",
+                summary: "Click the message input.",
+                step: {
+                  instruction: "Click the message input.",
+                  target: {
+                    candidateId: "message-input",
+                    label: "Message input box",
+                    x: 0.36,
+                    y: 0.78,
+                    width: 0.52,
+                    height: 0.41,
+                  },
+                  confidence: 0.8,
+                  risk: "safe_navigation",
+                  requiresConfirmation: false,
+                },
+              },
+            }),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    },
+  );
+
+  const body = JSON.parse(calls[0].init.body);
+
+  assert.match(body.prompt, /Candidate UI elements are provided/);
+  assert.match(body.prompt, /id=message-input/);
+  assert.match(body.prompt, /box=520,790,420x44/);
 });
 
 test("validateProviderGuidanceResult rejects offscreen targets", () => {
@@ -344,6 +425,46 @@ test("normalizeProviderGuidanceResponse accepts direct GuidanceResult output", (
   assert.equal(response.providerName, "local-ollama");
   assert.equal(response.validation.valid, true);
   assert.equal(response.result.step.target.label, "Search");
+});
+
+test("normalizeProviderGuidanceResponse anchors matching candidate targets", () => {
+  const response = normalizeProviderGuidanceResponse(
+    {
+      mode: "real",
+      providerName: "local-ollama",
+      result: {
+        mode: "guide",
+        summary: "Click the message input.",
+        step: {
+          instruction: "Click the message input.",
+          target: {
+            candidateId: "message-input",
+            label: "Message input box",
+            x: 0.389,
+            y: 0.781,
+            width: 0.52,
+            height: 0.412,
+          },
+          confidence: 0.8,
+          risk: "safe_navigation",
+          requiresConfirmation: false,
+        },
+      },
+    },
+    withCandidates(validRequest),
+    "local-ollama",
+  );
+
+  assert.equal(response.mode, "real");
+  assert.equal(response.validation.valid, true);
+  assert.deepEqual(response.result.step.target, {
+    candidateId: "message-input",
+    label: "Message input box",
+    x: 520,
+    y: 790,
+    width: 420,
+    height: 44,
+  });
 });
 
 test("requestLocalOllamaGuidance reports malformed provider JSON", async () => {
