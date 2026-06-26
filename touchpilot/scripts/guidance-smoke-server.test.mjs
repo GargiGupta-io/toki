@@ -3,8 +3,10 @@ import { Readable } from "node:stream";
 import test from "node:test";
 import {
   handleGuidanceSmokeRequest,
+  normalizeProviderGuidanceResponse,
   requestLocalOllamaGuidance,
   resolveGuidanceProviderConfig,
+  validateProviderGuidanceResult,
   validateGuidanceProviderRequest,
 } from "./guidance-smoke-server.mjs";
 
@@ -208,7 +210,97 @@ test("requestLocalOllamaGuidance sends screenshot and goal to Ollama", async () 
   assert.match(body.prompt, /Display width: 1440/);
   assert.equal(response.mode, "real");
   assert.equal(response.providerName, "local-ollama");
+  assert.equal(response.validation.valid, true);
   assert.equal(response.result.step.target.label, "Search");
+});
+
+test("validateProviderGuidanceResult rejects offscreen targets", () => {
+  const validation = validateProviderGuidanceResult(
+    {
+      mode: "guide",
+      summary: "Click the search field.",
+      step: {
+        instruction: "Click Search.",
+        target: {
+          label: "Search",
+          x: 1430,
+          y: 120,
+          width: 240,
+          height: 44,
+        },
+        confidence: 0.66,
+        risk: "safe_navigation",
+        requiresConfirmation: false,
+      },
+    },
+    validRequest,
+  );
+
+  assert.equal(validation.valid, false);
+  assert.ok(
+    validation.issues.some((issue) => issue.path === "result.step.target"),
+  );
+});
+
+test("normalizeProviderGuidanceResponse rejects invalid provider output", () => {
+  const response = normalizeProviderGuidanceResponse(
+    {
+      mode: "real",
+      providerName: "local-ollama",
+      result: {
+        mode: "guide",
+        summary: "Click the search field.",
+        step: {
+          instruction: "Click Search.",
+          target: {
+            label: "Search",
+            x: 400,
+            y: 120,
+            width: 240,
+            height: 44,
+          },
+          confidence: 1.5,
+          risk: "safe_navigation",
+          requiresConfirmation: false,
+        },
+      },
+    },
+    validRequest,
+    "local-ollama",
+  );
+
+  assert.equal(response.mode, "unavailable");
+  assert.equal(response.providerName, "local-ollama");
+  assert.match(response.error, /invalid GuidanceResult/);
+  assert.equal(response.validation.valid, false);
+  assert.ok(
+    response.validation.issues.some(
+      (issue) => issue.path === "result.step.confidence",
+    ),
+  );
+});
+
+test("requestLocalOllamaGuidance reports malformed provider JSON", async () => {
+  const response = await requestLocalOllamaGuidance(
+    validRequest,
+    {
+      provider: "local-ollama",
+      providerName: "local-ollama",
+      endpoint: "http://localhost:11434/api/generate",
+      model: "llava:13b",
+    },
+    {
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ response: "not json" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    },
+  );
+
+  assert.equal(response.mode, "unavailable");
+  assert.equal(response.providerName, "local-ollama");
+  assert.match(response.error, /JSON object|Unexpected token/);
 });
 
 test("requestLocalOllamaGuidance reports provider errors as unavailable", async () => {
@@ -277,5 +369,6 @@ test("guidance smoke server calls configured local Ollama adapter", async () => 
   assert.equal(response.statusCode, 200);
   assert.equal(body.mode, "real");
   assert.equal(body.providerName, "local-ollama");
+  assert.equal(body.validation.valid, true);
   assert.equal(body.result.step.target.label, "Search");
 });
