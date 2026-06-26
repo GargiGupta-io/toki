@@ -248,21 +248,26 @@ html {
 }
 
 .debug-shell {
-  min-height: 100vh;
-  overflow: auto;
+  height: 100vh;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(34, 35, 38, 0.96), rgba(9, 10, 12, 0.98));
   padding: 18px;
+  box-sizing: border-box;
 }
 
 .debug-window {
   width: min(100%, 920px);
+  height: calc(100vh - 36px);
   margin: 0 auto;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
   padding: 18px;
   background: rgba(255, 255, 255, 0.05);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .debug-window-header {
