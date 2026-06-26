@@ -72,6 +72,8 @@ export type GuidanceValidationResult = {
   issues: GuidanceValidationIssue[];
 };
 
+export type GuidanceProviderMode = "mock" | "real" | "unavailable";
+
 export type GestureCommand =
   | { type: "toggle_voice"; confidence: number }
   | { type: "pause"; confidence: number }
