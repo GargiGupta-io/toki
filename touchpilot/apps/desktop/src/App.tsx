@@ -1499,6 +1499,10 @@ function DebugWindowApp() {
     openPalmClassification.confidence >= pinchClassification.confidence
       ? openPalmClassification
       : pinchClassification;
+  const cameraLabelsMayBeHidden =
+    cameraProbeStatus === "ready" &&
+    cameraDevices.length > 0 &&
+    cameraDevices.every((device) => /^Camera \d+$/.test(device.label));
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
@@ -2053,6 +2057,11 @@ function DebugWindowApp() {
             </div>
             {cameraProbeError ? (
               <p className="debug-muted">{cameraProbeError}</p>
+            ) : null}
+            {cameraLabelsMayBeHidden ? (
+              <p className="debug-muted">
+                macOS may hide camera names until camera permission is granted.
+              </p>
             ) : null}
             {cameraDevices.length > 0 ? (
               <ul className="debug-device-list">
