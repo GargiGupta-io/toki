@@ -1,6 +1,6 @@
 # Mac Migration Sanity
 
-> TouchPilot moved from a Windows development machine to a Mac, so the first job was proving the project can build, launch, and stay clean on the new platform.
+> Toki moved from a Windows development machine to a Mac, so the first job was proving the project can build, launch, and stay clean on the new platform.
 
 ---
 
@@ -9,6 +9,22 @@
 Moving the project to a Mac is like moving a workshop to a new room. The tools are the same in theory, but the outlets, shelves, and lighting are different. Before building anything new, we had to check whether the tools actually worked in the new room.
 
 The main result is good: the Mac can typecheck, build, compile Rust, and launch the Tauri desktop shell. The problems we found were migration problems, not product-code problems.
+
+## Doc Consolidation Rule
+
+This is the single learning doc for Mac-specific work.
+
+Keep these topics here instead of creating separate Mac learning docs:
+
+- Mac migration and checkout sanity
+- macOS runtime shell behavior
+- Mac screen capture and permission behavior
+- Mac microphone and transcription QA
+- Mac Clicky-style menu-bar/popup/overlay behavior
+- Mac camera and gesture re-tests
+- Mac-specific voice guidance findings
+
+General Phase 10 voice architecture belongs in `phase-10-voice-architecture-reset.md`. That doc should stay platform-neutral. If a voice finding is about the Mac runtime, local Mac setup, permissions, or Mac QA, it belongs here instead.
 
 ## What Changed
 
@@ -24,10 +40,10 @@ That means:
 
 The following checks passed on macOS:
 
-- `npm --workspace @touchpilot/shared run typecheck`
-- `npm --workspace @touchpilot/desktop run typecheck`
+- `npm --workspace @toki/shared run typecheck`
+- `npm --workspace @toki/desktop run typecheck`
 - `cargo check --workspace`
-- `npm --workspace @touchpilot/desktop run build`
+- `npm --workspace @toki/desktop run build`
 - `tauri dev` launched the desktop shell
 
 ## Problems Found
@@ -897,3 +913,4 @@ The next limitation is target quality. To make Toki actually useful, the next ph
 - 2026-06-26 - Added VG.4 provider adapter plan with backend/proxy rule, local dev exception, payload strategy, and unavailable-mode failure behavior.
 - 2026-06-26 - Added VG.5 real smoke path that reports unavailable instead of rendering mock guidance when no provider endpoint is configured.
 - 2026-06-26 - Closed Voice Guidance Quality as an honesty/readiness gate; next work should focus on provider-backed guidance, safety, or screen intelligence.
+- 2026-06-26 - Consolidated learning-doc ownership: all Mac-specific migration/runtime/QA findings stay in this doc, while Phase 10 stays platform-neutral.
