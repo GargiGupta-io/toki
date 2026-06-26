@@ -17,6 +17,7 @@
     "rust:check": "cargo check --workspace",
     "rust:fmt": "cargo fmt --all",
     "guidance:smoke:dev": "node scripts/guidance-smoke-server.mjs",
+    "guidance:smoke:ollama": "TOKI_GUIDANCE_PROVIDER=local-ollama node scripts/guidance-smoke-server.mjs",
     "test:guidance:smoke": "node --test scripts/guidance-smoke-server.test.mjs",
     "desktop:dev:guidance-smoke": "VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev": "npm --workspace @toki/desktop run tauri dev",
