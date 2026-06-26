@@ -133,6 +133,14 @@ mark useful/wrong
 
 The first result can be rough. The point is to stop pretending the mock target proves accuracy.
 
+Current status:
+
+- `@toki/ai` includes `requestRealGuidance()` for a configured provider endpoint.
+- Debug Guidance has a `Real smoke` action that captures the screen and tries the real provider path.
+- If no endpoint is configured, provider mode becomes `unavailable` and no fake target renders.
+- Local smoke tests can set `VITE_TOKI_GUIDANCE_ENDPOINT` later to call a backend/dev provider.
+- Mock guidance remains available through `Test guidance`, but it is separate from the real smoke path.
+
 ## Tradeoffs
 
 | Choice | Why |
