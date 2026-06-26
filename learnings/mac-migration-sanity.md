@@ -653,6 +653,25 @@ The acceptance target is one visible hand producing a 21-point landmark frame. I
 
 The important Mac/WebView tradeoff is that GPU acceleration may fail in a WebView even when the camera works. CPU fallback is slower, but it is the correct reliability baseline for this phase.
 
+### M5.4 Pinch Gesture Test
+
+Plain English: pinch detection is not just "did the label briefly say pinch?" It needs to become a stable command trigger.
+
+The debug surface now tells the tester how to read pinch:
+
+```text
+Pinch Classifier
+  -> raw per-frame distance check
+Smoothed Gesture
+  -> hold and cooldown logic
+Gesture Action
+  -> command actually fired
+```
+
+M5.4 documents that pinch only passes if it moves from raw candidate to smoothed `recognized` to a single action. This matters because noisy camera frames can flicker into pinch for one frame, which should not be accepted as a reliable activation gesture.
+
+The product decision is still conservative: if pinch is noisy on Mac, voice remains the primary activation path.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -679,3 +698,4 @@ The important Mac/WebView tradeoff is that GPU acceleration may fail in a WebVie
 - 2026-06-26 - Started Phase M5 with Mac camera enumeration QA and added a debug hint for generic camera labels before permission is granted.
 - 2026-06-26 - Added M5.2 Mac camera permission QA and clearer macOS Camera privacy guidance in the debug preview path.
 - 2026-06-26 - Added M5.3 MediaPipe landmark QA, GPU-to-CPU fallback, and clearer debug hints for model loading versus no-hand states.
+- 2026-06-26 - Added M5.4 pinch QA and clarified the difference between raw pinch detection, smoothed recognition, and the final gesture action.
