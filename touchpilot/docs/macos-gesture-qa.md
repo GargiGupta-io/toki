@@ -266,3 +266,42 @@ For M5.5, the important result is a stable open hand becoming one pause action. 
 ## Current M5.5 Decision
 
 Open palm remains debug-first until false positives are tested in normal laptop use. If it pauses accidentally, it should not become a primary user gesture yet.
+
+## Step M5.6 Gesture Debug Cleanup
+
+Gesture debug should show the few signals needed to make a decision, not every internal detail as separate panels.
+
+### What The Gesture Tab Should Show
+
+- Camera Devices
+- Camera Preview
+- Hand Landmarks
+- Gesture Recognition
+  - Pinch
+  - Open Palm
+  - Smoothed
+  - Action
+- Gesture Settings
+
+### Pass
+
+Debug cleanup passes when:
+
+- raw classifier values are still visible
+- smoothed gesture state is still visible
+- final action is still visible
+- pinch and open palm are grouped together
+- the tab is easier to scan during manual gesture testing
+
+### Fail
+
+Debug cleanup fails when:
+
+- tester cannot see whether pinch/open palm was detected
+- tester cannot see whether smoothing recognized the gesture
+- tester cannot see whether an action fired
+- camera preview or permission status is hidden
+
+## Current M5.6 Decision
+
+Keep gesture internals in Debug, not Settings. The normal product surface should stay voice-first and cursor-first while gesture reliability is being evaluated.
