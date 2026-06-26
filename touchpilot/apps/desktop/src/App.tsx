@@ -632,6 +632,17 @@ function getScreenshotMetadata(screenshot: ScreenshotCapture): ScreenshotMetadat
   };
 }
 
+function getScreenshotPayload(screenshot: ScreenshotCapture) {
+  return {
+    encoding: "base64" as const,
+    format: screenshot.format,
+    byteLength: screenshot.byteLength,
+    imageWidth: screenshot.imageWidth,
+    imageHeight: screenshot.imageHeight,
+    imageBase64: screenshot.imageBase64,
+  };
+}
+
 function createDefaultGestureRuntimeState(): GestureRuntimeState {
   return {
     enabled: false,
@@ -821,6 +832,7 @@ function OverlayWindowApp() {
           display: metadata.display,
           capture: metadata,
           screenshot: getScreenshotMetadata(screenshot),
+          screenshotPayload: getScreenshotPayload(screenshot),
           calibration: getCalibration(metadata, viewport, getScreenshotMetadata(screenshot)),
         },
         previousStep: guidanceResult?.step ?? null,
@@ -1519,6 +1531,16 @@ function DebugWindowApp() {
     snapshot.guidanceRequest?.goal ??
     snapshot.voiceRuntime.transcript?.text ??
     "No goal submitted";
+  const guidanceScreen = snapshot.guidanceRequest?.screen ?? null;
+  const guidancePayload = guidanceScreen?.screenshotPayload ?? null;
+  const guidancePayloadSize = guidancePayload
+    ? `${(guidancePayload.byteLength / 1024 / 1024).toFixed(2)} MB`
+    : "Missing";
+  const guidancePayloadPlan = guidancePayload
+    ? guidancePayload.byteLength > 2_000_000
+      ? "Downscale before provider"
+      : "Ready for smoke test"
+    : "Capture required";
   const debugVoiceStatusDetails = getVoiceStatusDetails(snapshot.voiceRuntime);
 
   function sendOverlayCommand(command: OverlayCommand) {
@@ -2516,6 +2538,44 @@ function DebugWindowApp() {
                 understanding.
               </p>
             ) : null}
+          </section>
+
+          <section className="debug-section debug-section-wide">
+            <h2>Payload Gate</h2>
+            <dl>
+              <div>
+                <dt>Goal</dt>
+                <dd>{snapshot.guidanceRequest?.goal ? "Ready" : "Missing"}</dd>
+              </div>
+              <div>
+                <dt>Display</dt>
+                <dd>
+                  {guidanceScreen
+                    ? `${guidanceScreen.display.width} x ${guidanceScreen.display.height}`
+                    : "Missing"}
+                </dd>
+              </div>
+              <div>
+                <dt>Screenshot</dt>
+                <dd>
+                  {guidanceScreen?.screenshot
+                    ? `${guidanceScreen.screenshot.imageWidth} x ${guidanceScreen.screenshot.imageHeight}`
+                    : "Missing"}
+                </dd>
+              </div>
+              <div>
+                <dt>Payload</dt>
+                <dd>{guidancePayload ? `${guidancePayload.format} ${guidancePayloadSize}` : "Missing"}</dd>
+              </div>
+              <div>
+                <dt>Calibration</dt>
+                <dd>{guidanceScreen?.calibration?.status ?? "Missing"}</dd>
+              </div>
+              <div>
+                <dt>Provider Plan</dt>
+                <dd>{guidancePayloadPlan}</dd>
+              </div>
+            </dl>
           </section>
 
             </>
