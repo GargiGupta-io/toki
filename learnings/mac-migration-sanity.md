@@ -785,6 +785,22 @@ This does not make the guidance smarter yet. It gives us a scoreboard for manual
 
 The important tradeoff is that verdicts are currently local UI state only. That keeps the step small and avoids inventing a feedback database too early. Later, when real guidance exists, these verdicts can become saved evaluation examples.
 
+### VG.3 Screenshot Payload Gate
+
+Plain English: Toki now checks whether it has the screen evidence a real guidance model would need.
+
+The guidance request can now carry:
+
+- the user's goal
+- display metadata
+- screenshot dimensions
+- screenshot payload as base64
+- calibration state
+
+The debug Guidance tab shows these as a Payload Gate. This matters because voice alone is not enough. A real model needs both the command and the screen. Without the screenshot payload, the model can only guess.
+
+The current tradeoff is that the payload is still raw base64. That is acceptable for a first smoke test, but large screenshots can become expensive or slow. The debug gate now flags payloads over 2 MB with a "Downscale before provider" plan so we do not accidentally build the final provider path around oversized images.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -818,3 +834,4 @@ The important tradeoff is that verdicts are currently local UI state only. That 
 - 2026-06-26 - Added the Voice Guidance Quality phase as the next product step because voice works but target guidance is still mock-based.
 - 2026-06-26 - Added VG.1 provider-mode visibility so mock guidance is clearly labeled and cannot be mistaken for real screen understanding.
 - 2026-06-26 - Added VG.2 debug result review so manual voice guidance tests can mark a target useful or wrong.
+- 2026-06-26 - Added VG.3 screenshot payload gate so real guidance readiness is visible before provider integration.
