@@ -56,6 +56,13 @@ unavailable
 
 Debug should show this mode so testers never confuse mock guidance with real screen understanding.
 
+Current status:
+
+- `GuidanceProviderMode` is a shared type.
+- Debug Guidance shows the current provider mode.
+- Current provider mode is explicitly `mock`.
+- Debug warns that mock guidance proves plumbing only and is not real screen understanding.
+
 ### VG.2 Debug Result Review
 
 Add a compact result review area in Debug:
