@@ -672,6 +672,25 @@ M5.4 documents that pinch only passes if it moves from raw candidate to smoothed
 
 The product decision is still conservative: if pinch is noisy on Mac, voice remains the primary activation path.
 
+### M5.5 Open Palm Gesture Test
+
+Plain English: open palm should pause the assistant, but only when it is a stable open-hand gesture, not because a camera frame briefly looked like one.
+
+M5.5 mirrors the pinch QA structure:
+
+```text
+Open Palm Classifier
+  -> raw finger and spread check
+Smoothed Gesture
+  -> hold and cooldown logic
+Gesture Action
+  -> pause command actually fired
+```
+
+The pass condition is strict: at least four fingers extended, spread above threshold, smoothed gesture reaches `recognized`, and one `pause_assistant` action fires.
+
+The conservative product decision is that open palm should remain debug-first if it creates accidental pauses in normal laptop use.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -699,3 +718,4 @@ The product decision is still conservative: if pinch is noisy on Mac, voice rema
 - 2026-06-26 - Added M5.2 Mac camera permission QA and clearer macOS Camera privacy guidance in the debug preview path.
 - 2026-06-26 - Added M5.3 MediaPipe landmark QA, GPU-to-CPU fallback, and clearer debug hints for model loading versus no-hand states.
 - 2026-06-26 - Added M5.4 pinch QA and clarified the difference between raw pinch detection, smoothed recognition, and the final gesture action.
+- 2026-06-26 - Added M5.5 open palm QA and clarified the path from raw open-hand detection to one pause action.
