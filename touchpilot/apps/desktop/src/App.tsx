@@ -2102,8 +2102,8 @@ function DebugWindowApp() {
             </div>
             {cameraPreviewStatus === "permission_denied" ? (
               <p className="debug-muted">
-                Camera permission is denied. Enable camera access in system privacy
-                settings before using gestures.
+                Camera permission is denied. On macOS, enable Camera access for
+                Toki or the terminal app in System Settings, then quit and relaunch.
               </p>
             ) : cameraPreviewStatus === "no_camera" ? (
               <p className="debug-muted">
