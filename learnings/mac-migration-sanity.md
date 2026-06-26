@@ -818,6 +818,32 @@ VG.4 also records how real guidance should fail. If the provider is unavailable,
 
 The first real provider should be a vision-language model because it can take the screenshot plus voice goal and return a structured target fastest. Local-only screen intelligence can come later if cost, privacy, or offline use becomes the priority.
 
+### VG.5 First Real Guidance Smoke Path
+
+Plain English: Toki now has a real-provider smoke-test path, but it refuses to fake a result when no real provider is connected.
+
+The new path works like this:
+
+```text
+Debug "Real smoke"
+  -> capture screen
+  -> build guidance request with screenshot payload
+  -> ask configured provider endpoint
+  -> validate result
+  -> render target only if provider returns valid guidance
+```
+
+If no endpoint is configured, Toki sets provider mode to `unavailable` and shows the provider error in Debug. This is the correct behavior. It is better to show no target than to show a fake mock target and make the tester think screen understanding worked.
+
+The local development hook is `VITE_TOKI_GUIDANCE_ENDPOINT`. Later, this can point at a local backend or dev proxy that accepts the current `GuidanceRequest` and returns a validated `GuidanceResult`.
+
+The important product decision is that mock and real are now separate buttons:
+
+- `Test guidance` proves UI plumbing with mock fixtures.
+- `Real smoke` proves provider readiness and must not silently fall back to mock.
+
+This keeps our tests honest.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -853,3 +879,4 @@ The first real provider should be a vision-language model because it can take th
 - 2026-06-26 - Added VG.2 debug result review so manual voice guidance tests can mark a target useful or wrong.
 - 2026-06-26 - Added VG.3 screenshot payload gate so real guidance readiness is visible before provider integration.
 - 2026-06-26 - Added VG.4 provider adapter plan with backend/proxy rule, local dev exception, payload strategy, and unavailable-mode failure behavior.
+- 2026-06-26 - Added VG.5 real smoke path that reports unavailable instead of rendering mock guidance when no provider endpoint is configured.
