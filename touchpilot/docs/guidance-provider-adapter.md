@@ -313,7 +313,7 @@ Step 10.5.9 adds strict provider response validation:
 
 The remaining Phase 10.5 work is:
 
-1. Run one known-screen manual test and mark the result useful or wrong.
+1. Run the known-screen smoke runner against an active local provider and mark the result useful or wrong.
 2. Record whether misses are provider limits, coordinate issues, or evidence that OCR/accessibility is needed before Phase 11.
 
 ## First Provider Choice
@@ -325,6 +325,58 @@ Best first provider for target-accuracy smoke testing:
 - output: JSON matching `GuidanceResult`
 
 Reason: it avoids paid API quota and keeps provider keys out of the desktop app while still proving whether screenshot-to-target guidance can work. A cloud provider can come later if local model accuracy is not enough.
+
+## Known-Screen Smoke Runner
+
+Step 10.5.10 adds a repeatable manual runner:
+
+```bash
+npm run guidance:known-screen
+```
+
+Required environment:
+
+| Env var | Meaning |
+| --- | --- |
+| `TOKI_KNOWN_SCREEN_IMAGE` | PNG/JPEG screenshot for the known test screen |
+| `TOKI_KNOWN_SCREEN_GOAL` | User goal, for example `Click the Manage button` |
+| `TOKI_KNOWN_SCREEN_SCALE` | Display scale factor, usually `2` on Retina Macs |
+| `TOKI_GUIDANCE_ENDPOINT` | Optional provider endpoint, defaults to `http://127.0.0.1:8787/api/guidance/smoke` |
+
+Example:
+
+```bash
+# Terminal A
+npm run guidance:smoke:ollama
+
+# Terminal B
+TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
+TOKI_KNOWN_SCREEN_GOAL="Click the Manage button" \
+TOKI_KNOWN_SCREEN_SCALE=2 \
+npm run guidance:known-screen
+```
+
+The runner builds a `GuidanceRequest` from the screenshot, posts it to the smoke endpoint, and prints:
+
+- provider mode
+- provider name
+- summary
+- instruction
+- confidence
+- risk
+- target label and box
+
+Manual acceptance:
+
+- `useful`: the target box clearly points to the intended control
+- `wrong`: the target box points to the wrong thing or is too vague
+- `unavailable`: the provider/server/model did not return a real validated result
+
+Current local note:
+
+- `ollama` was not visible in the shell path
+- `http://127.0.0.1:11434/api/tags` was not reachable
+- therefore the repeatable runner is added, but the real known-screen verdict is still pending until a local provider is running
 
 ## Failure Behavior
 
