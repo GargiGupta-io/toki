@@ -6,6 +6,8 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_GUIDANCE_PROVIDER = "unavailable";
 const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate";
 const DEFAULT_OLLAMA_MODEL = "llava:latest";
+const MAX_PROVIDER_RAW_TEXT_CHARS = 2000;
+const MIN_TARGET_SIZE_CSS_PX = 4;
 const SUPPORTED_GUIDANCE_PROVIDERS = new Set([
   "unavailable",
   "local-ollama",
@@ -148,6 +150,7 @@ export function resolveGuidanceProviderConfig(env = process.env) {
 
 function createOllamaPrompt(request) {
   const display = request.screen.display;
+  const screenshot = request.screen.screenshotPayload;
   const calibration = request.screen.calibration;
 
   return [
@@ -183,10 +186,32 @@ function createOllamaPrompt(request) {
     `- Display width: ${display.width}`,
     `- Display height: ${display.height}`,
     `- Display scale factor: ${display.scaleFactor}`,
+    `- Screenshot image width: ${screenshot.imageWidth}`,
+    `- Screenshot image height: ${screenshot.imageHeight}`,
+    "- Never return normalized 0..1 coordinates.",
+    "- Bad: x=0.36, y=0.78, width=0.52, height=0.41.",
+    "- Good: x=540, y=760, width=420, height=44.",
+    `- If you locate a box in screenshot pixels, divide x, y, width, and height by the display scale factor before returning it.`,
+    `- The target box must stay fully inside 0..${display.width} x 0..${display.height}.`,
+    `- Use a small bounding box around the clickable element, not the whole card or window.`,
     `- Calibration status: ${calibration?.status ?? "unknown"}`,
     "",
     `User goal: ${request.goal}`,
   ].join("\n");
+}
+
+function truncateProviderRawText(text) {
+  if (typeof text !== "string") {
+    return "";
+  }
+
+  const trimmed = text.trim();
+
+  if (trimmed.length <= MAX_PROVIDER_RAW_TEXT_CHARS) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, MAX_PROVIDER_RAW_TEXT_CHARS)}...[truncated]`;
 }
 
 function extractJsonObject(text) {
@@ -313,12 +338,22 @@ function validateTargetGeometry(target, guidanceRequest, issues) {
       path: "result.step.target.width",
       message: "Target width must be positive.",
     });
+  } else if (Number.isFinite(target.width) && target.width < MIN_TARGET_SIZE_CSS_PX) {
+    issues.push({
+      path: "result.step.target.width",
+      message: "Target width looks normalized; return CSS pixels.",
+    });
   }
 
   if (Number.isFinite(target.height) && target.height <= 0) {
     issues.push({
       path: "result.step.target.height",
       message: "Target height must be positive.",
+    });
+  } else if (Number.isFinite(target.height) && target.height < MIN_TARGET_SIZE_CSS_PX) {
+    issues.push({
+      path: "result.step.target.height",
+      message: "Target height looks normalized; return CSS pixels.",
     });
   }
 
@@ -345,12 +380,16 @@ export function normalizeProviderGuidanceResponse(
   providerBody,
   guidanceRequest,
   providerName,
+  options = {},
 ) {
+  const providerRawText = truncateProviderRawText(options.providerRawText);
+
   if (!isObject(providerBody)) {
     return {
       mode: "unavailable",
       error: "provider returned a non-object response",
       providerName,
+      providerRawText,
       validation: {
         valid: false,
         issues: [{ path: "response", message: "Provider response must be an object." }],
@@ -377,6 +416,7 @@ export function normalizeProviderGuidanceResponse(
       mode: "unavailable",
       error: "provider returned an invalid GuidanceResult",
       providerName: providerBody.providerName ?? providerName,
+      providerRawText,
       validation,
     };
   }
@@ -386,6 +426,7 @@ export function normalizeProviderGuidanceResponse(
     providerName: providerBody.providerName ?? providerName,
     result,
     validation,
+    providerRawText,
   };
 }
 
@@ -395,6 +436,7 @@ export async function requestLocalOllamaGuidance(
   options = {},
 ) {
   const fetcher = options.fetchImpl ?? fetch;
+  let responseText = "";
 
   try {
     const ollamaRequest = {
@@ -422,7 +464,7 @@ export async function requestLocalOllamaGuidance(
     }
 
     const body = await response.json();
-    const responseText =
+    responseText =
       typeof body.response === "string" ? body.response : JSON.stringify(body);
     const providerBody = extractJsonObject(responseText);
 
@@ -430,12 +472,14 @@ export async function requestLocalOllamaGuidance(
       providerBody,
       guidanceRequest,
       providerConfig.providerName,
+      { providerRawText: responseText },
     );
   } catch (error) {
     return {
       mode: "unavailable",
       error: error instanceof Error ? error.message : String(error),
       providerName: providerConfig.providerName,
+      providerRawText: truncateProviderRawText(responseText),
     };
   }
 }
