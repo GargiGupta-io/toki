@@ -264,6 +264,13 @@ and receive:
 
 Done when Toki can run one real provider request from a screenshot plus goal, validate the returned target, and clearly show useful/wrong in Debug.
 
+Current status:
+
+- `GuidanceProviderRequest` is the existing `GuidanceRequest`.
+- `GuidanceProviderResponse` carries `real`, `mock`, or `unavailable` provider mode.
+- The dev endpoint contract is `POST /api/guidance/smoke`.
+- The AI adapter preserves explicit `unavailable` responses instead of hiding provider errors.
+
 ## Acceptance Rules
 
 Phase 10 should not pass unless:
@@ -291,3 +298,4 @@ Phase 11 safety will depend on voice commands becoming real task requests. That 
 - 2026-06-17 - Step 10.10E connected the native WAV payload to cloud transcription through a Rust-side Tauri command. The API key stays out of the webview by reading `OPENAI_API_KEY` in Rust, the command sends multipart audio to OpenAI's transcription endpoint, and `voiceTranscription.ts` converts successful responses into final `VoiceTranscript` objects that already route through the existing guidance loop. This keeps the product path native capture plus cloud transcript, while Web Speech remains debug-only.
 - 2026-06-26 - Updated after the Toki rename and provider work: Phase 10 now describes a general transcription provider adapter instead of a cloud-only path, while platform-specific setup stays out of this doc.
 - 2026-06-26 - Added Phase 10.5 as the provider backend smoke bridge before Phase 11 Safety.
+- 2026-06-26 - Added the Phase 10.5 provider contract: request shape, response envelope, dev endpoint path, and unavailable-mode handling.
