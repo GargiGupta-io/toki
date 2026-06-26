@@ -53,6 +53,14 @@ export type GuidanceScreenContext = {
   display: DisplayContext;
   capture?: CaptureMetadata;
   screenshot?: ScreenshotMetadata;
+  screenshotPayload?: {
+    encoding: "base64";
+    format: "png" | "jpeg";
+    byteLength: number;
+    imageWidth: number;
+    imageHeight: number;
+    imageBase64: string;
+  };
   calibration?: CoordinateCalibration;
 };
 
