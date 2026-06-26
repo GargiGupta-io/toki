@@ -112,6 +112,16 @@
 - Decision: gestures stay debug-first and secondary to voice until manual Mac camera tests prove reliability.
 - Follow-up: run real camera/lighting tests and tune thresholds before promoting gestures into the normal user flow.
 
+## Phase VG: Voice Guidance Quality
+
+- Define real guidance acceptance beyond mock target plumbing.
+- Show guidance provider mode clearly: mock, real, unavailable.
+- Add debug result review for transcript, target, confidence, validation, and tester verdict.
+- Confirm screenshot payload and calibration data are ready for real provider calls.
+- Add a real provider adapter plan behind the backend/proxy rule.
+- Run the first controlled real-guidance smoke test.
+- Keep mock guidance as a QA fixture, not as product acceptance.
+
 ## Phase 7: Safety And Guardrails
 
 - Risk classifier.
