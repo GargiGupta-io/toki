@@ -298,14 +298,23 @@ Step 10.5.8 wires the local Ollama adapter:
 - the request uses `format: "json"` and `stream: false`
 - provider HTTP failures return `unavailable`
 - parse failures return `unavailable`
-- successful provider JSON is passed back to the desktop with `providerName: "local-ollama"`
+- successful provider JSON is normalized before it is returned to the desktop
+
+Step 10.5.9 adds strict provider response validation:
+
+- raw provider replies must contain JSON
+- `real` provider replies must contain a `GuidanceResult`
+- guide results must include `summary`, `step.instruction`, and a target box
+- confidence must be a number from `0` to `1`
+- risk must be one of the known safety classes
+- risky actions must set `requiresConfirmation: true`
+- target boxes must be finite, positive, and inside the display bounds
+- invalid provider output returns `unavailable` with validation issues instead of rendering a target
 
 The remaining Phase 10.5 work is:
 
-1. Parse the provider reply into strict `GuidanceResult` JSON.
-2. Validate the result before returning it to the desktop.
-3. Run one known-screen manual test and mark the result useful or wrong.
-4. Record whether misses are provider limits, coordinate issues, or evidence that OCR/accessibility is needed before Phase 11.
+1. Run one known-screen manual test and mark the result useful or wrong.
+2. Record whether misses are provider limits, coordinate issues, or evidence that OCR/accessibility is needed before Phase 11.
 
 ## First Provider Choice
 
