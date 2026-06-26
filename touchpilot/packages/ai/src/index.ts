@@ -1,4 +1,5 @@
 import type {
+  GuidanceProviderRequest,
   GuidanceRequest,
   GuidanceProviderResponse,
   GuidanceResult,
@@ -105,7 +106,7 @@ export type RealGuidanceProviderOptions = {
 };
 
 export async function requestRealGuidance(
-  request: GuidanceRequest,
+  request: GuidanceProviderRequest,
   options: RealGuidanceProviderOptions = {},
 ): Promise<GuidanceProviderResponse> {
   const endpoint = options.endpoint?.trim();
@@ -138,11 +139,36 @@ export async function requestRealGuidance(
       };
     }
 
-    const body = (await response.json()) as GuidanceResult | { result?: GuidanceResult };
-    const result =
-      body != null && typeof body === "object" && "result" in body
-        ? body.result
-        : (body as GuidanceResult);
+    const body = (await response.json()) as GuidanceProviderResponse | GuidanceResult;
+
+    if (isProviderResponse(body)) {
+      if (body.mode === "unavailable") {
+        return {
+          ...body,
+          providerName: body.providerName ?? endpoint,
+        };
+      }
+
+      const validation = validateGuidanceResult(body.result);
+
+      if (!validation.valid || body.result == null) {
+        return {
+          mode: "unavailable",
+          error: body.error ?? "Guidance provider returned an invalid result.",
+          validation,
+          providerName: body.providerName ?? endpoint,
+        };
+      }
+
+      return {
+        ...body,
+        mode: "real",
+        validation,
+        providerName: body.providerName ?? endpoint,
+      };
+    }
+
+    const result = body as GuidanceResult;
     const validation = validateGuidanceResult(result);
 
     if (!validation.valid || result == null) {
@@ -167,6 +193,17 @@ export async function requestRealGuidance(
       providerName: endpoint,
     };
   }
+}
+
+function isProviderResponse(value: unknown): value is GuidanceProviderResponse {
+  return (
+    value != null &&
+    typeof value === "object" &&
+    "mode" in value &&
+    ["mock", "real", "unavailable"].includes(
+      String((value as GuidanceProviderResponse).mode),
+    )
+  );
 }
 
 export function validateGuidanceResult(
