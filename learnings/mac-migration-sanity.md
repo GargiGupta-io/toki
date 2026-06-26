@@ -614,6 +614,19 @@ Phase M5 should focus on:
 - pinch and open palm gesture checks
 - deciding whether gesture work remains complete or needs Mac-specific fixes
 
+## Phase M5 Gesture Re-Test Start
+
+Plain English: M5 starts by checking whether Toki can see the Mac camera before trying to recognize hands or gestures.
+
+M5.1 adds a focused camera-enumeration QA path:
+
+- Debug remains the place for camera device inspection.
+- Settings stays a simple user panel, not a camera configuration window.
+- The new Mac gesture QA doc explains how to run the Camera Devices refresh check.
+- The debug UI now explains a common macOS behavior: camera names may appear as generic `Camera 1` until camera permission is granted.
+
+That generic label is not a failure by itself. M5.1 only proves that a video input can be listed. M5.2 is where permission and camera activation should be tested.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -637,3 +650,4 @@ Phase M5 should focus on:
 - 2026-06-26 - Documented the macOS global push-to-talk contract: Control+Option hold is the target, Space/settings remains the fallback, and native event monitoring plus Accessibility permission UX is the preferred final path.
 - 2026-06-26 - Tightened macOS runtime QA for Clicky-style overlay acceptance and documented that the probe must be run after Toki is already running.
 - 2026-06-26 - Closed Phase M4 as a Clicky-reference alignment phase and moved global shortcut implementation, provider backend, icon artwork, and multi-monitor polish into follow-up phases.
+- 2026-06-26 - Started Phase M5 with Mac camera enumeration QA and added a debug hint for generic camera labels before permission is granted.
