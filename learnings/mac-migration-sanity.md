@@ -691,6 +691,21 @@ The pass condition is strict: at least four fingers extended, spread above thres
 
 The conservative product decision is that open palm should remain debug-first if it creates accidental pauses in normal laptop use.
 
+### M5.6 Gesture Debug Cleanup
+
+Plain English: the debug window should help test gestures quickly, not force the tester to scan too many separate boxes.
+
+M5.6 groups the gesture readouts into one recognition area:
+
+- Pinch
+- Open Palm
+- Smoothed
+- Action
+
+This keeps the necessary signals visible while reducing the feeling that gesture QA is scattered across many unrelated panels. Camera devices, camera preview, hand landmarks, and gesture settings remain separate because those are different failure layers.
+
+The main correction in this cleanup was also practical: the pinch section had the wrong hint text from the open-palm section. Grouping the cards made that easier to catch and fix.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -719,3 +734,4 @@ The conservative product decision is that open palm should remain debug-first if
 - 2026-06-26 - Added M5.3 MediaPipe landmark QA, GPU-to-CPU fallback, and clearer debug hints for model loading versus no-hand states.
 - 2026-06-26 - Added M5.4 pinch QA and clarified the difference between raw pinch detection, smoothed recognition, and the final gesture action.
 - 2026-06-26 - Added M5.5 open palm QA and clarified the path from raw open-hand detection to one pause action.
+- 2026-06-26 - Cleaned up the gesture debug tab by grouping pinch, open palm, smoothed state, and action into one recognition area.
