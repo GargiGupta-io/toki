@@ -3,6 +3,13 @@ import { pathToFileURL } from "node:url";
 
 const DEFAULT_PORT = 8787;
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
+const DEFAULT_GUIDANCE_PROVIDER = "unavailable";
+const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate";
+const DEFAULT_OLLAMA_MODEL = "llava:latest";
+const SUPPORTED_GUIDANCE_PROVIDERS = new Set([
+  "unavailable",
+  "local-ollama",
+]);
 
 function jsonHeaders(extra = {}) {
   return {
@@ -85,7 +92,42 @@ export function validateGuidanceProviderRequest(body) {
   return issues;
 }
 
-export async function handleGuidanceSmokeRequest(request, response) {
+export function resolveGuidanceProviderConfig(env = process.env) {
+  const rawProvider = String(
+    env.TOKI_GUIDANCE_PROVIDER ?? DEFAULT_GUIDANCE_PROVIDER,
+  )
+    .trim()
+    .toLowerCase();
+  const provider = rawProvider.length > 0 ? rawProvider : DEFAULT_GUIDANCE_PROVIDER;
+
+  if (!SUPPORTED_GUIDANCE_PROVIDERS.has(provider)) {
+    return {
+      provider: "unavailable",
+      providerName: "dev-smoke-server",
+      error: `unsupported TOKI_GUIDANCE_PROVIDER "${provider}"`,
+    };
+  }
+
+  if (provider === "local-ollama") {
+    return {
+      provider,
+      providerName: "local-ollama",
+      endpoint: String(env.TOKI_OLLAMA_ENDPOINT ?? DEFAULT_OLLAMA_ENDPOINT).trim(),
+      model: String(env.TOKI_OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL).trim(),
+    };
+  }
+
+  return {
+    provider: "unavailable",
+    providerName: "dev-smoke-server",
+    error:
+      "dev guidance smoke server is running, but no real provider is wired yet",
+  };
+}
+
+export async function handleGuidanceSmokeRequest(request, response, options = {}) {
+  const providerConfig = resolveGuidanceProviderConfig(options.env);
+
   if (request.method === "OPTIONS") {
     response.writeHead(204, jsonHeaders());
     response.end();
@@ -93,7 +135,12 @@ export async function handleGuidanceSmokeRequest(request, response) {
   }
 
   if (request.method === "GET" && request.url === "/health") {
-    sendJson(response, 200, { ok: true, service: "toki-guidance-smoke" });
+    sendJson(response, 200, {
+      ok: true,
+      service: "toki-guidance-smoke",
+      provider: providerConfig.provider,
+      providerName: providerConfig.providerName,
+    });
     return;
   }
 
@@ -130,11 +177,24 @@ export async function handleGuidanceSmokeRequest(request, response) {
     return;
   }
 
+  if (providerConfig.provider === "local-ollama") {
+    sendJson(response, 200, {
+      mode: "unavailable",
+      error:
+        "TOKI_GUIDANCE_PROVIDER=local-ollama is configured, but the local Ollama adapter is not wired yet",
+      providerName: providerConfig.providerName,
+      providerConfig: {
+        endpoint: providerConfig.endpoint,
+        model: providerConfig.model,
+      },
+    });
+    return;
+  }
+
   sendJson(response, 200, {
     mode: "unavailable",
-    error:
-      "dev guidance smoke server is running, but no real provider is wired yet",
-    providerName: "dev-smoke-server",
+    error: providerConfig.error,
+    providerName: providerConfig.providerName,
   });
 }
 
