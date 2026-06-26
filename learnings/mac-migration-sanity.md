@@ -706,6 +706,32 @@ This keeps the necessary signals visible while reducing the feeling that gesture
 
 The main correction in this cleanup was also practical: the pinch section had the wrong hint text from the open-palm section. Grouping the cards made that easier to catch and fix.
 
+### M5.7 Gesture Readiness Decision
+
+Plain English: the Mac gesture pipeline is now ready to test properly, but gestures should not become the main user interface yet.
+
+M5 produced the right QA structure:
+
+- camera enumeration
+- camera permission
+- camera preview
+- MediaPipe hand landmarks
+- pinch raw/smoothed/action checks
+- open palm raw/smoothed/action checks
+- grouped gesture debug readouts
+
+The decision is conservative:
+
+```text
+voice remains primary
+gestures stay debug-first
+promote gestures only after manual Mac reliability testing
+```
+
+This is the right call because camera gestures can easily create false positives under bad lighting, awkward laptop camera angles, or partial hands. A voice-first app can still work while gesture reliability is being tuned.
+
+M5 is closed as a QA-readiness phase. The next real gesture work should be hands-on threshold tuning after manual tests, not more architecture.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -735,3 +761,4 @@ The main correction in this cleanup was also practical: the pinch section had th
 - 2026-06-26 - Added M5.4 pinch QA and clarified the difference between raw pinch detection, smoothed recognition, and the final gesture action.
 - 2026-06-26 - Added M5.5 open palm QA and clarified the path from raw open-hand detection to one pause action.
 - 2026-06-26 - Cleaned up the gesture debug tab by grouping pinch, open palm, smoothed state, and action into one recognition area.
+- 2026-06-26 - Closed Phase M5 with the decision that gestures remain debug-first and secondary to voice until manual Mac camera testing proves reliability.
