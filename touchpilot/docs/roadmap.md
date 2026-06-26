@@ -88,15 +88,18 @@
 
 ## Phase M4: Clicky Reference Alignment On Mac
 
-- Make Toki menu-bar-first on Mac.
-- Improve the menu bar icon so it is visible and cursor-like.
-- Auto-open settings on first/dev launch so the app is discoverable.
-- Refine settings into a compact Clicky-style panel.
-- Keep debug as a separate internal window.
-- Validate the transparent click-through cursor overlay against Clicky.
-- Add or plan native global push-to-talk.
-- Keep mic capture, transcription, command routing, and guidance activation separated.
-- Document the backend/proxy rule for paid API keys.
+- Done: Make Toki menu-bar-first on Mac.
+- Done: Improve the menu bar icon with macOS template-icon behavior.
+- Done: Auto-open settings on Mac launch so the app is discoverable.
+- Done: Position settings near the menu bar instead of centered like a normal app window.
+- Done: Keep debug as a separate internal window.
+- Done: Tighten transparent overlay QA against the Clicky contract.
+- Done: Document the native global push-to-talk target.
+- Done: Keep mic capture, transcription, command routing, and guidance activation separated.
+- Done: Document the backend/proxy rule for paid API keys.
+- Follow-up: Add actual native global Control+Option push-to-talk after Accessibility permission UX is ready.
+- Follow-up: Replace the current app icon artwork with a more cursor-like template icon if menu-bar readability is still weak.
+- Follow-up: Validate multi-monitor overlay behavior on real Mac displays.
 
 ## Phase M5: Gesture Re-Test On Mac
 
