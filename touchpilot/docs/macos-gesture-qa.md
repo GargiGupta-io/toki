@@ -305,3 +305,55 @@ Debug cleanup fails when:
 ## Current M5.6 Decision
 
 Keep gesture internals in Debug, not Settings. The normal product surface should stay voice-first and cursor-first while gesture reliability is being evaluated.
+
+## Step M5.7 Gesture Readiness Decision
+
+M5 is a Mac retest phase, not a declaration that gestures are now the primary product interface.
+
+### What Is Ready
+
+- Camera enumeration has a debug QA path.
+- Camera permission has macOS-specific guidance.
+- Camera preview stays debug-only.
+- MediaPipe has GPU-first plus CPU fallback.
+- Hand landmark success/failure has clear debug states.
+- Pinch has raw, smoothed, and action-level QA criteria.
+- Open palm has raw, smoothed, and action-level QA criteria.
+- Gesture debug is grouped enough for manual testing.
+
+### What Still Needs Manual Proof
+
+Run the real Mac camera tests and record:
+
+- whether camera preview becomes active
+- whether a hand reaches 21 landmarks
+- whether pinch reaches recognized without false positives
+- whether open palm pauses without accidental triggers
+- whether lighting and camera angle make the gestures unreliable
+
+### Product Decision
+
+Gestures should stay debug-first and secondary to voice until manual Mac testing proves reliability.
+
+Current product priority:
+
+```text
+voice-first command
+  -> local Whisper transcript
+  -> guidance
+
+gestures
+  -> debug/advanced activation layer
+  -> promote only after reliability is proven
+```
+
+### M5 Close Criteria
+
+M5 is complete when:
+
+- the Mac gesture pipeline has clear QA steps
+- debug exposes the right signals
+- docs explain what passes/fails
+- gesture promotion is explicitly deferred until real-world reliability is proven
+
+M5 does not require gestures to become the primary user interface.
