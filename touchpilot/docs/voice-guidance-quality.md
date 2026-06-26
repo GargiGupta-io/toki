@@ -2,6 +2,8 @@
 
 Voice now reaches the guidance loop on Mac, but the visible target is still mock guidance. This phase turns the working voice pipe into a useful assistant path.
 
+Status: closed as a quality gate. Toki now separates mock guidance from real guidance readiness, but real target accuracy still depends on connecting a provider endpoint or building deeper screen intelligence.
+
 ## Current Problem
 
 The current path proves plumbing:
@@ -162,3 +164,19 @@ This phase does not need:
 - perfect target accuracy
 
 Those come after the first real guidance loop can be measured.
+
+## Completion Notes
+
+Voice Guidance Quality is complete for the current gate because:
+
+- provider mode is visible as `mock`, `real`, or `unavailable`
+- mock guidance is clearly labeled as plumbing only
+- Debug can review goal, target, coordinates, confidence, risk, validation, and tester verdict
+- guidance requests can carry screenshot payload and calibration metadata
+- provider adapter rules are documented
+- the real smoke path exists and refuses to fall back to mock when no provider is configured
+
+The next product step is not more mock guidance. It is either:
+
+1. connect a real guidance backend/dev provider, or
+2. start the safety/screen-intelligence phases needed for stronger targeting.
