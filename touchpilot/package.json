@@ -16,6 +16,8 @@
     "desktop:web:build": "npm --workspace @toki/desktop run build",
     "rust:check": "cargo check --workspace",
     "rust:fmt": "cargo fmt --all",
+    "guidance:smoke:dev": "node scripts/guidance-smoke-server.mjs",
+    "test:guidance:smoke": "node --test scripts/guidance-smoke-server.test.mjs",
     "desktop:dev": "npm --workspace @toki/desktop run tauri dev",
     "desktop:build": "npm --workspace @toki/desktop run tauri build",
     "desktop:release:mac": "npm --workspace @toki/desktop run tauri -- build --bundles app",
