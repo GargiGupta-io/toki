@@ -82,6 +82,14 @@ export type GuidanceValidationResult = {
 
 export type GuidanceProviderMode = "mock" | "real" | "unavailable";
 
+export type GuidanceProviderResponse = {
+  mode: GuidanceProviderMode;
+  result?: GuidanceResult;
+  error?: string;
+  validation?: GuidanceValidationResult;
+  providerName?: string;
+};
+
 export type GestureCommand =
   | { type: "toggle_voice"; confidence: number }
   | { type: "pause"; confidence: number }
