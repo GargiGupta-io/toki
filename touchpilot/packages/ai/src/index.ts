@@ -1,5 +1,6 @@
 import type {
   GuidanceRequest,
+  GuidanceProviderResponse,
   GuidanceResult,
   GuidanceValidationIssue,
   GuidanceValidationResult,
@@ -96,6 +97,76 @@ export function createInvalidMockGuidance(request: GuidanceRequest): GuidanceRes
       requiresConfirmation: false,
     },
   };
+}
+
+export type RealGuidanceProviderOptions = {
+  endpoint?: string;
+  fetchImpl?: typeof fetch;
+};
+
+export async function requestRealGuidance(
+  request: GuidanceRequest,
+  options: RealGuidanceProviderOptions = {},
+): Promise<GuidanceProviderResponse> {
+  const endpoint = options.endpoint?.trim();
+
+  if (!endpoint) {
+    return {
+      mode: "unavailable",
+      error:
+        "No real guidance provider endpoint is configured. Set VITE_TOKI_GUIDANCE_ENDPOINT for local smoke tests.",
+      providerName: "none",
+    };
+  }
+
+  const fetcher = options.fetchImpl ?? fetch;
+
+  try {
+    const response = await fetcher(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      return {
+        mode: "unavailable",
+        error: `Guidance provider returned ${response.status} ${response.statusText}`,
+        providerName: endpoint,
+      };
+    }
+
+    const body = (await response.json()) as GuidanceResult | { result?: GuidanceResult };
+    const result =
+      body != null && typeof body === "object" && "result" in body
+        ? body.result
+        : (body as GuidanceResult);
+    const validation = validateGuidanceResult(result);
+
+    if (!validation.valid || result == null) {
+      return {
+        mode: "unavailable",
+        error: "Guidance provider returned an invalid result.",
+        validation,
+        providerName: endpoint,
+      };
+    }
+
+    return {
+      mode: "real",
+      result,
+      validation,
+      providerName: endpoint,
+    };
+  } catch (error) {
+    return {
+      mode: "unavailable",
+      error: error instanceof Error ? error.message : String(error),
+      providerName: endpoint,
+    };
+  }
 }
 
 export function validateGuidanceResult(
