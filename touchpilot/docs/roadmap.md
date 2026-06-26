@@ -124,6 +124,15 @@ Status: Closed as a quality gate.
 - Done: Add the controlled real-guidance smoke path.
 - Done: Keep mock guidance as a QA fixture, not as product acceptance.
 
+## Phase 10.5: Provider Backend Smoke
+
+- Define backend/proxy contract for `GuidanceRequest` to `GuidanceResult`.
+- Keep paid provider keys out of the desktop app.
+- Connect Debug `Real smoke` to a configured provider endpoint.
+- Run one known-screen target test.
+- Mark the result useful or wrong.
+- Treat missing provider as `unavailable`, not mock fallback.
+
 ## Phase 7: Safety And Guardrails
 
 - Risk classifier.
