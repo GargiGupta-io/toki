@@ -114,13 +114,15 @@
 
 ## Phase VG: Voice Guidance Quality
 
-- Define real guidance acceptance beyond mock target plumbing.
-- Show guidance provider mode clearly: mock, real, unavailable.
-- Add debug result review for transcript, target, confidence, validation, and tester verdict.
-- Confirm screenshot payload and calibration data are ready for real provider calls.
-- Add a real provider adapter plan behind the backend/proxy rule.
-- Run the first controlled real-guidance smoke test.
-- Keep mock guidance as a QA fixture, not as product acceptance.
+Status: Closed as a quality gate.
+
+- Done: Define real guidance acceptance beyond mock target plumbing.
+- Done: Show guidance provider mode clearly: mock, real, unavailable.
+- Done: Add debug result review for transcript, target, confidence, validation, and tester verdict.
+- Done: Confirm screenshot payload and calibration data are ready for real provider calls.
+- Done: Add a real provider adapter plan behind the backend/proxy rule.
+- Done: Add the controlled real-guidance smoke path.
+- Done: Keep mock guidance as a QA fixture, not as product acceptance.
 
 ## Phase 7: Safety And Guardrails
 
