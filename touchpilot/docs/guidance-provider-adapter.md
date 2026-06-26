@@ -259,15 +259,30 @@ That is the correct result for the smoke server. It proves the app reached the b
 
 Later steps can wire a real provider inside the server without putting provider keys in the desktop app.
 
+## Target Accuracy Extension
+
+The local smoke bridge is complete, but target accuracy is not complete yet. `dev-smoke-server` proves that the desktop can send a screenshot plus goal to a backend boundary; it intentionally does not choose a target.
+
+The remaining Phase 10.5 work is:
+
+1. Add server-side provider mode config such as `TOKI_GUIDANCE_PROVIDER=local-ollama|unavailable`.
+2. Keep `unavailable` as the default so local runs never pretend accuracy exists.
+3. Add a local vision-provider adapter behind `/api/guidance/smoke`.
+4. Send the existing screenshot payload and goal to that provider.
+5. Parse the provider reply into strict `GuidanceResult` JSON.
+6. Validate the result before returning it to the desktop.
+7. Run one known-screen manual test and mark the result useful or wrong.
+8. Record whether misses are provider limits, coordinate issues, or evidence that OCR/accessibility is needed before Phase 11.
+
 ## First Provider Choice
 
-Best first provider for smoke testing:
+Best first provider for target-accuracy smoke testing:
 
-- cloud vision-language model through a dev key or backend
+- local vision-language model through a local HTTP server when available
 - input: screenshot + user goal
 - output: JSON matching `GuidanceResult`
 
-Reason: it is the fastest way to prove whether screenshot-to-target guidance works. Local-only vision models can come later if we need cost/privacy optimization.
+Reason: it avoids paid API quota and keeps provider keys out of the desktop app while still proving whether screenshot-to-target guidance can work. A cloud provider can come later if local model accuracy is not enough.
 
 ## Failure Behavior
 
@@ -289,3 +304,15 @@ VG.4 is complete when:
 - local dev exception is explicit
 - payload size strategy is explicit
 - failure behavior does not allow fake acceptance
+
+## Acceptance For Target Accuracy
+
+The remaining Phase 10.5 target-accuracy extension is complete when:
+
+- the smoke server supports explicit provider mode config
+- the default provider remains `unavailable`
+- a local vision provider can return one validated `GuidanceResult`
+- invalid or malformed provider output is rejected
+- Debug shows provider name, request evidence, validation, and tester verdict
+- one known-screen target is tested manually
+- the result is recorded as useful or wrong
