@@ -5,6 +5,7 @@ import {
   createInvalidMockGuidance,
   createMockGuidance,
   createRiskyMockGuidance,
+  requestRealGuidance,
   validateGuidanceResult,
 } from "./index";
 
@@ -252,4 +253,84 @@ test("validateGuidanceResult rejects zero or negative target size", () => {
       message: "Target width and height must be positive.",
     },
   ]);
+});
+
+test("requestRealGuidance reports unavailable without endpoint", async () => {
+  const response = await requestRealGuidance({
+    goal: "Show me what to click next.",
+    screen: {
+      display: {
+        id: "display-1",
+        width: 1440,
+        height: 900,
+        scaleFactor: 1,
+      },
+    },
+  });
+
+  assert.equal(response.mode, "unavailable");
+  assert.equal(response.providerName, "none");
+  assert.match(response.error ?? "", /No real guidance provider endpoint/);
+});
+
+test("requestRealGuidance preserves unavailable provider response", async () => {
+  const response = await requestRealGuidance(
+    {
+      goal: "Show me what to click next.",
+      screen: {
+        display: {
+          id: "display-1",
+          width: 1440,
+          height: 900,
+          scaleFactor: 1,
+        },
+      },
+    },
+    {
+      endpoint: "http://127.0.0.1:8787/guidance",
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            mode: "unavailable",
+            error: "provider quota exceeded",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    },
+  );
+
+  assert.equal(response.mode, "unavailable");
+  assert.equal(response.error, "provider quota exceeded");
+  assert.equal(response.providerName, "http://127.0.0.1:8787/guidance");
+});
+
+test("requestRealGuidance accepts valid provider envelope", async () => {
+  const response = await requestRealGuidance(
+    {
+      goal: "Show me what to click next.",
+      screen: {
+        display: {
+          id: "display-1",
+          width: 1440,
+          height: 900,
+          scaleFactor: 1,
+        },
+      },
+    },
+    {
+      endpoint: "http://127.0.0.1:8787/guidance",
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            mode: "real",
+            result: validResult,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    },
+  );
+
+  assert.equal(response.mode, "real");
+  assert.equal(response.result?.step?.target?.label, "Export");
+  assert.equal(response.validation?.valid, true);
 });
