@@ -11,6 +11,8 @@ fi
 echo "Toki macOS runtime QA"
 echo
 
+FAILURES=0
+
 if ! command -v pgrep >/dev/null 2>&1; then
   echo "[FAIL] process probe - pgrep is not available" >&2
   exit 1
@@ -68,8 +70,35 @@ fi
 echo "[INFO] window report"
 echo "$WINDOW_REPORT"
 echo
+
+if grep -Eiq 'Toki Overlay|TouchPilot|Overlay' <<<"$WINDOW_REPORT"; then
+  echo "[FAIL] no visible overlay title - window report contains overlay/app chrome text"
+  FAILURES=$((FAILURES + 1))
+else
+  echo "[PASS] no visible overlay title"
+fi
+
+if grep -Eiq 'Debug' <<<"$WINDOW_REPORT"; then
+  echo "[WARN] debug window is visible - close it before default-runtime visual acceptance"
+else
+  echo "[PASS] debug hidden by default"
+fi
+
+if grep -Eq 'window=.*size=[1-9][0-9]{3,}x[1-9][0-9]{3,}' <<<"$WINDOW_REPORT"; then
+  echo "[WARN] large visible Toki window found - manually confirm this is the transparent overlay, not an app panel"
+else
+  echo "[PASS] no large visible app-like panel reported"
+fi
+
 echo "Manual accept checks:"
 echo "- Overlay adds no visible titlebar or app-name strip."
 echo "- Desktop apps remain clickable through the overlay."
 echo "- Puck follows the cursor while the overlay is passive."
 echo "- Settings opens from the menu bar/tray path and can be dragged."
+echo "- Settings appears near the menu bar, not centered like a normal app window."
+
+if [[ "$FAILURES" -gt 0 ]]; then
+  echo
+  echo "Runtime QA failed with $FAILURES failing check(s)." >&2
+  exit 1
+fi
