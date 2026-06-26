@@ -544,6 +544,32 @@ The detailed contract now lives in:
 touchpilot/docs/macos-global-push-to-talk.md
 ```
 
+### M4 Overlay QA Update
+
+Plain English: the overlay cannot be accepted only because a config says it is transparent. The Mac product has to pass a visual contract: Toki should not add titlebars, centered app panels, or debug surfaces to the normal desktop.
+
+The macOS runtime QA script now checks for obvious app-chrome regressions when Toki is running:
+
+- overlay/title text in visible window names
+- visible debug window during default-runtime acceptance
+- large visible Toki windows that might be app-like panels
+
+It still cannot fully prove click-through or puck feel by itself. Those remain manual desktop checks because the product requirement is visual and behavioral: the user should feel like a tiny cursor companion is present, not like a desktop app is covering the screen.
+
+The current command is:
+
+```bash
+npm run qa:mac:runtime
+```
+
+If Toki is not running, this correctly fails with:
+
+```text
+[FAIL] process exists - no running toki-desktop process found
+```
+
+That is not a code failure. It means the app must be launched first, then the runtime QA command rerun.
+
 ## Why This Matters
 
 TouchPilot is a cursor-first overlay product. If the development machine cannot reliably run the desktop shell, every later feature becomes guesswork.
@@ -587,3 +613,4 @@ Phase M1 should focus on:
 - 2026-06-26 - Marked the Toki tray icon as a macOS template icon so it behaves more like a native menu-bar utility icon.
 - 2026-06-26 - Positioned the macOS settings panel near the top-right menu bar area when opened, using monitor bounds and the real panel size.
 - 2026-06-26 - Documented the macOS global push-to-talk contract: Control+Option hold is the target, Space/settings remains the fallback, and native event monitoring plus Accessibility permission UX is the preferred final path.
+- 2026-06-26 - Tightened macOS runtime QA for Clicky-style overlay acceptance and documented that the probe must be run after Toki is already running.
