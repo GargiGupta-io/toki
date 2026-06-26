@@ -153,6 +153,22 @@ function printGuidanceResponse(response) {
 
   if (response.mode !== "real") {
     console.log(`Error: ${response.error ?? "provider did not return real guidance"}`);
+
+    if (Array.isArray(response.validation?.issues) && response.validation.issues.length > 0) {
+      console.log("");
+      console.log("Validation issues:");
+
+      for (const issue of response.validation.issues) {
+        console.log(`- ${issue.path}: ${issue.message}`);
+      }
+    }
+
+    if (typeof response.providerRawText === "string" && response.providerRawText.length > 0) {
+      console.log("");
+      console.log("Provider raw output:");
+      console.log(response.providerRawText);
+    }
+
     process.exitCode = 2;
     return;
   }
