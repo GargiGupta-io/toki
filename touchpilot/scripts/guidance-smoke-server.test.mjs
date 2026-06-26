@@ -242,6 +242,41 @@ test("validateProviderGuidanceResult rejects offscreen targets", () => {
   );
 });
 
+test("validateProviderGuidanceResult rejects normalized target sizes", () => {
+  const validation = validateProviderGuidanceResult(
+    {
+      mode: "guide",
+      summary: "Click the message box.",
+      step: {
+        instruction: "Click the message input.",
+        target: {
+          label: "Message input",
+          x: 0.36,
+          y: 0.78,
+          width: 0.52,
+          height: 0.41,
+        },
+        confidence: 0.9,
+        risk: "safe_navigation",
+        requiresConfirmation: false,
+      },
+    },
+    validRequest,
+  );
+
+  assert.equal(validation.valid, false);
+  assert.ok(
+    validation.issues.some(
+      (issue) => issue.message === "Target width looks normalized; return CSS pixels.",
+    ),
+  );
+  assert.ok(
+    validation.issues.some(
+      (issue) => issue.message === "Target height looks normalized; return CSS pixels.",
+    ),
+  );
+});
+
 test("normalizeProviderGuidanceResponse rejects invalid provider output", () => {
   const response = normalizeProviderGuidanceResponse(
     {
@@ -267,17 +302,48 @@ test("normalizeProviderGuidanceResponse rejects invalid provider output", () => 
     },
     validRequest,
     "local-ollama",
+    { providerRawText: '{"mode":"real","result":{"step":{"confidence":1.5}}}' },
   );
 
   assert.equal(response.mode, "unavailable");
   assert.equal(response.providerName, "local-ollama");
   assert.match(response.error, /invalid GuidanceResult/);
   assert.equal(response.validation.valid, false);
+  assert.match(response.providerRawText, /confidence/);
   assert.ok(
     response.validation.issues.some(
       (issue) => issue.path === "result.step.confidence",
     ),
   );
+});
+
+test("normalizeProviderGuidanceResponse accepts direct GuidanceResult output", () => {
+  const response = normalizeProviderGuidanceResponse(
+    {
+      mode: "guide",
+      summary: "Click the search field.",
+      step: {
+        instruction: "Click Search.",
+        target: {
+          label: "Search",
+          x: 400,
+          y: 120,
+          width: 240,
+          height: 44,
+        },
+        confidence: 0.66,
+        risk: "safe_navigation",
+        requiresConfirmation: false,
+      },
+    },
+    validRequest,
+    "local-ollama",
+  );
+
+  assert.equal(response.mode, "real");
+  assert.equal(response.providerName, "local-ollama");
+  assert.equal(response.validation.valid, true);
+  assert.equal(response.result.step.target.label, "Search");
 });
 
 test("requestLocalOllamaGuidance reports malformed provider JSON", async () => {
@@ -301,6 +367,7 @@ test("requestLocalOllamaGuidance reports malformed provider JSON", async () => {
   assert.equal(response.mode, "unavailable");
   assert.equal(response.providerName, "local-ollama");
   assert.match(response.error, /JSON object|Unexpected token/);
+  assert.equal(response.providerRawText, "not json");
 });
 
 test("requestLocalOllamaGuidance reports provider errors as unavailable", async () => {
