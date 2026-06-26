@@ -2168,127 +2168,119 @@ function DebugWindowApp() {
             ) : null}
           </section>
 
-          <section className="debug-section">
-            <h2>Pinch Classifier</h2>
-            <dl>
-              <div>
-                <dt>Label</dt>
-                <dd>{pinchClassification.label}</dd>
+          <section className="debug-section debug-section-wide">
+            <h2>Gesture Recognition</h2>
+            <div className="debug-recognition-grid">
+              <div className="debug-recognition-card">
+                <h3>Pinch</h3>
+                <dl>
+                  <div>
+                    <dt>Label</dt>
+                    <dd>{pinchClassification.label}</dd>
+                  </div>
+                  <div>
+                    <dt>Distance</dt>
+                    <dd>
+                      {pinchClassification.normalizedDistance == null
+                        ? "None"
+                        : pinchClassification.normalizedDistance.toFixed(3)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Threshold</dt>
+                    <dd>{pinchClassification.pinchThreshold.toFixed(3)}</dd>
+                  </div>
+                  <div>
+                    <dt>Confidence</dt>
+                    <dd>{pinchClassification.confidence.toFixed(2)}</dd>
+                  </div>
+                </dl>
+                <p className="debug-muted">
+                  Pinch recognizes when thumb and index distance drops below
+                  threshold.
+                </p>
               </div>
-              <div>
-                <dt>Phase</dt>
-                <dd>{pinchClassification.phase}</dd>
-              </div>
-              <div>
-                <dt>Distance</dt>
-                <dd>
-                  {pinchClassification.normalizedDistance == null
-                    ? "None"
-                    : pinchClassification.normalizedDistance.toFixed(3)}
-                </dd>
-              </div>
-              <div>
-                <dt>Threshold</dt>
-                <dd>{pinchClassification.pinchThreshold.toFixed(3)}</dd>
-              </div>
-              <div>
-                <dt>Confidence</dt>
-                <dd>{pinchClassification.confidence.toFixed(2)}</dd>
-              </div>
-            </dl>
-            <p className="debug-muted">
-              Open palm recognizes when enough fingers are extended and spread,
-              then the smoothed gesture reaches recognized.
-            </p>
-          </section>
 
-          <section className="debug-section">
-            <h2>Open Palm Classifier</h2>
-            <dl>
-              <div>
-                <dt>Label</dt>
-                <dd>{openPalmClassification.label}</dd>
+              <div className="debug-recognition-card">
+                <h3>Open Palm</h3>
+                <dl>
+                  <div>
+                    <dt>Label</dt>
+                    <dd>{openPalmClassification.label}</dd>
+                  </div>
+                  <div>
+                    <dt>Fingers</dt>
+                    <dd>
+                      {openPalmClassification.extendedFingerCount} /{" "}
+                      {openPalmClassification.requiredExtendedFingers}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Spread</dt>
+                    <dd>
+                      {openPalmClassification.normalizedSpread == null
+                        ? "None"
+                        : openPalmClassification.normalizedSpread.toFixed(3)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Threshold</dt>
+                    <dd>{openPalmClassification.spreadThreshold.toFixed(3)}</dd>
+                  </div>
+                </dl>
+                <p className="debug-muted">
+                  Open palm recognizes when enough fingers are extended and spread.
+                </p>
               </div>
-              <div>
-                <dt>Phase</dt>
-                <dd>{openPalmClassification.phase}</dd>
-              </div>
-              <div>
-                <dt>Fingers</dt>
-                <dd>
-                  {openPalmClassification.extendedFingerCount} /{" "}
-                  {openPalmClassification.requiredExtendedFingers}
-                </dd>
-              </div>
-              <div>
-                <dt>Spread</dt>
-                <dd>
-                  {openPalmClassification.normalizedSpread == null
-                    ? "None"
-                    : openPalmClassification.normalizedSpread.toFixed(3)}
-                </dd>
-              </div>
-              <div>
-                <dt>Threshold</dt>
-                <dd>{openPalmClassification.spreadThreshold.toFixed(3)}</dd>
-              </div>
-              <div>
-                <dt>Confidence</dt>
-                <dd>{openPalmClassification.confidence.toFixed(2)}</dd>
-              </div>
-            </dl>
-          </section>
 
-          <section className="debug-section">
-            <h2>Smoothed Gesture</h2>
-            <dl>
-              <div>
-                <dt>Label</dt>
-                <dd>{smoothedGesture.label}</dd>
+              <div className="debug-recognition-card">
+                <h3>Smoothed</h3>
+                <dl>
+                  <div>
+                    <dt>Label</dt>
+                    <dd>{smoothedGesture.label}</dd>
+                  </div>
+                  <div>
+                    <dt>Phase</dt>
+                    <dd>{smoothedGesture.phase}</dd>
+                  </div>
+                  <div>
+                    <dt>Hold</dt>
+                    <dd>{Math.round(smoothedGesture.holdMs)}ms</dd>
+                  </div>
+                  <div>
+                    <dt>Cooldown</dt>
+                    <dd>{Math.round(smoothedGesture.cooldownRemainingMs)}ms</dd>
+                  </div>
+                </dl>
               </div>
-              <div>
-                <dt>Phase</dt>
-                <dd>{smoothedGesture.phase}</dd>
-              </div>
-              <div>
-                <dt>Hold</dt>
-                <dd>{Math.round(smoothedGesture.holdMs)}ms</dd>
-              </div>
-              <div>
-                <dt>Cooldown</dt>
-                <dd>{Math.round(smoothedGesture.cooldownRemainingMs)}ms</dd>
-              </div>
-              <div>
-                <dt>Confidence</dt>
-                <dd>{smoothedGesture.confidence.toFixed(2)}</dd>
-              </div>
-            </dl>
-          </section>
 
-          <section className="debug-section">
-            <h2>Gesture Action</h2>
-            <dl>
-              <div>
-                <dt>Last action</dt>
-                <dd>{snapshot.gestureRuntime.lastAction?.type ?? "None"}</dd>
+              <div className="debug-recognition-card">
+                <h3>Action</h3>
+                <dl>
+                  <div>
+                    <dt>Last action</dt>
+                    <dd>{snapshot.gestureRuntime.lastAction?.type ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Gesture</dt>
+                    <dd>{snapshot.gestureRuntime.lastAction?.gesture ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Confidence</dt>
+                    <dd>
+                      {snapshot.gestureRuntime.lastAction
+                        ? snapshot.gestureRuntime.lastAction.confidence.toFixed(2)
+                        : "None"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Fired</dt>
+                    <dd>{snapshot.gestureRuntime.lastAction?.firedAt ?? "None"}</dd>
+                  </div>
+                </dl>
               </div>
-              <div>
-                <dt>Gesture</dt>
-                <dd>{snapshot.gestureRuntime.lastAction?.gesture ?? "None"}</dd>
-              </div>
-              <div>
-                <dt>Confidence</dt>
-                <dd>
-                  {snapshot.gestureRuntime.lastAction
-                    ? snapshot.gestureRuntime.lastAction.confidence.toFixed(2)
-                    : "None"}
-                </dd>
-              </div>
-              <div>
-                <dt>Fired</dt>
-                <dd>{snapshot.gestureRuntime.lastAction?.firedAt ?? "None"}</dd>
-              </div>
-            </dl>
+            </div>
           </section>
 
           <section className="debug-section">
