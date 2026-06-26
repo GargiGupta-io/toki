@@ -7,6 +7,7 @@ import {
   createInvalidMockGuidance,
   createMockGuidance,
   createRiskyMockGuidance,
+  requestRealGuidance,
   validateGuidanceResult,
 } from "@toki/ai";
 import type {
@@ -86,6 +87,7 @@ type DebugSnapshot = OverlaySnapshot & {
   guidanceRequest: GuidanceRequest | null;
   guidanceResult: GuidanceResult | null;
   guidanceIssues: GuidanceValidationIssue[];
+  guidanceProviderError: string | null;
   captureError: string | null;
   viewport: ViewportMetrics;
   calibration: CoordinateCalibration;
@@ -93,6 +95,7 @@ type DebugSnapshot = OverlaySnapshot & {
 
 type OverlayCommand =
   | { type: "refresh-capture" }
+  | { type: "run-real-guidance-smoke" }
   | { type: "toggle-pause" }
   | { type: "request-state" }
   | { type: "set-state"; state: OverlayState }
@@ -697,6 +700,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     guidanceRequest: null,
     guidanceResult: null,
     guidanceIssues: [],
+    guidanceProviderError: null,
     captureError: null,
     viewport,
     calibration: getCalibration(null, viewport),
@@ -708,10 +712,14 @@ function OverlayWindowApp() {
   const [guidanceFixture, setGuidanceFixture] = useState<GuidanceFixture>("safe");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
-  const [guidanceProviderMode] = useState<GuidanceProviderMode>("mock");
+  const [guidanceProviderMode, setGuidanceProviderMode] =
+    useState<GuidanceProviderMode>("mock");
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
+  const [guidanceProviderError, setGuidanceProviderError] = useState<string | null>(
+    null,
+  );
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
@@ -780,6 +788,7 @@ function OverlayWindowApp() {
       guidanceRequest,
       guidanceResult,
       guidanceIssues,
+      guidanceProviderError,
       captureError,
       viewport,
       calibration,
@@ -793,6 +802,7 @@ function OverlayWindowApp() {
       guidanceRequest,
       guidanceResult,
       guidanceIssues,
+      guidanceProviderError,
       captureError,
       viewport,
       calibration,
@@ -808,9 +818,14 @@ function OverlayWindowApp() {
     );
   }
 
-  async function refreshCaptureMetadata(goal = "Show me what to click next.") {
+  async function refreshCaptureMetadata(
+    goal = "Show me what to click next.",
+    providerMode: GuidanceProviderMode = "mock",
+  ) {
     setIsRefreshingCapture(true);
     setCaptureError(null);
+    setGuidanceProviderError(null);
+    setGuidanceProviderMode(providerMode);
     setGuidanceIssues([]);
     setGuidanceRequest(null);
     setGuidanceResult(null);
@@ -837,6 +852,21 @@ function OverlayWindowApp() {
         },
         previousStep: guidanceResult?.step ?? null,
       };
+      setGuidanceRequest(nextGuidanceRequest);
+
+      if (providerMode === "real") {
+        const providerResponse = await requestRealGuidance(nextGuidanceRequest, {
+          endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
+        });
+
+        setGuidanceProviderMode(providerResponse.mode);
+        setGuidanceProviderError(providerResponse.error ?? null);
+        setGuidanceIssues(providerResponse.validation?.issues ?? []);
+        setGuidanceResult(providerResponse.result ?? null);
+        setOverlayState(providerResponse.result ? "guiding" : "error");
+        return;
+      }
+
       const nextGuidance =
         guidanceFixture === "invalid"
           ? createInvalidMockGuidance(nextGuidanceRequest)
@@ -845,12 +875,14 @@ function OverlayWindowApp() {
             : createMockGuidance(nextGuidanceRequest);
       const validation = validateGuidanceResult(nextGuidance);
 
-      setGuidanceRequest(nextGuidanceRequest);
       setGuidanceIssues(validation.issues);
       setGuidanceResult(validation.valid ? nextGuidance : null);
       setOverlayState(validation.valid ? "guiding" : "error");
     } catch (error) {
       setCaptureError(formatCaptureError(error));
+      if (providerMode === "real") {
+        setGuidanceProviderMode("unavailable");
+      }
       setGuidanceRequest(null);
       setGuidanceIssues([]);
       setGuidanceResult(null);
@@ -923,6 +955,11 @@ function OverlayWindowApp() {
     listen<OverlayCommand>("toki://overlay-command", async (event) => {
       if (event.payload.type === "refresh-capture") {
         await refreshCaptureMetadata();
+        return;
+      }
+
+      if (event.payload.type === "run-real-guidance-smoke") {
+        await refreshCaptureMetadata("Show me what to click next.", "real");
         return;
       }
 
@@ -1554,6 +1591,11 @@ function DebugWindowApp() {
       fixture: "safe",
     });
     sendOverlayCommand({ type: "refresh-capture" });
+  }
+
+  function testRealGuidanceSmoke() {
+    setGuidanceTesterVerdict("untested");
+    sendOverlayCommand({ type: "run-real-guidance-smoke" });
   }
 
   function refreshVoiceCapabilities(requestMicrophone = false) {
@@ -2450,6 +2492,13 @@ function DebugWindowApp() {
               >
                 {snapshot.isRefreshingCapture ? "Testing" : "Test guidance"}
               </button>
+              <button
+                type="button"
+                onClick={testRealGuidanceSmoke}
+                disabled={snapshot.isRefreshingCapture}
+              >
+                Real smoke
+              </button>
             </div>
             <dl>
               <div>
@@ -2536,6 +2585,11 @@ function DebugWindowApp() {
               <p className="debug-muted">
                 Mock guidance proves plumbing only. It is not real screen
                 understanding.
+              </p>
+            ) : null}
+            {snapshot.guidanceProviderError ? (
+              <p className="debug-muted">
+                Provider unavailable: {snapshot.guidanceProviderError}
               </p>
             ) : null}
           </section>
