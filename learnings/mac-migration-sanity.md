@@ -732,6 +732,30 @@ This is the right call because camera gestures can easily create false positives
 
 M5 is closed as a QA-readiness phase. The next real gesture work should be hands-on threshold tuning after manual tests, not more architecture.
 
+## Next Phase: Voice Guidance Quality
+
+Plain English: voice works, but the app is still guiding with a mock target. That means the product can hear the user, but it cannot yet prove it understands the screen.
+
+The next phase should focus on guidance quality, not more activation methods.
+
+The reason is simple:
+
+```text
+if the command is heard
+but the target is fake
+the app still does not solve the user's problem
+```
+
+The new Voice Guidance Quality phase should add a clear acceptance gate:
+
+- show whether guidance came from mock or real provider
+- show the transcript/goal that was sent
+- show the target and validation state
+- let a tester mark the result useful or wrong
+- keep mock guidance as a fixture, not product proof
+
+This keeps momentum focused on the actual user value: "I said what I want, and Toki showed me the right thing on screen."
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -762,3 +786,4 @@ M5 is closed as a QA-readiness phase. The next real gesture work should be hands
 - 2026-06-26 - Added M5.5 open palm QA and clarified the path from raw open-hand detection to one pause action.
 - 2026-06-26 - Cleaned up the gesture debug tab by grouping pinch, open palm, smoothed state, and action into one recognition area.
 - 2026-06-26 - Closed Phase M5 with the decision that gestures remain debug-first and secondary to voice until manual Mac camera testing proves reliability.
+- 2026-06-26 - Added the Voice Guidance Quality phase as the next product step because voice works but target guidance is still mock-based.
