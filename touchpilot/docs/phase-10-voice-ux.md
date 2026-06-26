@@ -210,6 +210,30 @@ Phase 10 is acceptable only when this can be tested:
 
 If native/cloud voice fails on the platform, the debug text fallback and Web Speech fallback must still prove the command-to-guidance loop.
 
+## Phase 10.5 Provider Backend Smoke
+
+Phase 10.5 adds the first real target-accuracy smoke test after voice works.
+
+The user-facing behavior should not change much. The important change is behind Debug:
+
+```text
+voice goal + screenshot
+  -> backend/proxy endpoint
+  -> provider returns structured target
+  -> Toki validates the target
+  -> overlay renders the target only if valid
+```
+
+Rules:
+
+- the desktop app does not contain paid provider keys
+- missing provider means `unavailable`, not mock fallback
+- mock guidance stays as `Test guidance`
+- real guidance is tested through `Real smoke`
+- the tester marks the result useful or wrong
+
+Phase 10.5 passes when one controlled screen can produce one real provider target, even if the target quality is still rough.
+
 ## Tradeoffs
 
 | Choice | Why |
