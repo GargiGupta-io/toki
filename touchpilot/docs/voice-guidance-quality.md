@@ -97,6 +97,13 @@ Confirm that real guidance requests can include:
 
 If the payload is too large for the final provider, add a compression/downscale plan.
 
+Current status:
+
+- `GuidanceScreenContext` can now carry an optional base64 screenshot payload.
+- The overlay adds screenshot payload data to the guidance request after capture succeeds.
+- Debug Guidance shows a Payload Gate with goal, display, screenshot dimensions, payload size, calibration status, and provider plan.
+- Payloads over 2 MB are flagged for downscale/compression before provider use.
+
 ### VG.4 Real Provider Adapter Plan
 
 Add the provider adapter behind a backend/proxy rule.
