@@ -276,7 +276,7 @@ Supported provider modes:
 | Mode | Current behavior |
 | --- | --- |
 | `unavailable` | Safe default. Returns unavailable and no target. |
-| `local-ollama` | Configures endpoint/model but still returns unavailable until the adapter is wired. |
+| `local-ollama` | Sends screenshot + goal to a local Ollama vision model and returns the provider JSON. |
 
 Run the default safe server:
 
@@ -290,14 +290,22 @@ Run the server in local Ollama mode:
 npm run guidance:smoke:ollama
 ```
 
+Step 10.5.8 wires the local Ollama adapter:
+
+- the server builds an Ollama `/api/generate` request
+- the prompt includes the user goal, display dimensions, scale factor, and calibration status
+- the screenshot payload is sent in Ollama's `images` array
+- the request uses `format: "json"` and `stream: false`
+- provider HTTP failures return `unavailable`
+- parse failures return `unavailable`
+- successful provider JSON is passed back to the desktop with `providerName: "local-ollama"`
+
 The remaining Phase 10.5 work is:
 
-1. Add a local vision-provider adapter behind `/api/guidance/smoke`.
-2. Send the existing screenshot payload and goal to that provider.
-3. Parse the provider reply into strict `GuidanceResult` JSON.
-4. Validate the result before returning it to the desktop.
-5. Run one known-screen manual test and mark the result useful or wrong.
-6. Record whether misses are provider limits, coordinate issues, or evidence that OCR/accessibility is needed before Phase 11.
+1. Parse the provider reply into strict `GuidanceResult` JSON.
+2. Validate the result before returning it to the desktop.
+3. Run one known-screen manual test and mark the result useful or wrong.
+4. Record whether misses are provider limits, coordinate issues, or evidence that OCR/accessibility is needed before Phase 11.
 
 ## First Provider Choice
 
