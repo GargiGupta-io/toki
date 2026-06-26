@@ -57,3 +57,52 @@ M5.1 only proves that devices can be listed. It does not prove:
 - hand landmarks
 - pinch detection
 - open palm detection
+
+## Step M5.2 Camera Permission Flow
+
+Camera permission checks whether Toki can request camera access safely and explain blocked states clearly.
+
+### How To Test
+
+1. Start Toki on Mac.
+2. Open Debug.
+3. Go to the Gesture tab.
+4. Use the gesture/camera controls to enable Camera.
+5. Watch the Camera Preview status.
+
+### Pass
+
+Camera permission passes when:
+
+- status moves from `requesting_permission` to `active`
+- macOS permission prompt appears if permission was not granted before
+- camera preview appears only inside the debug window
+- normal overlay stays cursor-first
+- disabling Camera stops the preview and returns status to `disabled`
+
+### Permission Denied
+
+If status becomes `permission_denied`, fix it here:
+
+```text
+System Settings
+  -> Privacy & Security
+  -> Camera
+  -> enable Toki or the terminal app running Toki
+```
+
+After changing camera permission, quit and relaunch Toki. macOS often does not apply privacy changes to already-running processes.
+
+### Fail
+
+Camera permission fails when:
+
+- permission is requested before Camera is enabled
+- preview appears in the normal overlay
+- status gets stuck on `requesting_permission`
+- denied permission shows only a raw browser error with no Mac guidance
+- disabling Camera leaves the camera indicator or preview active
+
+## Current M5.2 Decision
+
+Camera permission remains debug/advanced for now. The normal user flow should stay voice-first, and camera/gesture activation should become user-facing only after landmark and gesture reliability are proven.
