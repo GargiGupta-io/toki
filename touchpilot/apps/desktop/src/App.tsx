@@ -16,6 +16,7 @@ import type {
   CaptureMetadata,
   CoordinateCalibration,
   GuidanceRequest,
+  GuidanceProviderMode,
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
@@ -78,6 +79,7 @@ type OverlaySnapshot = {
 };
 
 type DebugSnapshot = OverlaySnapshot & {
+  guidanceProviderMode: GuidanceProviderMode;
   guidanceFixture: GuidanceFixture;
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
@@ -677,6 +679,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     isRefreshingCapture: false,
     gestureRuntime: createDefaultGestureRuntimeState(),
     voiceRuntime: createDefaultVoiceRuntimeState(),
+    guidanceProviderMode: "mock",
     guidanceFixture: "safe",
     captureMetadata: null,
     screenshotCapture: null,
@@ -694,6 +697,7 @@ function OverlayWindowApp() {
   const [guidanceFixture, setGuidanceFixture] = useState<GuidanceFixture>("safe");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
+  const [guidanceProviderMode] = useState<GuidanceProviderMode>("mock");
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
@@ -758,6 +762,7 @@ function OverlayWindowApp() {
   const debugSnapshot = useMemo<DebugSnapshot>(
     () => ({
       ...overlaySnapshot,
+      guidanceProviderMode,
       guidanceFixture,
       captureMetadata,
       screenshotCapture,
@@ -770,6 +775,7 @@ function OverlayWindowApp() {
     }),
     [
       overlaySnapshot,
+      guidanceProviderMode,
       guidanceFixture,
       captureMetadata,
       screenshotCapture,
@@ -2417,6 +2423,14 @@ function DebugWindowApp() {
             </div>
             <dl>
               <div>
+                <dt>Provider</dt>
+                <dd>{snapshot.guidanceProviderMode}</dd>
+              </div>
+              <div>
+                <dt>Fixture</dt>
+                <dd>{snapshot.guidanceFixture}</dd>
+              </div>
+              <div>
                 <dt>Request</dt>
                 <dd>{snapshot.guidanceRequest ? "Present" : "None"}</dd>
               </div>
@@ -2459,6 +2473,12 @@ function DebugWindowApp() {
                 </dd>
               </div>
             </dl>
+            {snapshot.guidanceProviderMode === "mock" ? (
+              <p className="debug-muted">
+                Mock guidance proves plumbing only. It is not real screen
+                understanding.
+              </p>
+            ) : null}
           </section>
 
             </>
