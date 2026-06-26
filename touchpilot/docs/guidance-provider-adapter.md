@@ -246,6 +246,17 @@ Expected result for this step:
 - Debug shows `dev-smoke-server`
 - no fake mock target is rendered as a real result
 
+Manual result on 2026-06-26:
+
+- direct server probe returned `200`
+- response mode was `unavailable`
+- provider was `dev-smoke-server`
+- Debug `Real smoke` showed provider unavailable
+- Debug showed request and payload evidence
+- target, box, and coordinates remained `None`
+
+That is the correct result for the smoke server. It proves the app reached the backend boundary without pretending a mock target is real.
+
 Later steps can wire a real provider inside the server without putting provider keys in the desktop app.
 
 ## First Provider Choice
