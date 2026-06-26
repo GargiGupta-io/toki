@@ -147,14 +147,15 @@ Status: Closed as a quality gate.
 - Step 2 result: local Ollama provider is ready on this machine.
 - Step 3 result: first known-screen run reached `local-ollama`, but returned `unavailable` because provider output failed strict `GuidanceResult` validation.
 - Step 4 result: provider raw output is now exposed on invalid responses, and normalized `0..1` target boxes are rejected as invalid CSS-pixel coordinates.
+- Step 5 result: candidate-assisted known-screen guidance returned a real target by anchoring the provider choice to a supplied UI candidate box.
 - Done: add `npm run guidance:provider:check` to verify local Ollama readiness.
 - Done: install/start Ollama from the official macOS app path.
 - Done: pull `llava:latest`.
 - Done: verify `npm run guidance:provider:check` reports `[READY] local Ollama provider is reachable`.
 - Note: local provider checks may need to run outside the Codex sandbox because sandboxed local network calls to `127.0.0.1:11434` can fail even when Ollama is running.
-- Current blocker: `llava:latest` keeps returning normalized target coordinates such as `x=0.389`, `y=0.781`, `width=0.520`, `height=0.412`; these are rejected because Toki requires overlay/display CSS pixels.
-- Next: improve provider evidence with OCR/accessibility candidates or switch model/prompt strategy before judging target accuracy.
-- If screenshot-only targeting is wrong, add OCR/accessibility evidence before Phase 11.
+- Raw screenshot-only targeting failed because `llava:latest` returned normalized coordinates.
+- Candidate-assisted targeting works when the request includes a trusted candidate box.
+- Next: generate candidates automatically from OCR/accessibility instead of manual known-screen env input.
 - Build a candidate UI map from visible text, accessibility nodes, and bounding boxes.
 - Ask the provider to choose from structured candidates instead of raw pixels only.
 - Keep the useful/wrong verdict in Debug as the acceptance gate.
