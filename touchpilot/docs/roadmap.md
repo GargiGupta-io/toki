@@ -129,9 +129,15 @@ Status: Closed as a quality gate.
 - Define backend/proxy contract for `GuidanceRequest` to `GuidanceResult`.
 - Keep paid provider keys out of the desktop app.
 - Connect Debug `Real smoke` to a configured provider endpoint.
-- Run one known-screen target test.
-- Mark the result useful or wrong.
+- Done: prove the local smoke bridge reaches `dev-smoke-server` and preserves `unavailable`.
+- Next: add server-side provider mode config such as `local-ollama` or `unavailable`.
+- Next: wire a real local vision provider adapter behind the smoke endpoint.
+- Next: force provider output through strict `GuidanceResult` parsing and validation.
+- Next: run one known-screen target test.
+- Next: mark the result useful or wrong.
+- Next: record target accuracy, misses, model limits, and whether OCR/accessibility must come before safety.
 - Treat missing provider as `unavailable`, not mock fallback.
+- Do not start safety guardrails until one real provider target is tested or explicitly escalated.
 
 ## Phase 7: Safety And Guardrails
 
