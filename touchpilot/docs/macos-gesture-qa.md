@@ -156,3 +156,57 @@ The current model and WASM files load from MediaPipe CDN URLs. If the Mac is off
 ## Current M5.3 Decision
 
 M5.3 accepts CPU fallback as correct. Final performance tuning can happen later; this step only proves that a hand can become a 21-point landmark frame on Mac.
+
+## Step M5.4 Pinch Gesture Test
+
+Pinch testing checks whether Toki can detect thumb-and-index pinch from a real Mac camera feed.
+
+### How To Test
+
+1. Complete M5.3 so Hand Landmarks is `running`.
+2. Enable Gestures from debug/advanced controls.
+3. Hold one hand in frame.
+4. Slowly bring thumb tip and index finger tip together.
+5. Watch Pinch Classifier, Smoothed Gesture, and Gesture Action.
+
+### Pass
+
+Pinch passes when:
+
+- Pinch Classifier label becomes `pinch`
+- Distance drops below Threshold
+- Smoothed Gesture becomes `pinch`
+- Smoothed phase moves through `holding`
+- Smoothed phase reaches `recognized`
+- Gesture Action records the pinch action
+
+### Fail
+
+Pinch fails when:
+
+- landmarks are running but Distance never changes
+- Distance drops below Threshold but label stays `none`
+- label becomes `pinch` but Smoothed Gesture never reaches `recognized`
+- recognition fires repeatedly without respecting cooldown
+- pinch recognition triggers while the hand is open
+
+### Debug Reading Guide
+
+Raw pinch detection is not the same as command activation:
+
+```text
+Pinch Classifier
+  -> raw per-frame candidate
+
+Smoothed Gesture
+  -> hold/cooldown logic
+
+Gesture Action
+  -> command actually fired
+```
+
+For M5.4, the important result is not just `pinch` appearing once. The important result is a stable transition from raw pinch to recognized smoothed gesture to one action.
+
+## Current M5.4 Decision
+
+Pinch remains debug-first until it is reliable under normal laptop lighting. If pinch is noisy, voice remains the primary activation path.
