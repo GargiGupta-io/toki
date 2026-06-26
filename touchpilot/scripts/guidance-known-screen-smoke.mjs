@@ -89,6 +89,39 @@ function getImageSize(buffer) {
   return size;
 }
 
+function parseKnownScreenCandidates() {
+  const raw = process.env.TOKI_KNOWN_SCREEN_CANDIDATES?.trim();
+
+  if (raw == null || raw.length === 0) {
+    return [];
+  }
+
+  const parsed = JSON.parse(raw);
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("TOKI_KNOWN_SCREEN_CANDIDATES must be a JSON array");
+  }
+
+  return parsed.map((candidate, index) => ({
+    id:
+      typeof candidate.id === "string" && candidate.id.trim().length > 0
+        ? candidate.id.trim()
+        : `candidate-${index + 1}`,
+    label:
+      typeof candidate.label === "string" && candidate.label.trim().length > 0
+        ? candidate.label.trim()
+        : `Candidate ${index + 1}`,
+    role:
+      typeof candidate.role === "string" && candidate.role.trim().length > 0
+        ? candidate.role.trim()
+        : "unknown",
+    x: Number(candidate.x),
+    y: Number(candidate.y),
+    width: Number(candidate.width),
+    height: Number(candidate.height),
+  }));
+}
+
 function createGuidanceRequest({ imagePath, image, size }) {
   const scaleFactor = getNumberEnv("TOKI_KNOWN_SCREEN_SCALE", 1);
   const displayWidth = getNumberEnv(
@@ -99,8 +132,9 @@ function createGuidanceRequest({ imagePath, image, size }) {
     "TOKI_KNOWN_SCREEN_DISPLAY_HEIGHT",
     Math.round(size.height / scaleFactor),
   );
+  const candidates = parseKnownScreenCandidates();
 
-  return {
+  const request = {
     goal: process.env.TOKI_KNOWN_SCREEN_GOAL?.trim() || DEFAULT_GOAL,
     screen: {
       display: {
@@ -143,6 +177,12 @@ function createGuidanceRequest({ imagePath, image, size }) {
       },
     },
   };
+
+  if (candidates.length > 0) {
+    request.screen.candidates = candidates;
+  }
+
+  return request;
 }
 
 function printGuidanceResponse(response) {
@@ -203,6 +243,10 @@ async function main() {
   const image = await readFile(imagePath);
   const size = getImageSize(image);
   const request = createGuidanceRequest({ imagePath, image, size });
+
+  if (Array.isArray(request.screen.candidates)) {
+    console.log(`Known-screen candidates: ${request.screen.candidates.length}`);
+  }
 
   const response = await fetch(endpoint, {
     method: "POST",
