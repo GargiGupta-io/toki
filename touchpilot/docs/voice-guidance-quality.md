@@ -78,6 +78,13 @@ Add a compact result review area in Debug:
 
 This does not train a model yet. It gives us a way to judge results.
 
+Current status:
+
+- Debug Guidance now shows the submitted goal text instead of only saying a request exists.
+- Debug Guidance shows the target label and target box in a compact result review area.
+- A tester can mark the current result as `useful` or `wrong`.
+- The verdict is local QA state for now; it is not stored as a training dataset yet.
+
 ### VG.3 Screenshot Payload Gate
 
 Confirm that real guidance requests can include:
