@@ -769,6 +769,22 @@ The first Voice Guidance Quality change adds:
 
 This is small, but important. Before this, a tester could hear voice work, see a ring appear, and think the app understood the screen. Now Debug makes the truth visible: the current result is mock guidance until a real provider path is added.
 
+### VG.2 Debug Result Review
+
+Plain English: Toki now gives the tester a simple place to judge whether the guidance result was actually useful.
+
+The debug Guidance tab now includes:
+
+- the goal text that was sent into guidance
+- the current provider mode
+- the target label
+- the target coordinates and size
+- a local verdict control: `useful` or `wrong`
+
+This does not make the guidance smarter yet. It gives us a scoreboard for manual testing. Without this, every voice test ends with a vague feeling like "the ring appeared." With it, we can say exactly what the app heard, what it highlighted, and whether that highlight helped.
+
+The important tradeoff is that verdicts are currently local UI state only. That keeps the step small and avoids inventing a feedback database too early. Later, when real guidance exists, these verdicts can become saved evaluation examples.
+
 ## Updates
 
 - 2026-06-25 - Created after Phase M0 completed on macOS.
@@ -801,3 +817,4 @@ This is small, but important. Before this, a tester could hear voice work, see a
 - 2026-06-26 - Closed Phase M5 with the decision that gestures remain debug-first and secondary to voice until manual Mac camera testing proves reliability.
 - 2026-06-26 - Added the Voice Guidance Quality phase as the next product step because voice works but target guidance is still mock-based.
 - 2026-06-26 - Added VG.1 provider-mode visibility so mock guidance is clearly labeled and cannot be mistaken for real screen understanding.
+- 2026-06-26 - Added VG.2 debug result review so manual voice guidance tests can mark a target useful or wrong.
