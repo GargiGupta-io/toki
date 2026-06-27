@@ -355,6 +355,10 @@ Required environment:
 | `TOKI_KNOWN_SCREEN_GOAL` | User goal, for example `Click the Manage button` |
 | `TOKI_KNOWN_SCREEN_SCALE` | Display scale factor, usually `2` on Retina Macs |
 | `TOKI_GUIDANCE_ENDPOINT` | Optional provider endpoint, defaults to `http://127.0.0.1:8787/api/guidance/smoke` |
+| `TOKI_KNOWN_SCREEN_CANDIDATES` | Optional JSON array of manual candidate boxes |
+| `TOKI_KNOWN_SCREEN_AUTO_CANDIDATES` | Set to `0` to disable automatic macOS Accessibility candidates |
+| `TOKI_KNOWN_SCREEN_APP_NAME` | Optional macOS app process name to inspect instead of the frontmost app |
+| `TOKI_ACCESSIBILITY_APP_NAME` | Alternate shared app name env for macOS Accessibility candidate extraction |
 
 Example:
 
@@ -461,6 +465,16 @@ Candidate-assisted known-screen run:
 | Returned target | `Message input box at 20,790 1430x60` |
 | Verdict | `real` / candidate-assisted useful smoke |
 | Caveat | This proves candidate selection and anchoring, not automatic OCR/accessibility candidate generation yet. |
+
+Step 10.6.6 automatic candidate update:
+
+- added a macOS Accessibility candidate collector
+- the known-screen runner now uses manual candidates first, then tries macOS Accessibility automatically
+- automatic candidates include label, role, and CSS-point box data from the target app's accessibility tree
+- `TOKI_KNOWN_SCREEN_APP_NAME` can point the collector at a specific app when Terminal is frontmost
+- if macOS Accessibility permission is missing, the runner keeps going with no candidates and prints the warning
+- this is the first automatic candidate source, but it is not full OCR yet
+- local probe result: the collector executed without script error, but returned zero candidates for the current frontmost context; use `TOKI_KNOWN_SCREEN_APP_NAME` when the target app is not frontmost or does not expose obvious window candidates
 
 Decision rule before Phase 11:
 
