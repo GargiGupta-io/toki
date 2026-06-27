@@ -157,6 +157,10 @@ fn now_ms() -> u128 {
         .as_millis()
 }
 
+fn auto_smoke_logs_enabled() -> bool {
+    std::env::var("TOKI_AUTO_REAL_SMOKE").ok().as_deref() == Some("true")
+}
+
 fn normalize_candidate_text(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -678,21 +682,54 @@ fn position_settings_panel<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) 
 
 #[tauri::command]
 fn capture_metadata() -> Result<CaptureMetadata, String> {
-    capture_primary_display_metadata().map_err(|error| error.to_string())
+    if auto_smoke_logs_enabled() {
+        eprintln!("toki auto real smoke: capture_metadata start");
+    }
+
+    let result = capture_primary_display_metadata().map_err(|error| error.to_string());
+
+    if auto_smoke_logs_enabled() {
+        eprintln!("toki auto real smoke: capture_metadata done");
+    }
+
+    result
 }
 
 #[tauri::command]
 fn capture_screenshot() -> Result<ScreenshotCapture, String> {
-    capture_primary_display().map_err(|error| error.to_string())
+    if auto_smoke_logs_enabled() {
+        eprintln!("toki auto real smoke: capture_screenshot start");
+    }
+
+    let result = capture_primary_display().map_err(|error| error.to_string());
+
+    if auto_smoke_logs_enabled() {
+        eprintln!("toki auto real smoke: capture_screenshot done");
+    }
+
+    result
 }
 
 #[tauri::command]
 fn collect_screen_candidates(
     request: ScreenCandidateRequest,
 ) -> Result<ScreenCandidateResult, String> {
+    if auto_smoke_logs_enabled() {
+        eprintln!("toki auto real smoke: collect_screen_candidates start");
+    }
+
     #[cfg(target_os = "macos")]
     {
-        return Ok(collect_macos_vision_candidates(request));
+        let result = collect_macos_vision_candidates(request);
+
+        if auto_smoke_logs_enabled() {
+            eprintln!(
+                "toki auto real smoke: collect_screen_candidates done candidates={}",
+                result.candidates.len()
+            );
+        }
+
+        return Ok(result);
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -1122,6 +1159,48 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             show_settings_window(app.handle());
+
+            if std::env::var("TOKI_AUTO_REAL_SMOKE").ok().as_deref() == Some("true") {
+                let app_handle = app.handle().clone();
+                let auto_smoke_goal = std::env::var("TOKI_AUTO_REAL_SMOKE_GOAL")
+                    .unwrap_or_else(|_| "Show me what to click next.".to_string());
+                thread::spawn(move || {
+                    eprintln!("toki auto real smoke requested");
+                    thread::sleep(Duration::from_millis(5_000));
+                    let Some(overlay) = app_handle.get_webview_window("overlay") else {
+                        eprintln!("toki auto real smoke failed: overlay window not found");
+                        return;
+                    };
+                    let Ok(goal_json) = serde_json::to_string(&auto_smoke_goal) else {
+                        eprintln!("toki auto real smoke failed: could not encode goal");
+                        return;
+                    };
+
+                    let script = r#"
+(() => {
+  let attempts = 0;
+  const timer = window.setInterval(() => {
+    attempts += 1;
+    if (typeof window.__tokiRunRealGuidanceSmoke === "function") {
+      window.clearInterval(timer);
+      window.__tokiRunRealGuidanceSmoke(__TOKI_AUTO_SMOKE_GOAL__);
+      return;
+    }
+
+    if (attempts >= 30) {
+      window.clearInterval(timer);
+    }
+  }, 500);
+})();
+"#
+                    .replace("__TOKI_AUTO_SMOKE_GOAL__", &goal_json);
+
+                    match overlay.eval(&script) {
+                        Ok(()) => eprintln!("toki auto real smoke eval sent"),
+                        Err(error) => eprintln!("toki auto real smoke eval failed: {error}"),
+                    }
+                });
+            }
 
             Ok(())
         })
