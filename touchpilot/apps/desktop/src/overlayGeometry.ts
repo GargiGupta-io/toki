@@ -18,9 +18,11 @@ export type PuckTargetVector = {
 };
 
 export const pointerShadowGeometry = {
-  offsetX: 6,
-  offsetY: 8,
-  margin: 8,
+  centerOffsetX: 6,
+  centerOffsetY: 7,
+  edgeCenterOffsetX: 10,
+  edgeCenterOffsetY: 12,
+  margin: 4,
   width: 24,
   height: 30,
 } as const;
@@ -52,14 +54,31 @@ export function getPointerShadowPosition(
     pointerShadowGeometry.height -
     pointerShadowGeometry.margin;
 
+  const preferredCenterX = pointerX + pointerShadowGeometry.centerOffsetX;
+  const preferredCenterY = pointerY + pointerShadowGeometry.centerOffsetY;
+  const halfWidth = pointerShadowGeometry.width / 2;
+  const halfHeight = pointerShadowGeometry.height / 2;
+  const centerOffsetX =
+    preferredCenterX + halfWidth > viewport.width - pointerShadowGeometry.margin
+      ? -pointerShadowGeometry.edgeCenterOffsetX
+      : preferredCenterX - halfWidth < pointerShadowGeometry.margin
+        ? pointerShadowGeometry.edgeCenterOffsetX
+        : pointerShadowGeometry.centerOffsetX;
+  const centerOffsetY =
+    preferredCenterY + halfHeight > viewport.height - pointerShadowGeometry.margin
+      ? -pointerShadowGeometry.edgeCenterOffsetY
+      : preferredCenterY - halfHeight < pointerShadowGeometry.margin
+        ? pointerShadowGeometry.edgeCenterOffsetY
+        : pointerShadowGeometry.centerOffsetY;
+
   return {
     x: clamp(
-      pointerX + pointerShadowGeometry.offsetX,
+      pointerX + centerOffsetX - halfWidth,
       pointerShadowGeometry.margin,
       maxX,
     ),
     y: clamp(
-      pointerY + pointerShadowGeometry.offsetY,
+      pointerY + centerOffsetY - halfHeight,
       pointerShadowGeometry.margin,
       maxY,
     ),
