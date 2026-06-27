@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   collectMacAccessibilityCandidates,
+  listMacAccessibilityProcesses,
   normalizeAccessibilityCandidate,
   parseMacAccessibilityOutput,
 } from "./macos-accessibility-candidates.mjs";
@@ -109,6 +110,9 @@ test("collectMacAccessibilityCandidates calls osascript on macOS", async () => {
       return {
         stdout: JSON.stringify({
           appName: "Safari",
+          windowCount: 1,
+          visitedCount: 3,
+          errors: [],
           candidates: [
             {
               label: "Search",
@@ -127,7 +131,29 @@ test("collectMacAccessibilityCandidates calls osascript on macOS", async () => {
   assert.equal(calls[0].command, "osascript");
   assert.deepEqual(calls[0].args.slice(0, 2), ["-l", "JavaScript"]);
   assert.equal(result.source, "macos-accessibility");
+  assert.equal(result.appName, "Safari");
+  assert.equal(result.windowCount, 1);
+  assert.equal(result.visitedCount, 3);
   assert.equal(result.candidates[0].label, "Search");
+});
+
+test("collectMacAccessibilityCandidates surfaces tree read errors", async () => {
+  const result = await collectMacAccessibilityCandidates({
+    platform: "darwin",
+    execFileImpl: async () => ({
+      stdout: JSON.stringify({
+        appName: "Microsoft Edge",
+        windowCount: 0,
+        visitedCount: 0,
+        errors: ["read windows: osascript is not allowed assistive access"],
+        candidates: [],
+      }),
+    }),
+  });
+
+  assert.equal(result.source, "macos-accessibility");
+  assert.equal(result.candidates.length, 0);
+  assert.match(result.error, /assistive access/);
 });
 
 test("collectMacAccessibilityCandidates returns empty on non-Mac platforms", async () => {
@@ -136,4 +162,28 @@ test("collectMacAccessibilityCandidates returns empty on non-Mac platforms", asy
   assert.equal(result.source, "unsupported");
   assert.deepEqual(result.candidates, []);
   assert.match(result.error, /darwin/);
+});
+
+test("listMacAccessibilityProcesses parses visible app names", async () => {
+  const calls = [];
+  const result = await listMacAccessibilityProcesses({
+    platform: "darwin",
+    execFileImpl: async (command, args) => {
+      calls.push({ command, args });
+
+      return {
+        stdout: JSON.stringify([
+          { name: "Microsoft Edge", frontmost: true },
+          { name: "Finder", frontmost: false },
+          { name: "", frontmost: false },
+        ]),
+      };
+    },
+  });
+
+  assert.equal(calls[0].command, "osascript");
+  assert.deepEqual(result.processes, [
+    { name: "Microsoft Edge", frontmost: true },
+    { name: "Finder", frontmost: false },
+  ]);
 });
