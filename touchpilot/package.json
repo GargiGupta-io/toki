@@ -20,7 +20,7 @@
     "guidance:smoke:ollama": "TOKI_GUIDANCE_PROVIDER=local-ollama node scripts/guidance-smoke-server.mjs",
     "guidance:provider:check": "node scripts/guidance-provider-check.mjs",
     "guidance:known-screen": "node scripts/guidance-known-screen-smoke.mjs",
-    "test:guidance:smoke": "node --test scripts/guidance-smoke-server.test.mjs scripts/macos-accessibility-candidates.test.mjs",
+    "test:guidance:smoke": "node --test scripts/guidance-smoke-server.test.mjs scripts/macos-accessibility-candidates.test.mjs scripts/macos-vision-ocr-candidates.test.mjs",
     "desktop:dev:guidance-smoke": "VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev": "npm --workspace @toki/desktop run tauri dev",
     "desktop:build": "npm --workspace @toki/desktop run tauri build",
@@ -33,6 +33,7 @@
     "qa:mac:mic": "cargo run -p toki-desktop --example mic_capture_probe",
     "qa:mac:transcribe": "cargo run -p toki-desktop --example voice_transcription_probe",
     "qa:mac:candidates": "node scripts/macos-accessibility-candidate-probe.mjs",
+    "qa:mac:ocr:candidates": "node scripts/macos-vision-ocr-candidate-probe.mjs",
     "qa:windows:runtime": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-runtime-qa.ps1",
     "qa:windows:visual": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-visual-qa.ps1"
   }
