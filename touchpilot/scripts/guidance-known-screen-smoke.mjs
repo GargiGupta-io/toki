@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { collectMacAccessibilityCandidates } from "./macos-accessibility-candidates.mjs";
+import { collectMacVisionOcrCandidates } from "./macos-vision-ocr-candidates.mjs";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:8787/api/guidance/smoke";
 const DEFAULT_GOAL = "Show me what to click next.";
@@ -123,7 +124,12 @@ function parseKnownScreenCandidates() {
   }));
 }
 
-async function resolveKnownScreenCandidates({ displayWidth, displayHeight }) {
+async function resolveKnownScreenCandidates({
+  imagePath,
+  displayWidth,
+  displayHeight,
+  scaleFactor,
+}) {
   const explicitCandidates = parseKnownScreenCandidates();
 
   if (explicitCandidates.length > 0) {
@@ -140,13 +146,40 @@ async function resolveKnownScreenCandidates({ displayWidth, displayHeight }) {
     };
   }
 
-  return collectMacAccessibilityCandidates({
+  const accessibilityResult = await collectMacAccessibilityCandidates({
     appName:
       process.env.TOKI_KNOWN_SCREEN_APP_NAME ??
       process.env.TOKI_ACCESSIBILITY_APP_NAME,
     displayWidth,
     displayHeight,
   });
+
+  if (
+    accessibilityResult.candidates.length > 0 ||
+    process.env.TOKI_KNOWN_SCREEN_OCR_CANDIDATES === "0"
+  ) {
+    return accessibilityResult;
+  }
+
+  const ocrResult = await collectMacVisionOcrCandidates({
+    imagePath,
+    displayWidth,
+    displayHeight,
+    scaleFactor,
+  });
+
+  if (ocrResult.candidates.length > 0) {
+    return {
+      ...ocrResult,
+      error: accessibilityResult.error,
+    };
+  }
+
+  return {
+    source: `${accessibilityResult.source}+${ocrResult.source}`,
+    candidates: [],
+    error: [accessibilityResult.error, ocrResult.error].filter(Boolean).join(" | "),
+  };
 }
 
 async function createGuidanceRequest({ imagePath, image, size }) {
@@ -160,8 +193,10 @@ async function createGuidanceRequest({ imagePath, image, size }) {
     Math.round(size.height / scaleFactor),
   );
   const candidateResult = await resolveKnownScreenCandidates({
+    imagePath,
     displayWidth,
     displayHeight,
+    scaleFactor,
   });
 
   const request = {
