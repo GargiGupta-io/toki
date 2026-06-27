@@ -75,9 +75,8 @@ fn main() -> Result<(), String> {
                 &stream_config,
                 move |data: &[u16], _| {
                     for &sample in data {
-                        let normalized =
-                            (f32::from(sample) - f32::from(u16::MAX) / 2.0)
-                                / (f32::from(u16::MAX) / 2.0);
+                        let normalized = (f32::from(sample) - f32::from(u16::MAX) / 2.0)
+                            / (f32::from(u16::MAX) / 2.0);
                         update_stats(&stats, normalized);
                     }
                 },
