@@ -799,8 +799,8 @@ h1 {
   pointer-events: none;
   will-change: transform, opacity;
   transition:
-    left 70ms linear,
-    top 70ms linear,
+    left 28ms linear,
+    top 28ms linear,
     transform 140ms ease,
     opacity 180ms ease;
 }
