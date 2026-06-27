@@ -110,9 +110,8 @@ fn record_audio() -> Result<(Vec<u8>, u32, u16, String, usize, f32), String> {
                 &stream_config,
                 move |data: &[u16], _| {
                     for &sample in data {
-                        let normalized =
-                            (f32::from(sample) - f32::from(u16::MAX) / 2.0)
-                                / (f32::from(u16::MAX) / 2.0);
+                        let normalized = (f32::from(sample) - f32::from(u16::MAX) / 2.0)
+                            / (f32::from(u16::MAX) / 2.0);
                         push_sample(&buffer, normalized);
                     }
                 },
@@ -348,7 +347,9 @@ fn main() -> Result<(), String> {
     let (model, text) = transcribe_audio(wav_bytes)?;
     validate_spoken_command(&text)?;
 
-    println!("[PASS] transcription - model={model}, sample_rate={sample_rate}, channels={channels}");
+    println!(
+        "[PASS] transcription - model={model}, sample_rate={sample_rate}, channels={channels}"
+    );
     println!("Transcript: {text}");
 
     Ok(())
