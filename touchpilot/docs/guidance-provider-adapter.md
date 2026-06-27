@@ -533,6 +533,31 @@ Tradeoff:
 
 OCR can see text even when browser Accessibility traversal is poor, but it does not know semantics. It can find labels like `Download`, `Search`, or `Manage`; it cannot always know whether the text is a button, tab, link, or paragraph. The provider still needs to choose from OCR candidates carefully, and OCR should eventually be combined with native AX and screenshot geometry.
 
+Step 10.6.10 OCR-backed provider run:
+
+```bash
+TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
+TOKI_KNOWN_SCREEN_GOAL='Click the text that says Find and fix a bug in @filename' \
+TOKI_KNOWN_SCREEN_SCALE=2 \
+TOKI_KNOWN_SCREEN_APP_NAME='Microsoft Edge' \
+npm run guidance:known-screen
+```
+
+Result:
+
+| Field | Value |
+| --- | --- |
+| Candidate source | `macos-vision-ocr` |
+| Candidate count | `14` |
+| Provider | `local-ollama` / `llava:latest` |
+| Mode | `real` |
+| Returned target | `> Find and fix a bug in @filename at 9,809 235x17` |
+| Confidence | `0.9` |
+| Risk | `safe_navigation` |
+| Verdict | `useful` |
+
+This is the first useful local-provider target from automatically extracted candidates. It proves that OCR candidates can bridge the browser Accessibility gap for text-visible targets. It does not prove icon-only targets, unlabeled controls, or complex form layouts yet.
+
 Decision rule before Phase 11:
 
 - If one known-screen target is useful, Phase 10.5 can close as a smoke-level provider path.
