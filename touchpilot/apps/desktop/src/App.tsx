@@ -576,6 +576,20 @@ function getViewportMetrics(): ViewportMetrics {
   };
 }
 
+type NativeCursorPosition = {
+  x: number;
+  y: number;
+  source: string;
+};
+
+async function getOverlayCursorPosition(): Promise<Pick<NativeCursorPosition, "x" | "y">> {
+  try {
+    return await invoke<NativeCursorPosition>("native_cursor_position");
+  } catch {
+    return cursorPosition();
+  }
+}
+
 function getCalibration(
   captureMetadata: CaptureMetadata | null,
   viewport: ViewportMetrics,
@@ -1011,7 +1025,7 @@ function OverlayWindowApp() {
 
     async function syncCursorShadow() {
       try {
-        const position = await cursorPosition();
+        const position = await getOverlayCursorPosition();
 
         if (!disposed) {
           setPointerShadow(getPointerShadowPosition(position.x, position.y, viewport));
