@@ -7,6 +7,7 @@ const DEFAULT_GUIDANCE_PROVIDER = "unavailable";
 const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate";
 const DEFAULT_OLLAMA_MODEL = "llava:latest";
 const MAX_PROVIDER_RAW_TEXT_CHARS = 2000;
+const DEFAULT_PROVIDER_TIMEOUT_MS = 90_000;
 const MIN_TARGET_SIZE_CSS_PX = 4;
 const MAX_SCREEN_CANDIDATES = 20;
 const SUPPORTED_GUIDANCE_PROVIDERS = new Set([
@@ -48,6 +49,14 @@ function jsonHeaders(extra = {}) {
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, jsonHeaders());
   response.end(JSON.stringify(body));
+}
+
+function resolveProviderTimeoutMs(env = process.env) {
+  const timeoutMs = Number(env.TOKI_GUIDANCE_PROVIDER_TIMEOUT_MS);
+
+  return Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : DEFAULT_PROVIDER_TIMEOUT_MS;
 }
 
 function readRequestBody(request) {
@@ -160,6 +169,24 @@ function createOllamaPrompt(request) {
     (candidate) =>
       `- id=${candidate.id}; label=${candidate.label}; role=${candidate.role}; box=${candidate.x},${candidate.y},${candidate.width}x${candidate.height}`,
   );
+
+  if (candidates.length > 0) {
+    return [
+      "You are Toki, a desktop screen guidance assistant.",
+      "Choose the single best candidate for the user's goal.",
+      "Return only JSON. Do not include markdown, prose, comments, or code fences.",
+      "",
+      "Required JSON shape:",
+      '{ "candidateId": "candidate id", "instruction": "short click instruction", "confidence": 0.5 }',
+      "",
+      "Candidate UI elements are provided. Prefer choosing one of these candidates instead of guessing coordinates.",
+      "",
+      "Candidates:",
+      ...candidateLines,
+      "",
+      `User goal: ${request.goal}`,
+    ].join("\n");
+  }
 
   return [
     "You are Toki, a desktop screen guidance assistant.",
@@ -398,6 +425,75 @@ function applyCandidateAnchor(result, guidanceRequest) {
   };
 }
 
+function createGuidanceResultFromCandidateSelection(
+  providerBody,
+  guidanceRequest,
+  providerName,
+) {
+  if (!isObject(providerBody)) {
+    return null;
+  }
+
+  const candidateId =
+    typeof providerBody.candidateId === "string"
+      ? providerBody.candidateId
+      : typeof providerBody.id === "string"
+        ? providerBody.id
+        : null;
+  const targetLabel =
+    typeof providerBody.label === "string"
+      ? providerBody.label
+      : typeof providerBody.target === "string"
+        ? providerBody.target
+        : null;
+
+  const candidate = findMatchingCandidate(
+    {
+      candidateId,
+      label: targetLabel,
+    },
+    guidanceRequest,
+  );
+
+  if (candidate == null) {
+    return null;
+  }
+
+  const confidence = Number(providerBody.confidence);
+
+  return {
+    mode: "real",
+    providerName,
+    result: {
+      mode: "guide",
+      summary:
+        typeof providerBody.summary === "string" && providerBody.summary.trim().length > 0
+          ? providerBody.summary.trim()
+          : `Selected ${candidate.label}.`,
+      step: {
+        instruction:
+          typeof providerBody.instruction === "string" &&
+          providerBody.instruction.trim().length > 0
+            ? providerBody.instruction.trim()
+            : `Click ${candidate.label}.`,
+        target: {
+          candidateId: candidate.id,
+          label: candidate.label,
+          x: candidate.x,
+          y: candidate.y,
+          width: candidate.width,
+          height: candidate.height,
+        },
+        confidence: Number.isFinite(confidence)
+          ? Math.min(1, Math.max(0, confidence))
+          : 0.65,
+        risk: "safe_navigation",
+        requiresConfirmation: false,
+      },
+    },
+  };
+}
+
 export function validateProviderGuidanceResult(result, guidanceRequest) {
   const issues = [];
 
@@ -568,10 +664,16 @@ export function normalizeProviderGuidanceResponse(
     };
   }
 
+  const candidateSelection = createGuidanceResultFromCandidateSelection(
+    providerBody,
+    guidanceRequest,
+    providerName,
+  );
   const result =
-    providerBody.mode === "real" && isObject(providerBody.result)
+    candidateSelection?.result ??
+    (providerBody.mode === "real" && isObject(providerBody.result)
       ? providerBody.result
-      : providerBody;
+      : providerBody);
   const anchoredResult = applyCandidateAnchor(result, guidanceRequest);
   const validation = validateProviderGuidanceResult(anchoredResult, guidanceRequest);
 
@@ -600,6 +702,11 @@ export async function requestLocalOllamaGuidance(
   options = {},
 ) {
   const fetcher = options.fetchImpl ?? fetch;
+  const timeoutMs = Number(options.timeoutMs ?? resolveProviderTimeoutMs(options.env));
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => {
+    abortController.abort();
+  }, timeoutMs);
   let responseText = "";
 
   try {
@@ -617,6 +724,7 @@ export async function requestLocalOllamaGuidance(
         "content-type": "application/json",
       },
       body: JSON.stringify(ollamaRequest),
+      signal: abortController.signal,
     });
 
     if (!response.ok) {
@@ -641,15 +749,24 @@ export async function requestLocalOllamaGuidance(
   } catch (error) {
     return {
       mode: "unavailable",
-      error: error instanceof Error ? error.message : String(error),
+      error:
+        error instanceof Error && error.name === "AbortError"
+          ? `local Ollama timed out after ${timeoutMs}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error),
       providerName: providerConfig.providerName,
       providerRawText: truncateProviderRawText(responseText),
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
 export async function handleGuidanceSmokeRequest(request, response, options = {}) {
   const providerConfig = resolveGuidanceProviderConfig(options.env);
+
+  console.log(`[http] ${request.method} ${request.url}`);
 
   if (request.method === "OPTIONS") {
     response.writeHead(204, jsonHeaders());
@@ -700,10 +817,20 @@ export async function handleGuidanceSmokeRequest(request, response, options = {}
     return;
   }
 
+  const candidates = getScreenCandidates(body);
+  console.log(
+    `[request] goal="${body.goal}" candidates=${candidates.length} source=${body.screen?.candidateSource ?? "none"}`,
+  );
+
   if (providerConfig.provider === "local-ollama") {
     const providerResponse = await requestLocalOllamaGuidance(body, providerConfig, {
       fetchImpl: options.fetchImpl,
+      env: options.env,
     });
+
+    console.log(
+      `[response] mode=${providerResponse.mode} provider=${providerResponse.providerName ?? "unknown"} target=${providerResponse.result?.step?.target?.label ?? "none"} error=${providerResponse.error ?? "none"}`,
+    );
 
     sendJson(response, 200, providerResponse);
     return;
