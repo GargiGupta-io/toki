@@ -89,6 +89,23 @@ export function parseMacAccessibilityOutput(stdout, options = {}) {
     .slice(0, MAX_ACCESSIBILITY_CANDIDATES);
 }
 
+function parseMacAccessibilityMetadata(stdout) {
+  const parsed = JSON.parse(stdout);
+
+  if (Array.isArray(parsed)) {
+    return {};
+  }
+
+  return {
+    appName: normalizeText(parsed.appName),
+    windowCount: Number.isFinite(parsed.windowCount) ? parsed.windowCount : 0,
+    visitedCount: Number.isFinite(parsed.visitedCount) ? parsed.visitedCount : 0,
+    errors: Array.isArray(parsed.errors)
+      ? parsed.errors.filter((error) => normalizeText(error).length > 0)
+      : [],
+  };
+}
+
 function createAccessibilityScript(appName) {
   const appNameLiteral = JSON.stringify(normalizeText(appName));
 
@@ -96,11 +113,16 @@ function createAccessibilityScript(appName) {
 function run() {
   var appName = ${appNameLiteral};
   var systemEvents = Application("System Events");
+  var errors = [];
+  var visitedCount = 0;
 
-  function readSafely(read, fallback) {
+  function readSafely(read, fallback, context) {
     try {
       return read();
-    } catch (_) {
+    } catch (error) {
+      if (context) {
+        errors.push(context + ": " + String(error));
+      }
       return fallback;
     }
   }
@@ -160,7 +182,13 @@ function run() {
       });
     }
 
-    var children = readSafely(function () { return element.uiElements(); }, []);
+    visitedCount += 1;
+
+    var children = readSafely(
+      function () { return element.uiElements(); },
+      [],
+      "read children"
+    );
 
     for (var index = 0; index < children.length; index += 1) {
       addElement(children[index], depth + 1);
@@ -168,7 +196,11 @@ function run() {
   }
 
   if (process) {
-    var windows = readSafely(function () { return process.windows(); }, []);
+    var windows = readSafely(
+      function () { return process.windows(); },
+      [],
+      "read windows"
+    );
 
     for (var index = 0; index < windows.length; index += 1) {
       addElement(windows[index], 0);
@@ -176,11 +208,86 @@ function run() {
   }
 
   return JSON.stringify({
-    appName: process ? readSafely(function () { return process.name(); }, "") : "",
+    appName: process ? readSafely(function () { return process.name(); }, "", "read process name") : "",
+    windowCount: windows ? windows.length : 0,
+    visitedCount: visitedCount,
+    errors: errors,
     candidates: candidates
   });
 }
 `;
+}
+
+function createVisibleProcessesScript() {
+  return `
+function run() {
+  var systemEvents = Application("System Events");
+  var processes = systemEvents.processes.whose({ visible: true });
+  var items = [];
+
+  function readSafely(read, fallback) {
+    try {
+      return read();
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  for (var index = 0; index < processes.length; index += 1) {
+    items.push({
+      name: readSafely(function () { return processes[index].name(); }, ""),
+      frontmost: readSafely(function () { return processes[index].frontmost(); }, false)
+    });
+  }
+
+  return JSON.stringify(items);
+}
+`;
+}
+
+export async function listMacAccessibilityProcesses(options = {}) {
+  const platform = options.platform ?? process.platform;
+
+  if (platform !== "darwin") {
+    return {
+      source: "unsupported",
+      processes: [],
+      error: "macOS accessibility process listing is only available on darwin",
+    };
+  }
+
+  const execFileImpl = options.execFileImpl ?? execFileAsync;
+
+  try {
+    const result = await execFileImpl(
+      "osascript",
+      ["-l", "JavaScript", "-e", createVisibleProcessesScript()],
+      {
+        timeout: options.timeoutMs ?? 5000,
+        maxBuffer: 512 * 1024,
+      },
+    );
+    const stdout = typeof result === "string" ? result : result.stdout;
+    const parsed = JSON.parse(stdout);
+
+    return {
+      source: "macos-accessibility",
+      processes: Array.isArray(parsed)
+        ? parsed
+            .filter((process) => normalizeText(process.name).length > 0)
+            .map((process) => ({
+              name: normalizeText(process.name),
+              frontmost: process.frontmost === true,
+            }))
+        : [],
+    };
+  } catch (error) {
+    return {
+      source: "macos-accessibility",
+      processes: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function collectMacAccessibilityCandidates(options = {}) {
@@ -206,10 +313,17 @@ export async function collectMacAccessibilityCandidates(options = {}) {
       },
     );
     const stdout = typeof result === "string" ? result : result.stdout;
+    const metadata = parseMacAccessibilityMetadata(stdout);
+    const candidates = parseMacAccessibilityOutput(stdout, options);
 
     return {
       source: "macos-accessibility",
-      candidates: parseMacAccessibilityOutput(stdout, options),
+      ...metadata,
+      candidates,
+      error:
+        candidates.length === 0 && metadata.errors.length > 0
+          ? metadata.errors.join("; ")
+          : undefined,
     };
   } catch (error) {
     return {
