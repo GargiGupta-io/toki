@@ -173,8 +173,8 @@ test("listMacAccessibilityProcesses parses visible app names", async () => {
 
       return {
         stdout: JSON.stringify([
-          { name: "Microsoft Edge", frontmost: true },
-          { name: "Finder", frontmost: false },
+          { name: "Microsoft Edge", frontmost: true, windowCount: 2 },
+          { name: "Finder", frontmost: false, windowCount: 1 },
           { name: "", frontmost: false },
         ]),
       };
@@ -183,7 +183,7 @@ test("listMacAccessibilityProcesses parses visible app names", async () => {
 
   assert.equal(calls[0].command, "osascript");
   assert.deepEqual(result.processes, [
-    { name: "Microsoft Edge", frontmost: true },
-    { name: "Finder", frontmost: false },
+    { name: "Microsoft Edge", frontmost: true, windowCount: 2 },
+    { name: "Finder", frontmost: false, windowCount: 1 },
   ]);
 });
