@@ -18,10 +18,10 @@ export type PuckTargetVector = {
 };
 
 export const pointerShadowGeometry = {
-  centerOffsetX: 6,
-  centerOffsetY: 7,
-  edgeCenterOffsetX: 10,
-  edgeCenterOffsetY: 12,
+  centerOffsetX: 3,
+  centerOffsetY: 5,
+  edgeCenterOffsetX: 8,
+  edgeCenterOffsetY: 10,
   margin: 4,
   width: 24,
   height: 30,

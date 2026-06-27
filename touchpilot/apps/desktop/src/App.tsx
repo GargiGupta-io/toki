@@ -323,7 +323,7 @@ function AssistantPuck({
     <div
       className={`assistant-puck is-${meta.tone}`}
       data-motion={motion.state}
-      data-pointer-shadow={motion.state === "shadow" && pointerShadow ? "active" : "idle"}
+      data-pointer-shadow={pointerShadow ? "active" : "idle"}
       data-target-droplets={motion.canSendTargetDroplets ? "enabled" : "disabled"}
       style={puckStyle}
       aria-label={`Toki is ${meta.label.toLowerCase()}`}
