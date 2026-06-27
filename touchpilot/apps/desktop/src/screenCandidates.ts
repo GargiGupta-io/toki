@@ -10,12 +10,14 @@ type ScreenCandidateResult = Pick<
   "candidates" | "candidateSource" | "candidateError"
 >;
 
+const MAX_LIVE_GUIDANCE_CANDIDATES = 20;
+
 export async function collectScreenCandidatesForGuidance(
   screenshot: ScreenshotCapture,
   display: DisplayContext,
 ): Promise<ScreenCandidateResult> {
   try {
-    return await invoke<ScreenCandidateResult>("collect_screen_candidates", {
+    const result = await invoke<ScreenCandidateResult>("collect_screen_candidates", {
       request: {
         imageBase64: screenshot.imageBase64,
         imageWidth: screenshot.imageWidth,
@@ -25,6 +27,11 @@ export async function collectScreenCandidatesForGuidance(
         scaleFactor: display.scaleFactor,
       },
     });
+
+    return {
+      ...result,
+      candidates: result.candidates?.slice(0, MAX_LIVE_GUIDANCE_CANDIDATES) ?? [],
+    };
   } catch (error) {
     return {
       candidates: [],
