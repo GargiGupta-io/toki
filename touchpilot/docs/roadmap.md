@@ -153,6 +153,9 @@ Status: Closed as a quality gate.
 - Step 8 result: after granting Accessibility permission, the probe can inspect Terminal and select the real Microsoft Edge window process, but Edge child traversal returns `Can't get object`, so Edge still yields zero useful candidates through the current `osascript` path.
 - Step 9 result: macOS Vision OCR candidate extraction exists and returned 14 text candidates from `/tmp/toki-known-screen.png`, giving browser-like screens a fallback when Accessibility does not expose child elements.
 - Step 10 result: the known-screen provider test used OCR candidates and returned a useful real target for `> Find and fix a bug in @filename` at `9,809 235x17`.
+- Step 11 result: live desktop guidance requests include macOS Vision OCR candidates in the real-provider path.
+- Step 12 result: live desktop real-guidance smoke reaches the local provider from the running app, but the returned target is not accurate enough yet.
+- Step 13 plan: native cursor tracking. Replace fragile WebView cursor polling with a native cursor-position command, implement macOS first, keep Tauri cursor polling as fallback, and leave Windows/Linux native cursor adapters as follow-up platform work.
 - Done: add `npm run guidance:provider:check` to verify local Ollama readiness.
 - Done: install/start Ollama from the official macOS app path.
 - Done: pull `llava:latest`.
@@ -164,7 +167,7 @@ Status: Closed as a quality gate.
 - App-targeted candidate probing is wired with `npm run qa:mac:candidates -- --app "Microsoft Edge"`.
 - OCR candidate probing is wired with `npm run qa:mac:ocr:candidates -- --image /tmp/toki-known-screen.png --scale 2`.
 - OCR-backed known-screen targeting has one useful local provider verdict.
-- Next: feed OCR/accessibility candidates into the live desktop guidance request instead of only the known-screen runner.
+- Next: make the cursor-first puck use native cursor coordinates so the overlay feel matches the Clicky reference before continuing accuracy/safety work.
 - Build a candidate UI map from visible text, accessibility nodes, and bounding boxes.
 - Ask the provider to choose from structured candidates instead of raw pixels only.
 - Keep the useful/wrong verdict in Debug as the acceptance gate.
