@@ -357,6 +357,7 @@ Required environment:
 | `TOKI_GUIDANCE_ENDPOINT` | Optional provider endpoint, defaults to `http://127.0.0.1:8787/api/guidance/smoke` |
 | `TOKI_KNOWN_SCREEN_CANDIDATES` | Optional JSON array of manual candidate boxes |
 | `TOKI_KNOWN_SCREEN_AUTO_CANDIDATES` | Set to `0` to disable automatic macOS Accessibility candidates |
+| `TOKI_KNOWN_SCREEN_OCR_CANDIDATES` | Set to `0` to disable macOS Vision OCR fallback candidates |
 | `TOKI_KNOWN_SCREEN_APP_NAME` | Optional macOS app process name to inspect instead of the frontmost app |
 | `TOKI_ACCESSIBILITY_APP_NAME` | Alternate shared app name env for macOS Accessibility candidate extraction |
 
@@ -512,6 +513,25 @@ The current `osascript` Accessibility route is useful as a lightweight candidate
 2. a native macOS Accessibility bridge using lower-level AX APIs instead of JXA/System Events.
 
 Do not keep tuning the model prompt for Edge until the app has real candidate boxes to choose from.
+
+Step 10.6.9 OCR candidate update:
+
+- added macOS Vision OCR candidate extraction
+- added `npm run qa:mac:ocr:candidates`
+- the known-screen runner now tries manual candidates first, then macOS Accessibility, then OCR
+- OCR candidates use the same `{ id, label, role, x, y, width, height }` shape as Accessibility candidates
+- OCR candidate boxes are converted from Vision's normalized bottom-left coordinate system into Toki CSS/display coordinates
+- live result: `npm run qa:mac:ocr:candidates -- --image /tmp/toki-known-screen.png --scale 2` returned 14 OCR candidates
+
+Example:
+
+```bash
+npm run qa:mac:ocr:candidates -- --image /tmp/toki-known-screen.png --scale 2
+```
+
+Tradeoff:
+
+OCR can see text even when browser Accessibility traversal is poor, but it does not know semantics. It can find labels like `Download`, `Search`, or `Manage`; it cannot always know whether the text is a button, tab, link, or paragraph. The provider still needs to choose from OCR candidates carefully, and OCR should eventually be combined with native AX and screenshot geometry.
 
 Decision rule before Phase 11:
 
