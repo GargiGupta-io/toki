@@ -60,7 +60,11 @@ async function main() {
 
       for (const processInfo of processResult.processes) {
         const marker = processInfo.frontmost ? "*" : "-";
-        console.log(`${marker} ${processInfo.name}`);
+        const windows =
+          Number.isFinite(processInfo.windowCount) && processInfo.windowCount > 0
+            ? ` (${processInfo.windowCount} windows)`
+            : "";
+        console.log(`${marker} ${processInfo.name}${windows}`);
       }
     } else {
       console.log("Visible apps: none");
