@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
+import { collectMacAccessibilityCandidates } from "./macos-accessibility-candidates.mjs";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:8787/api/guidance/smoke";
 const DEFAULT_GOAL = "Show me what to click next.";
@@ -122,7 +123,33 @@ function parseKnownScreenCandidates() {
   }));
 }
 
-function createGuidanceRequest({ imagePath, image, size }) {
+async function resolveKnownScreenCandidates({ displayWidth, displayHeight }) {
+  const explicitCandidates = parseKnownScreenCandidates();
+
+  if (explicitCandidates.length > 0) {
+    return {
+      source: "env",
+      candidates: explicitCandidates,
+    };
+  }
+
+  if (process.env.TOKI_KNOWN_SCREEN_AUTO_CANDIDATES === "0") {
+    return {
+      source: "disabled",
+      candidates: [],
+    };
+  }
+
+  return collectMacAccessibilityCandidates({
+    appName:
+      process.env.TOKI_KNOWN_SCREEN_APP_NAME ??
+      process.env.TOKI_ACCESSIBILITY_APP_NAME,
+    displayWidth,
+    displayHeight,
+  });
+}
+
+async function createGuidanceRequest({ imagePath, image, size }) {
   const scaleFactor = getNumberEnv("TOKI_KNOWN_SCREEN_SCALE", 1);
   const displayWidth = getNumberEnv(
     "TOKI_KNOWN_SCREEN_DISPLAY_WIDTH",
@@ -132,7 +159,10 @@ function createGuidanceRequest({ imagePath, image, size }) {
     "TOKI_KNOWN_SCREEN_DISPLAY_HEIGHT",
     Math.round(size.height / scaleFactor),
   );
-  const candidates = parseKnownScreenCandidates();
+  const candidateResult = await resolveKnownScreenCandidates({
+    displayWidth,
+    displayHeight,
+  });
 
   const request = {
     goal: process.env.TOKI_KNOWN_SCREEN_GOAL?.trim() || DEFAULT_GOAL,
@@ -178,11 +208,14 @@ function createGuidanceRequest({ imagePath, image, size }) {
     },
   };
 
-  if (candidates.length > 0) {
-    request.screen.candidates = candidates;
+  if (candidateResult.candidates.length > 0) {
+    request.screen.candidates = candidateResult.candidates;
   }
 
-  return request;
+  return {
+    request,
+    candidateResult,
+  };
 }
 
 function printGuidanceResponse(response) {
@@ -242,7 +275,19 @@ async function main() {
   const imagePath = getRequiredEnv("TOKI_KNOWN_SCREEN_IMAGE");
   const image = await readFile(imagePath);
   const size = getImageSize(image);
-  const request = createGuidanceRequest({ imagePath, image, size });
+  const { request, candidateResult } = await createGuidanceRequest({
+    imagePath,
+    image,
+    size,
+  });
+
+  if (candidateResult.source !== "disabled") {
+    console.log(`Candidate source: ${candidateResult.source}`);
+  }
+
+  if (typeof candidateResult.error === "string" && candidateResult.error.length > 0) {
+    console.log(`Candidate warning: ${candidateResult.error}`);
+  }
 
   if (Array.isArray(request.screen.candidates)) {
     console.log(`Known-screen candidates: ${request.screen.candidates.length}`);
