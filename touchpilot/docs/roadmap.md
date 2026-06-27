@@ -155,7 +155,7 @@ Status: Closed as a quality gate.
 - Step 10 result: the known-screen provider test used OCR candidates and returned a useful real target for `> Find and fix a bug in @filename` at `9,809 235x17`.
 - Step 11 result: live desktop guidance requests include macOS Vision OCR candidates in the real-provider path.
 - Step 12 result: live desktop real-guidance smoke reaches the local provider from the running app, but the returned target is not accurate enough yet.
-- Step 13 plan: native cursor tracking. Replace fragile WebView cursor polling with a native cursor-position command, implement macOS first, keep Tauri cursor polling as fallback, and leave Windows/Linux native cursor adapters as follow-up platform work.
+- Step 13 result: native cursor tracking is implemented for macOS. The overlay now prefers the Rust `native_cursor_position` command and falls back to Tauri cursor polling on unsupported platforms.
 - Done: add `npm run guidance:provider:check` to verify local Ollama readiness.
 - Done: install/start Ollama from the official macOS app path.
 - Done: pull `llava:latest`.
@@ -167,7 +167,7 @@ Status: Closed as a quality gate.
 - App-targeted candidate probing is wired with `npm run qa:mac:candidates -- --app "Microsoft Edge"`.
 - OCR candidate probing is wired with `npm run qa:mac:ocr:candidates -- --image /tmp/toki-known-screen.png --scale 2`.
 - OCR-backed known-screen targeting has one useful local provider verdict.
-- Next: make the cursor-first puck use native cursor coordinates so the overlay feel matches the Clicky reference before continuing accuracy/safety work.
+- Next: visually verify puck proximity around screen edges, menu bar, and Dock before continuing accuracy/safety work.
 - Build a candidate UI map from visible text, accessibility nodes, and bounding boxes.
 - Ask the provider to choose from structured candidates instead of raw pixels only.
 - Keep the useful/wrong verdict in Debug as the acceptance gate.
