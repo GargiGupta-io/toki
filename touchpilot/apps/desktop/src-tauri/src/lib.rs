@@ -1,6 +1,3 @@
-use toki_capture::{
-    capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
-};
 use base64::{engine::general_purpose, Engine as _};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
@@ -12,9 +9,11 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
-    menu::MenuBuilder,
-    tray::TrayIconBuilder,
-    Manager, PhysicalPosition, PhysicalSize, Position, Size, State,
+    menu::MenuBuilder, tray::TrayIconBuilder, Manager, PhysicalPosition, PhysicalSize, Position,
+    Size, State,
+};
+use toki_capture::{
+    capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
 };
 
 #[derive(Default)]
@@ -103,11 +102,307 @@ struct OpenAiTranscriptionResponse {
     text: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenCandidateRequest {
+    image_base64: String,
+    image_width: f64,
+    image_height: f64,
+    display_width: f64,
+    display_height: f64,
+    scale_factor: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenCandidate {
+    id: String,
+    label: String,
+    role: &'static str,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenCandidateResult {
+    candidates: Vec<ScreenCandidate>,
+    candidate_source: &'static str,
+    candidate_error: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VisionOcrPayload {
+    image_width: f64,
+    image_height: f64,
+    items: Vec<VisionOcrItem>,
+}
+
+#[derive(Deserialize)]
+struct VisionOcrItem {
+    text: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
 fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::from_millis(0))
         .as_millis()
+}
+
+fn normalize_candidate_text(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn slug_candidate_id(label: &str, index: usize) -> String {
+    let slug = label
+        .to_ascii_lowercase()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    if slug.is_empty() {
+        format!("ocr-candidate-{}", index + 1)
+    } else {
+        format!(
+            "ocr-{}-{}",
+            slug.chars().take(48).collect::<String>(),
+            index + 1
+        )
+    }
+}
+
+fn vision_ocr_swift_source() -> &'static str {
+    r#"
+import AppKit
+import Foundation
+import Vision
+
+struct OcrItem: Encodable {
+  let text: String
+  let x: Double
+  let y: Double
+  let width: Double
+  let height: Double
+}
+
+struct OcrPayload: Encodable {
+  let imageWidth: Int
+  let imageHeight: Int
+  let items: [OcrItem]
+}
+
+let arguments = CommandLine.arguments
+
+guard arguments.count >= 2 else {
+  fputs("image path is required\n", stderr)
+  exit(2)
+}
+
+let imageUrl = URL(fileURLWithPath: arguments[1])
+
+guard let image = NSImage(contentsOf: imageUrl) else {
+  fputs("could not open image\n", stderr)
+  exit(2)
+}
+
+guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+  fputs("could not decode image\n", stderr)
+  exit(2)
+}
+
+let request = VNRecognizeTextRequest()
+request.recognitionLevel = .accurate
+request.usesLanguageCorrection = true
+
+let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+try handler.perform([request])
+
+let observations = request.results ?? []
+let items = observations.compactMap { observation -> OcrItem? in
+  guard let candidate = observation.topCandidates(1).first else {
+    return nil
+  }
+
+  let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+
+  if text.isEmpty {
+    return nil
+  }
+
+  let box = observation.boundingBox
+
+  return OcrItem(
+    text: text,
+    x: box.origin.x,
+    y: box.origin.y,
+    width: box.size.width,
+    height: box.size.height
+  )
+}
+
+let payload = OcrPayload(imageWidth: cgImage.width, imageHeight: cgImage.height, items: items)
+let data = try JSONEncoder().encode(payload)
+print(String(data: data, encoding: .utf8)!)
+"#
+}
+
+fn normalize_vision_ocr_candidate(
+    item: &VisionOcrItem,
+    index: usize,
+    payload: &VisionOcrPayload,
+    request: &ScreenCandidateRequest,
+) -> Option<ScreenCandidate> {
+    const MIN_CANDIDATE_SIZE: f64 = 4.0;
+
+    let label = normalize_candidate_text(&item.text);
+
+    let image_width = if request.image_width.is_finite() && request.image_width > 0.0 {
+        request.image_width
+    } else {
+        payload.image_width
+    };
+    let image_height = if request.image_height.is_finite() && request.image_height > 0.0 {
+        request.image_height
+    } else {
+        payload.image_height
+    };
+
+    if label.is_empty()
+        || !item.x.is_finite()
+        || !item.y.is_finite()
+        || !item.width.is_finite()
+        || !item.height.is_finite()
+        || item.width <= 0.0
+        || item.height <= 0.0
+        || !image_width.is_finite()
+        || !image_height.is_finite()
+        || image_width <= 0.0
+        || image_height <= 0.0
+        || !request.scale_factor.is_finite()
+        || request.scale_factor <= 0.0
+    {
+        return None;
+    }
+
+    let x = (item.x * image_width) / request.scale_factor;
+    let y = ((1.0 - item.y - item.height) * image_height) / request.scale_factor;
+    let width = (item.width * image_width) / request.scale_factor;
+    let height = (item.height * image_height) / request.scale_factor;
+
+    if !x.is_finite()
+        || !y.is_finite()
+        || !width.is_finite()
+        || !height.is_finite()
+        || width < MIN_CANDIDATE_SIZE
+        || height < MIN_CANDIDATE_SIZE
+        || x < 0.0
+        || y < 0.0
+        || x + width > request.display_width
+        || y + height > request.display_height
+    {
+        return None;
+    }
+
+    Some(ScreenCandidate {
+        id: slug_candidate_id(&label, index),
+        label,
+        role: "ocr_text",
+        x: x.round() as i32,
+        y: y.round() as i32,
+        width: width.round() as i32,
+        height: height.round() as i32,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_vision_candidates(request: ScreenCandidateRequest) -> ScreenCandidateResult {
+    const MAX_CANDIDATES: usize = 40;
+
+    let Ok(image_bytes) = general_purpose::STANDARD.decode(&request.image_base64) else {
+        return ScreenCandidateResult {
+            candidates: Vec::new(),
+            candidate_source: "macos-vision-ocr",
+            candidate_error: Some("screenshot payload is not valid base64".to_string()),
+        };
+    };
+
+    let temp_root = std::env::temp_dir();
+    let stamp = now_ms();
+    let image_path = temp_root.join(format!("toki-live-ocr-{stamp}.png"));
+    let script_path = temp_root.join(format!("toki-live-ocr-{stamp}.swift"));
+
+    let result = (|| {
+        fs::write(&image_path, image_bytes).map_err(|error| error.to_string())?;
+        fs::write(&script_path, vision_ocr_swift_source()).map_err(|error| error.to_string())?;
+
+        let output = Command::new("/usr/bin/swift")
+            .arg(&script_path)
+            .arg(&image_path)
+            .output()
+            .map_err(|error| error.to_string())?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if stderr.is_empty() {
+                format!("macOS Vision OCR exited with {}", output.status)
+            } else {
+                stderr
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let payload: VisionOcrPayload =
+            serde_json::from_str(&stdout).map_err(|error| error.to_string())?;
+        let candidates = payload
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                normalize_vision_ocr_candidate(item, index, &payload, &request)
+            })
+            .take(MAX_CANDIDATES)
+            .collect::<Vec<_>>();
+
+        Ok(candidates)
+    })();
+
+    let _ = fs::remove_file(&image_path);
+    let _ = fs::remove_file(&script_path);
+
+    match result {
+        Ok(candidates) => ScreenCandidateResult {
+            candidate_error: if candidates.is_empty() {
+                Some("macOS Vision OCR returned no candidates".to_string())
+            } else {
+                None
+            },
+            candidates,
+            candidate_source: "macos-vision-ocr",
+        },
+        Err(error) => ScreenCandidateResult {
+            candidates: Vec::new(),
+            candidate_source: "macos-vision-ocr",
+            candidate_error: Some(error),
+        },
+    }
 }
 
 fn log_voice_capture_stream_error(error: cpal::StreamError) {
@@ -194,9 +489,7 @@ fn prepare_native_voice_stream(
                 move |data: &[u16], _| {
                     if let Ok(mut output) = sink.lock() {
                         output.extend(data.iter().map(|sample| {
-                            (*sample as i32 - 32768)
-                                .clamp(i16::MIN as i32, i16::MAX as i32)
-                                as i16
+                            (*sample as i32 - 32768).clamp(i16::MIN as i32, i16::MAX as i32) as i16
                         }));
                     }
                 },
@@ -240,16 +533,14 @@ fn start_native_voice_worker() -> Result<
     let (ready_sender, ready_receiver) = mpsc::channel::<Result<VoiceCaptureStreamInfo, String>>();
     let (stop_sender, stop_receiver) = mpsc::channel::<()>();
 
-    let worker = thread::spawn(move || {
-        match prepare_native_voice_stream(worker_samples) {
-            Ok((stream, info)) => {
-                let _ = ready_sender.send(Ok(info));
-                let _ = stop_receiver.recv();
-                drop(stream);
-            }
-            Err(error) => {
-                let _ = ready_sender.send(Err(error));
-            }
+    let worker = thread::spawn(move || match prepare_native_voice_stream(worker_samples) {
+        Ok((stream, info)) => {
+            let _ = ready_sender.send(Ok(info));
+            let _ = stop_receiver.recv();
+            drop(stream);
+        }
+        Err(error) => {
+            let _ = ready_sender.send(Err(error));
         }
     });
 
@@ -379,10 +670,7 @@ fn position_settings_panel<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) 
     let monitor_size = monitor.size();
     let margin = 22i32;
     let menu_bar_gap = 46i32;
-    let x = monitor_position.x
-        + monitor_size.width as i32
-        - window_size.width as i32
-        - margin;
+    let x = monitor_position.x + monitor_size.width as i32 - window_size.width as i32 - margin;
     let y = monitor_position.y + menu_bar_gap;
 
     let _ = window.set_position(Position::Physical(PhysicalPosition { x, y }));
@@ -396,6 +684,30 @@ fn capture_metadata() -> Result<CaptureMetadata, String> {
 #[tauri::command]
 fn capture_screenshot() -> Result<ScreenshotCapture, String> {
     capture_primary_display().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn collect_screen_candidates(
+    request: ScreenCandidateRequest,
+) -> Result<ScreenCandidateResult, String> {
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(collect_macos_vision_candidates(request));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = request;
+
+        Ok(ScreenCandidateResult {
+            candidates: Vec::new(),
+            candidate_source: "unsupported",
+            candidate_error: Some(
+                "live screen candidates are currently implemented with macOS Vision OCR"
+                    .to_string(),
+            ),
+        })
+    }
 }
 
 #[tauri::command]
@@ -421,7 +733,9 @@ fn show_settings_window(app: &tauri::AppHandle) {
 fn native_voice_capture_status(
     store: State<'_, Mutex<VoiceCaptureStore>>,
 ) -> Result<VoiceCaptureStatus, String> {
-    let store = store.lock().map_err(|_| "voice capture state is poisoned".to_string())?;
+    let store = store
+        .lock()
+        .map_err(|_| "voice capture state is poisoned".to_string())?;
 
     if let Some(session) = &store.active_session {
         return Ok(VoiceCaptureStatus {
@@ -450,7 +764,9 @@ fn native_voice_capture_status(
 fn native_voice_capture_start(
     store: State<'_, Mutex<VoiceCaptureStore>>,
 ) -> Result<VoiceCaptureStartResult, String> {
-    let mut store = store.lock().map_err(|_| "voice capture state is poisoned".to_string())?;
+    let mut store = store
+        .lock()
+        .map_err(|_| "voice capture state is poisoned".to_string())?;
     if store.active_session.is_some() {
         return Err("native voice capture is already active".to_string());
     }
@@ -484,7 +800,9 @@ fn native_voice_capture_start(
 fn native_voice_capture_stop(
     store: State<'_, Mutex<VoiceCaptureStore>>,
 ) -> Result<VoiceCaptureStopResult, String> {
-    let mut store = store.lock().map_err(|_| "voice capture state is poisoned".to_string())?;
+    let mut store = store
+        .lock()
+        .map_err(|_| "voice capture state is poisoned".to_string())?;
     let Some(session) = store.active_session.take() else {
         return Err("no active native voice capture session".to_string());
     };
@@ -565,9 +883,7 @@ fn transcribe_voice_capture_with_openai(
         .map_err(|error| format!("failed to read transcription response: {error}"))?;
 
     if !status.is_success() {
-        return Err(format!(
-            "transcription provider returned {status}: {body}"
-        ));
+        return Err(format!("transcription provider returned {status}: {body}"));
     }
 
     let parsed: OpenAiTranscriptionResponse = serde_json::from_str(&body)
@@ -620,10 +936,7 @@ fn find_local_whisper_binary() -> Result<String, String> {
         }
     }
 
-    Err(
-        "local Whisper binary not found. Build whisper.cpp or set WHISPER_CPP_BIN."
-            .to_string(),
-    )
+    Err("local Whisper binary not found. Build whisper.cpp or set WHISPER_CPP_BIN.".to_string())
 }
 
 fn local_whisper_model_path() -> Result<String, String> {
@@ -815,6 +1128,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             capture_metadata,
             capture_screenshot,
+            collect_screen_candidates,
             hide_settings_window,
             native_voice_capture_status,
             native_voice_capture_start,
