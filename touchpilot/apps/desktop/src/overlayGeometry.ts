@@ -40,11 +40,41 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
+function toOverlayCoordinate(value: number, viewportSize: number, devicePixelRatio: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  if (value >= 0 && value <= viewportSize) {
+    return value;
+  }
+
+  if (devicePixelRatio > 1) {
+    const scaledValue = value / devicePixelRatio;
+
+    if (scaledValue >= 0 && scaledValue <= viewportSize) {
+      return scaledValue;
+    }
+  }
+
+  return value;
+}
+
 export function getPointerShadowPosition(
   pointerX: number,
   pointerY: number,
   viewport: ViewportMetrics,
 ): PointerShadowPosition {
+  const overlayPointerX = toOverlayCoordinate(
+    pointerX,
+    viewport.width,
+    viewport.devicePixelRatio,
+  );
+  const overlayPointerY = toOverlayCoordinate(
+    pointerY,
+    viewport.height,
+    viewport.devicePixelRatio,
+  );
   const maxX =
     viewport.width -
     pointerShadowGeometry.width -
@@ -54,8 +84,8 @@ export function getPointerShadowPosition(
     pointerShadowGeometry.height -
     pointerShadowGeometry.margin;
 
-  const preferredCenterX = pointerX + pointerShadowGeometry.centerOffsetX;
-  const preferredCenterY = pointerY + pointerShadowGeometry.centerOffsetY;
+  const preferredCenterX = overlayPointerX + pointerShadowGeometry.centerOffsetX;
+  const preferredCenterY = overlayPointerY + pointerShadowGeometry.centerOffsetY;
   const halfWidth = pointerShadowGeometry.width / 2;
   const halfHeight = pointerShadowGeometry.height / 2;
   const centerOffsetX =
@@ -73,12 +103,12 @@ export function getPointerShadowPosition(
 
   return {
     x: clamp(
-      pointerX + centerOffsetX - halfWidth,
+      overlayPointerX + centerOffsetX - halfWidth,
       pointerShadowGeometry.margin,
       maxX,
     ),
     y: clamp(
-      pointerY + centerOffsetY - halfHeight,
+      overlayPointerY + centerOffsetY - halfHeight,
       pointerShadowGeometry.margin,
       maxY,
     ),
