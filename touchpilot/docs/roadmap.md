@@ -149,6 +149,7 @@ Status: Closed as a quality gate.
 - Step 4 result: provider raw output is now exposed on invalid responses, and normalized `0..1` target boxes are rejected as invalid CSS-pixel coordinates.
 - Step 5 result: candidate-assisted known-screen guidance returned a real target by anchoring the provider choice to a supplied UI candidate box.
 - Step 6 result: known-screen guidance can now collect candidate boxes automatically from macOS Accessibility when permission is available.
+- Step 7 result: the macOS candidate probe can list visible apps and target a named app, but live candidate extraction is blocked by macOS Accessibility permission for `osascript` (`-25211` / assistive access denied).
 - Done: add `npm run guidance:provider:check` to verify local Ollama readiness.
 - Done: install/start Ollama from the official macOS app path.
 - Done: pull `llava:latest`.
@@ -157,7 +158,8 @@ Status: Closed as a quality gate.
 - Raw screenshot-only targeting failed because `llava:latest` returned normalized coordinates.
 - Candidate-assisted targeting works when the request includes a trusted candidate box.
 - macOS Accessibility candidate extraction now provides labels, roles, and boxes without manual `TOKI_KNOWN_SCREEN_CANDIDATES`.
-- Next: wire automatic candidate extraction into the live desktop guidance request instead of only the known-screen runner.
+- App-targeted candidate probing is wired with `npm run qa:mac:candidates -- --app "Microsoft Edge"`.
+- Next: grant Accessibility permission to the terminal/Toki process, rerun the app-targeted candidate probe, then wire automatic candidate extraction into the live desktop guidance request.
 - Build a candidate UI map from visible text, accessibility nodes, and bounding boxes.
 - Ask the provider to choose from structured candidates instead of raw pixels only.
 - Keep the useful/wrong verdict in Debug as the acceptance gate.
