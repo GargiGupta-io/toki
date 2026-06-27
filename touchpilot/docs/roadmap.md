@@ -152,6 +152,7 @@ Status: Closed as a quality gate.
 - Step 7 result: the macOS candidate probe can list visible apps and target a named app, but live candidate extraction is blocked by macOS Accessibility permission for `osascript` (`-25211` / assistive access denied).
 - Step 8 result: after granting Accessibility permission, the probe can inspect Terminal and select the real Microsoft Edge window process, but Edge child traversal returns `Can't get object`, so Edge still yields zero useful candidates through the current `osascript` path.
 - Step 9 result: macOS Vision OCR candidate extraction exists and returned 14 text candidates from `/tmp/toki-known-screen.png`, giving browser-like screens a fallback when Accessibility does not expose child elements.
+- Step 10 result: the known-screen provider test used OCR candidates and returned a useful real target for `> Find and fix a bug in @filename` at `9,809 235x17`.
 - Done: add `npm run guidance:provider:check` to verify local Ollama readiness.
 - Done: install/start Ollama from the official macOS app path.
 - Done: pull `llava:latest`.
@@ -162,7 +163,8 @@ Status: Closed as a quality gate.
 - macOS Accessibility candidate extraction now provides labels, roles, and boxes without manual `TOKI_KNOWN_SCREEN_CANDIDATES`.
 - App-targeted candidate probing is wired with `npm run qa:mac:candidates -- --app "Microsoft Edge"`.
 - OCR candidate probing is wired with `npm run qa:mac:ocr:candidates -- --image /tmp/toki-known-screen.png --scale 2`.
-- Next: run the known-screen provider test with OCR candidates and record whether the returned target is useful or wrong.
+- OCR-backed known-screen targeting has one useful local provider verdict.
+- Next: feed OCR/accessibility candidates into the live desktop guidance request instead of only the known-screen runner.
 - Build a candidate UI map from visible text, accessibility nodes, and bounding boxes.
 - Ask the provider to choose from structured candidates instead of raw pixels only.
 - Keep the useful/wrong verdict in Debug as the acceptance gate.
