@@ -32,6 +32,7 @@
     "qa:mac:capture": "cargo run -p toki-capture --example capture_probe",
     "qa:mac:mic": "cargo run -p toki-desktop --example mic_capture_probe",
     "qa:mac:transcribe": "cargo run -p toki-desktop --example voice_transcription_probe",
+    "qa:mac:candidates": "node scripts/macos-accessibility-candidate-probe.mjs",
     "qa:windows:runtime": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-runtime-qa.ps1",
     "qa:windows:visual": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-visual-qa.ps1"
   }
