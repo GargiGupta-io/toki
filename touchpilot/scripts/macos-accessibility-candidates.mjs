@@ -131,7 +131,28 @@ function run() {
     if (appName.length > 0) {
       var named = systemEvents.processes.whose({ name: appName });
       if (named.length > 0) {
-        return named[0];
+        var bestProcess = named[0];
+        var bestWindowCount = -1;
+
+        for (var index = 0; index < named.length; index += 1) {
+          var windowCount = readSafely(
+            function () { return named[index].windows().length; },
+            0,
+            "read process window count"
+          );
+          var isFrontmost = readSafely(
+            function () { return named[index].frontmost(); },
+            false,
+            "read process frontmost"
+          );
+
+          if (windowCount > bestWindowCount || (windowCount === bestWindowCount && isFrontmost)) {
+            bestProcess = named[index];
+            bestWindowCount = windowCount;
+          }
+        }
+
+        return bestProcess;
       }
     }
 
@@ -236,7 +257,8 @@ function run() {
   for (var index = 0; index < processes.length; index += 1) {
     items.push({
       name: readSafely(function () { return processes[index].name(); }, ""),
-      frontmost: readSafely(function () { return processes[index].frontmost(); }, false)
+      frontmost: readSafely(function () { return processes[index].frontmost(); }, false),
+      windowCount: readSafely(function () { return processes[index].windows().length; }, 0)
     });
   }
 
@@ -278,6 +300,7 @@ export async function listMacAccessibilityProcesses(options = {}) {
             .map((process) => ({
               name: normalizeText(process.name),
               frontmost: process.frontmost === true,
+              windowCount: Number.isFinite(process.windowCount) ? process.windowCount : 0,
             }))
         : [],
     };
