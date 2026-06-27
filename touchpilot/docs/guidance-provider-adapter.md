@@ -476,6 +476,25 @@ Step 10.6.6 automatic candidate update:
 - this is the first automatic candidate source, but it is not full OCR yet
 - local probe result: the collector executed without script error, but returned zero candidates for the current frontmost context; use `TOKI_KNOWN_SCREEN_APP_NAME` when the target app is not frontmost or does not expose obvious window candidates
 
+Step 10.6.7 app-targeted probe update:
+
+- added `npm run qa:mac:candidates`
+- `npm run qa:mac:candidates -- --list` lists visible macOS apps and marks the frontmost app
+- `npm run qa:mac:candidates -- --app "Microsoft Edge"` targets a specific app instead of accidentally inspecting Terminal or Codex
+- the probe prints resolved app name, window count, visited element count, and candidate warnings
+- live result: targeting `Microsoft Edge` resolves the right app, but macOS reports `osascript is not allowed assistive access`
+- this means candidate extraction is currently blocked by macOS Accessibility permission, not by the provider contract
+
+Permission fix before accepting automatic candidates:
+
+1. Open macOS System Settings.
+2. Go to Privacy & Security.
+3. Open Accessibility.
+4. Allow the terminal app used to run `npm run qa:mac:candidates`, and later allow Toki itself if the packaged app owns the probe.
+5. Re-run `npm run qa:mac:candidates -- --app "Microsoft Edge"`.
+
+Do not call automatic candidate extraction complete until the app-targeted probe returns real candidates or records that the target app exposes no useful accessibility elements after permission is granted.
+
 Decision rule before Phase 11:
 
 - If one known-screen target is useful, Phase 10.5 can close as a smoke-level provider path.
