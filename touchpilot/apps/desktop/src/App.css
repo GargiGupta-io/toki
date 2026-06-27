@@ -1397,7 +1397,7 @@ h1 {
       transform 120ms ease;
   }
 
-  .assistant-puck[data-motion="shadow"][data-pointer-shadow="active"] {
+  .assistant-puck[data-pointer-shadow="active"] {
     left: var(--puck-shadow-x);
     top: var(--puck-shadow-y);
     right: auto;
