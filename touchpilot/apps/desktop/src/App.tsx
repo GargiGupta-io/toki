@@ -359,7 +359,7 @@ function VoiceStatusCue({
           top: pointerShadow.y + 28,
         } as CSSProperties);
 
-  if (!details.visible) {
+  if (!details.visible || pointerShadow == null) {
     return null;
   }
 
