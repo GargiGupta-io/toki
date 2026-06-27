@@ -63,6 +63,12 @@ import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState, PuckMotionModel } from "./puckMotion";
 import "./App.css";
 
+declare global {
+  interface Window {
+    __tokiRunRealGuidanceSmoke?: (goal?: string) => void;
+  }
+}
+
 type GuidanceFixture = "safe" | "risky" | "invalid";
 
 type OverlayStateMeta = {
@@ -647,6 +653,72 @@ function getScreenshotPayload(screenshot: ScreenshotCapture) {
   };
 }
 
+type ScreenshotPayload = ReturnType<typeof getScreenshotPayload>;
+
+const MAX_PROVIDER_SCREENSHOT_EDGE = 1024;
+const PROVIDER_SCREENSHOT_JPEG_QUALITY = 0.76;
+
+function estimateBase64ByteLength(imageBase64: string) {
+  const padding = imageBase64.endsWith("==") ? 2 : imageBase64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((imageBase64.length * 3) / 4) - padding);
+}
+
+function loadScreenshotImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("could not decode screenshot for provider"));
+    image.src = dataUrl;
+  });
+}
+
+async function getProviderScreenshotPayload(
+  screenshot: ScreenshotCapture,
+): Promise<ScreenshotPayload> {
+  const originalPayload = getScreenshotPayload(screenshot);
+  const longestEdge = Math.max(screenshot.imageWidth, screenshot.imageHeight);
+
+  if (longestEdge <= MAX_PROVIDER_SCREENSHOT_EDGE && screenshot.byteLength <= 2_000_000) {
+    return originalPayload;
+  }
+
+  try {
+    const image = await loadScreenshotImage(
+      `data:image/${screenshot.format};base64,${screenshot.imageBase64}`,
+    );
+    const scale = Math.min(1, MAX_PROVIDER_SCREENSHOT_EDGE / longestEdge);
+    const imageWidth = Math.max(1, Math.round(screenshot.imageWidth * scale));
+    const imageHeight = Math.max(1, Math.round(screenshot.imageHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = imageWidth;
+    canvas.height = imageHeight;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return originalPayload;
+    }
+
+    context.drawImage(image, 0, 0, imageWidth, imageHeight);
+    const dataUrl = canvas.toDataURL("image/jpeg", PROVIDER_SCREENSHOT_JPEG_QUALITY);
+    const [, imageBase64 = ""] = dataUrl.split(",");
+
+    if (!imageBase64) {
+      return originalPayload;
+    }
+
+    return {
+      encoding: "base64",
+      format: "jpeg",
+      byteLength: estimateBase64ByteLength(imageBase64),
+      imageWidth,
+      imageHeight,
+      imageBase64,
+    };
+  } catch {
+    return originalPayload;
+  }
+}
+
 function createDefaultGestureRuntimeState(): GestureRuntimeState {
   return {
     enabled: false,
@@ -843,7 +915,10 @@ function OverlayWindowApp() {
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
       const screenshotMetadata = getScreenshotMetadata(screenshot);
-      const screenshotPayload = getScreenshotPayload(screenshot);
+      const screenshotPayload =
+        providerMode === "real"
+          ? await getProviderScreenshotPayload(screenshot)
+          : getScreenshotPayload(screenshot);
       const requestCalibration = getCalibration(metadata, viewport, screenshotMetadata);
       const candidateContext =
         providerMode === "real"
@@ -960,6 +1035,16 @@ function OverlayWindowApp() {
   useEffect(() => {
     void publishRuntimeSnapshots();
   }, [overlaySnapshot, debugSnapshot]);
+
+  useEffect(() => {
+    window.__tokiRunRealGuidanceSmoke = (goal = "Show me what to click next.") => {
+      void refreshCaptureMetadata(goal, "real");
+    };
+
+    return () => {
+      delete window.__tokiRunRealGuidanceSmoke;
+    };
+  }, [viewport, guidanceFixture, guidanceResult]);
 
   useEffect(() => {
     let unlistenCommand: (() => void) | undefined;
