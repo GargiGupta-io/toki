@@ -54,6 +54,7 @@ import type {
   ViewportMetrics,
 } from "./overlayGeometry";
 import { getPuckMotionModel } from "./puckMotion";
+import { collectScreenCandidatesForGuidance } from "./screenCandidates";
 import { probeVoiceCapabilities } from "./voiceCapabilities";
 import type { VoiceCapabilityProbe } from "./voiceCapabilities";
 import { startVoiceRecognition } from "./voiceRecognition";
@@ -841,14 +842,25 @@ function OverlayWindowApp() {
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
+      const screenshotMetadata = getScreenshotMetadata(screenshot);
+      const screenshotPayload = getScreenshotPayload(screenshot);
+      const requestCalibration = getCalibration(metadata, viewport, screenshotMetadata);
+      const candidateContext =
+        providerMode === "real"
+          ? await collectScreenCandidatesForGuidance(screenshot, metadata.display)
+          : {
+              candidates: [],
+              candidateSource: "none" as const,
+            };
       const nextGuidanceRequest: GuidanceRequest = {
         goal,
         screen: {
           display: metadata.display,
           capture: metadata,
-          screenshot: getScreenshotMetadata(screenshot),
-          screenshotPayload: getScreenshotPayload(screenshot),
-          calibration: getCalibration(metadata, viewport, getScreenshotMetadata(screenshot)),
+          screenshot: screenshotMetadata,
+          screenshotPayload,
+          calibration: requestCalibration,
+          ...candidateContext,
         },
         previousStep: guidanceResult?.step ?? null,
       };
@@ -1570,6 +1582,8 @@ function DebugWindowApp() {
     "No goal submitted";
   const guidanceScreen = snapshot.guidanceRequest?.screen ?? null;
   const guidancePayload = guidanceScreen?.screenshotPayload ?? null;
+  const guidanceCandidateCount = guidanceScreen?.candidates?.length ?? 0;
+  const guidanceCandidateSource = guidanceScreen?.candidateSource ?? "none";
   const guidancePayloadSize = guidancePayload
     ? `${(guidancePayload.byteLength / 1024 / 1024).toFixed(2)} MB`
     : "Missing";
@@ -2638,6 +2652,16 @@ function DebugWindowApp() {
               <div>
                 <dt>Provider Plan</dt>
                 <dd>{guidancePayloadPlan}</dd>
+              </div>
+              <div>
+                <dt>Candidates</dt>
+                <dd>
+                  {guidanceCandidateCount} from {guidanceCandidateSource}
+                </dd>
+              </div>
+              <div>
+                <dt>Candidate Error</dt>
+                <dd>{guidanceScreen?.candidateError ?? "None"}</dd>
               </div>
             </dl>
           </section>
