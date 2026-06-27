@@ -40,6 +40,14 @@ struct VoiceCaptureStreamInfo {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct NativeCursorPosition {
+    x: f64,
+    y: f64,
+    source: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct VoiceCaptureStatus {
     status: &'static str,
     session_id: Option<String>,
@@ -155,6 +163,44 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::from_millis(0))
         .as_millis()
+}
+
+#[cfg(target_os = "macos")]
+mod native_cursor {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CGPoint {
+        x: f64,
+        y: f64,
+    }
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn CGEventCreate(source: *const c_void) -> *mut c_void;
+        fn CGEventGetLocation(event: *mut c_void) -> CGPoint;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(cf: *const c_void);
+    }
+
+    pub fn cursor_position() -> Result<(f64, f64), String> {
+        let event = unsafe { CGEventCreate(std::ptr::null()) };
+
+        if event.is_null() {
+            return Err("could not create native cursor event".to_string());
+        }
+
+        let location = unsafe { CGEventGetLocation(event) };
+        unsafe {
+            CFRelease(event.cast());
+        }
+
+        Ok((location.x, location.y))
+    }
 }
 
 fn auto_smoke_logs_enabled() -> bool {
@@ -1091,6 +1137,25 @@ fn transcribe_voice_capture(
     }
 }
 
+#[tauri::command]
+fn native_cursor_position() -> Result<NativeCursorPosition, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let (x, y) = native_cursor::cursor_position()?;
+
+        return Ok(NativeCursorPosition {
+            x,
+            y,
+            source: "native-macos-coregraphics",
+        });
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("native cursor position is not implemented for this platform".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1209,6 +1274,7 @@ pub fn run() {
             capture_screenshot,
             collect_screen_candidates,
             hide_settings_window,
+            native_cursor_position,
             native_voice_capture_status,
             native_voice_capture_start,
             native_voice_capture_stop,
