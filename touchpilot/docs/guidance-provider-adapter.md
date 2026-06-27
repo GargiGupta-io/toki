@@ -495,6 +495,24 @@ Permission fix before accepting automatic candidates:
 
 Do not call automatic candidate extraction complete until the app-targeted probe returns real candidates or records that the target app exposes no useful accessibility elements after permission is granted.
 
+Step 10.6.8 permission rerun:
+
+- Accessibility permission was granted enough for the warning to disappear
+- the visible-app probe can inspect Terminal and return candidates
+- Microsoft Edge has multiple visible processes, so the collector now chooses the matching process with the most windows
+- after that fix, the Edge probe resolves `Microsoft Edge` with `Windows: 1`
+- Edge still returns `Candidates: 0`
+- current blocker: `read children: Error: Can't get object`
+
+Decision:
+
+The current `osascript` Accessibility route is useful as a lightweight candidate source, but it is not reliable enough for browser target accuracy by itself. The next target-accuracy path should be either:
+
+1. OCR candidate extraction from the screenshot, or
+2. a native macOS Accessibility bridge using lower-level AX APIs instead of JXA/System Events.
+
+Do not keep tuning the model prompt for Edge until the app has real candidate boxes to choose from.
+
 Decision rule before Phase 11:
 
 - If one known-screen target is useful, Phase 10.5 can close as a smoke-level provider path.
