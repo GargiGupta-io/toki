@@ -28,6 +28,11 @@ export type TargetBox = {
   height: number;
 };
 
+export type ScreenCandidate = TargetBox & {
+  id: string;
+  role: "accessibility_element" | "ocr_text" | "manual";
+};
+
 export type Bounds = {
   x: number;
   y: number;
@@ -62,6 +67,9 @@ export type GuidanceScreenContext = {
     imageBase64: string;
   };
   calibration?: CoordinateCalibration;
+  candidates?: ScreenCandidate[];
+  candidateSource?: "manual" | "macos-accessibility" | "macos-vision-ocr" | "none" | "unsupported" | "unavailable";
+  candidateError?: string;
 };
 
 export type GuidanceRequest = {
