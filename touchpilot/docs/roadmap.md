@@ -179,7 +179,7 @@ Status: Closed as a quality gate.
 - Scope: development only. FreeLLMAPI can be used as a dev provider aggregator, but not as the production provider.
 - Step 1: add `freellmapi-dev` provider mode.
 - Step 2: run known-screen tests through FreeLLMAPI vision models.
-- Step 2 result: FreeLLMAPI is installed locally at `/Users/pumba/tools/freellmapi` and responds on port `3001`, but the known-screen request returned `429 Too Many Requests` because no vision-capable upstream provider key is enabled.
+- Step 2 result: FreeLLMAPI is installed locally at `/Users/pumba/tools/freellmapi`, responds on port `3001`, and Gemini became available after adding a provider key. A known-screen request through `freellmapi-dev` returned `real` target `next at 50,390 50x20`; this proves provider reachability, but target usefulness still needs browser/candidate comparison.
 - Step 3: compare accuracy against local Ollama.
 - Step 4: add browser candidate strategy plan:
   - short term: OCR plus layout heuristics

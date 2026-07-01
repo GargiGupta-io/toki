@@ -649,6 +649,18 @@ The next blocker is upstream vision capacity, not the local server. A known-scre
 
 So FreeLLMAPI is installed and reachable, but it still needs at least one enabled vision-capable upstream provider key before it can be compared against Ollama for screenshot target accuracy.
 
+After adding a Google/Gemini provider key, FreeLLMAPI exposed available Gemini models and the known-screen run reached a real provider result:
+
+| Field | Result |
+| --- | --- |
+| Provider | `freellmapi-dev` |
+| Model | `gemini-2.5-flash` |
+| Candidate mode | auto candidates disabled |
+| Result mode | `real` |
+| Target | `next at 50,390 50x20` |
+| Confidence | `0.9` |
+| Verdict | Provider reachability proved; target usefulness still needs browser/candidate comparison. |
+
 Next retry:
 
 ```bash
