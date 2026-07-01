@@ -230,6 +230,7 @@ Status: Closed as a quality gate.
 - Step 2: add shared policy decision types.
 - Step 2 result: added shared safety policy types in `@toki/shared`: `SafetyPolicyAction`, `SafetyPolicyReason`, `SafetyPolicyDecision`, and `SafetyPolicyInput`. The policy vocabulary is now `allow`, `confirm`, `clarify`, and `block`, but runtime behavior has not changed yet.
 - Step 3: add the policy engine.
+- Step 3 result: added `evaluateSafetyPolicy()` in `@toki/ai`. The pure policy gate blocks unavailable/invalid provider results, clarifies missing or low-confidence targets, confirms risky actions, and allows safe navigation/form-entry guidance.
 - Step 4: add policy tests.
 - Step 5: route provider results through policy.
 - Step 6: add confirmation UI.

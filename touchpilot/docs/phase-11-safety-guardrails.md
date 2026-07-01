@@ -74,6 +74,8 @@ These types define the contract for the later policy engine without changing run
 
 Add a pure safety policy engine that evaluates guidance result risk, confidence, target quality, and candidate metadata.
 
+Result: `evaluateSafetyPolicy()` now lives in `@toki/ai`. It blocks unavailable or invalid provider results, asks for clarification when guidance is missing a target or below the confidence threshold, asks for confirmation for risky actions, and allows safe navigation or form-entry guidance.
+
 ### Step 11.4: Policy Tests
 
 Add focused tests for safe navigation, form entry, delete/payment/security risks, unknown risks, and low-confidence outputs.
