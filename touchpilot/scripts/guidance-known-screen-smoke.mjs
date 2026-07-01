@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
+import { readBrowserCandidatePayload } from "./browser-candidate-payload.mjs";
 import { rankScreenCandidates } from "./candidate-ranking.mjs";
 import { collectMacAccessibilityCandidates } from "./macos-accessibility-candidates.mjs";
 import { collectMacVisionOcrCandidates } from "./macos-vision-ocr-candidates.mjs";
@@ -125,12 +126,28 @@ function parseKnownScreenCandidates() {
   }));
 }
 
+async function resolveBrowserCandidatePayload() {
+  const payloadPath = process.env.TOKI_BROWSER_CANDIDATE_PAYLOAD?.trim();
+
+  if (payloadPath == null || payloadPath.length === 0) {
+    return null;
+  }
+
+  return readBrowserCandidatePayload(payloadPath);
+}
+
 async function resolveKnownScreenCandidates({
   imagePath,
   displayWidth,
   displayHeight,
   scaleFactor,
 }) {
+  const browserPayload = await resolveBrowserCandidatePayload();
+
+  if (browserPayload != null) {
+    return browserPayload;
+  }
+
   const explicitCandidates = parseKnownScreenCandidates();
 
   if (explicitCandidates.length > 0) {
