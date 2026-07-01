@@ -6,6 +6,9 @@ import type {
   GuidanceValidationIssue,
   GuidanceValidationResult,
   RiskClass,
+  SafetyPolicyDecision,
+  SafetyPolicyInput,
+  TargetBox,
 } from "@toki/shared";
 
 const validRiskClasses: RiskClass[] = [
@@ -276,4 +279,120 @@ export function validateGuidanceResult(
     valid: issues.length === 0,
     issues,
   };
+}
+
+const riskyRisks = new Set<RiskClass>(confirmationRequiredRisks);
+
+export function evaluateSafetyPolicy(input: SafetyPolicyInput): SafetyPolicyDecision {
+  const { provider, minConfidence } = input;
+
+  if (provider.mode === "unavailable") {
+    return {
+      action: "block",
+      reason: "provider_unavailable",
+      risk: "unknown_risky",
+      requiresConfirmation: false,
+      message: provider.error ?? "Guidance provider is unavailable.",
+    };
+  }
+
+  if (provider.validation != null && !provider.validation.valid) {
+    return {
+      action: "block",
+      reason: "validation_failed",
+      risk: "unknown_risky",
+      requiresConfirmation: false,
+      message: "Guidance failed validation and will not be shown.",
+      details: provider.validation.issues.map(
+        (issue) => `${issue.path}: ${issue.message}`,
+      ),
+    };
+  }
+
+  const result = provider.result;
+
+  if (result == null || result.step == null) {
+    return {
+      action: result?.mode === "clarify" ? "clarify" : "block",
+      reason: "missing_step",
+      risk: "unknown_risky",
+      requiresConfirmation: false,
+      message:
+        result?.summary?.trim() ||
+        "Toki needs a clearer instruction before showing guidance.",
+    };
+  }
+
+  const { step } = result;
+
+  if (step.target == null) {
+    return {
+      action: "clarify",
+      reason: "missing_target",
+      risk: step.risk,
+      requiresConfirmation: false,
+      message: "Toki could not identify a specific target to point at.",
+    };
+  }
+
+  if (!isValidTargetBox(step.target)) {
+    return {
+      action: "block",
+      reason: "invalid_target",
+      risk: step.risk,
+      requiresConfirmation: false,
+      message: "Toki refused guidance because the target box is invalid.",
+    };
+  }
+
+  if (step.confidence < minConfidence) {
+    return {
+      action: "clarify",
+      reason: "low_confidence",
+      risk: step.risk,
+      requiresConfirmation: false,
+      message: "Toki is not confident enough to point at this target yet.",
+      details: [`confidence=${step.confidence}`, `minimum=${minConfidence}`],
+    };
+  }
+
+  if (riskyRisks.has(step.risk) || step.requiresConfirmation) {
+    return {
+      action: "confirm",
+      reason: step.risk === "unknown_risky" ? "unknown_risk" : "risky_action",
+      risk: step.risk,
+      requiresConfirmation: true,
+      message: `Confirm before Toki guides you to "${step.target.label}".`,
+    };
+  }
+
+  if (step.risk === "form_entry") {
+    return {
+      action: "allow",
+      reason: "form_entry_notice",
+      risk: step.risk,
+      requiresConfirmation: false,
+      message: "Form guidance is allowed, but review what will change.",
+    };
+  }
+
+  return {
+    action: "allow",
+    reason: "safe_navigation",
+    risk: step.risk,
+    requiresConfirmation: false,
+    message: "Safe guidance can be shown.",
+  };
+}
+
+function isValidTargetBox(target: TargetBox): boolean {
+  return (
+    target.label.trim().length > 0 &&
+    Number.isFinite(target.x) &&
+    Number.isFinite(target.y) &&
+    Number.isFinite(target.width) &&
+    Number.isFinite(target.height) &&
+    target.width > 0 &&
+    target.height > 0
+  );
 }
