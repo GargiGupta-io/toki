@@ -19,8 +19,31 @@ Screenshots, OCR, and macOS Accessibility are not reliable enough for browser pa
 2. Enable developer mode.
 3. Choose `Load unpacked`.
 4. Select `apps/browser-extension`.
-5. Open a test page and click the Toki extension icon.
+5. Open `apps/browser-extension/fixtures/candidate-page.html` in the browser.
 6. Click `Collect candidates`.
+
+## Manual acceptance
+
+The fixture should return candidates for at least:
+
+- `Create project`
+- `Delete project`
+- `Open settings`
+- `Project name`
+- `Environment selector`
+- `Add notes`
+
+The candidate output should include:
+
+- `source: "browser-extension"`
+- page `url`
+- page `title`
+- viewport width and height
+- candidate `label`
+- candidate `role`
+- candidate box `x`, `y`, `width`, and `height`
+
+This step passes when the extension sees these DOM candidates on the fixture page. It does not require the desktop app to consume them yet.
 
 ## Candidate shape
 
@@ -38,4 +61,3 @@ The extension returns candidates compatible with Toki's shared `ScreenCandidate`
   "height": 32
 }
 ```
-
