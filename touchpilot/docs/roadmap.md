@@ -188,6 +188,7 @@ Status: Closed as a quality gate.
   - long term: browser extension companion
 - Step 4 result: strategy recorded. Short term ranks OCR/accessibility candidates with layout heuristics, mid term replaces brittle AppleScript traversal with a native macOS AX bridge, and long term adds a browser extension companion for exact DOM targets.
 - Step 5: add candidate ranking before provider calls.
+- Step 5 result: candidate ranking now runs before known-screen and live desktop provider calls. It prioritizes goal-text matches, clickable roles, button-like boxes, OCR visibility, duplicate penalties, and risky-label flags before sending candidates to the provider.
 - Step 6: run browser known-screen tests on Edge/Chrome.
 - Step 7: record which path is reliable enough before Phase 11.
 

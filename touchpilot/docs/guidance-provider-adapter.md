@@ -749,6 +749,25 @@ Phase 10.7 should first add a candidate ranking layer:
 
 Acceptance: browser known-screen tests should show whether the provider chose a useful ranked candidate. If the ranked candidates do not include the right target, fix candidate extraction/ranking before changing provider prompts.
 
+Step 10.7.5 added the first candidate ranking layer.
+
+Ranking now happens before provider calls in:
+
+- the known-screen CLI runner
+- the live desktop guidance candidate path
+
+Initial scoring signals:
+
+- user-command text matches
+- clickable/accessibility roles
+- OCR-visible text
+- button-sized boxes
+- duplicate-label penalty
+- large-region penalty
+- risky-label flagging for words such as `delete`, `revoke`, `pay`, and `send`
+
+This is intentionally simple. Its job is to make the first candidate list less noisy before the provider chooses a candidate ID. It is not the final browser understanding layer.
+
 Next retry:
 
 ```bash
