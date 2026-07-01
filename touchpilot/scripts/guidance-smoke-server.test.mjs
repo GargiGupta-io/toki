@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   handleGuidanceSmokeRequest,
   normalizeProviderGuidanceResponse,
+  requestFreeLlmApiGuidance,
   requestLocalOllamaGuidance,
   resolveGuidanceProviderConfig,
   validateProviderGuidanceResult,
@@ -139,6 +140,22 @@ test("resolveGuidanceProviderConfig supports local Ollama", () => {
       providerName: "local-ollama",
       endpoint: "http://localhost:11434/api/generate",
       model: "llava:13b",
+    },
+  );
+});
+
+test("resolveGuidanceProviderConfig supports FreeLLMAPI dev mode", () => {
+  assert.deepEqual(
+    resolveGuidanceProviderConfig({
+      TOKI_GUIDANCE_PROVIDER: "freellmapi-dev",
+      TOKI_FREELLMAPI_ENDPOINT: "http://localhost:8000/v1/chat/completions",
+      TOKI_FREELLMAPI_MODEL: "dev-vision-model",
+    }),
+    {
+      provider: "freellmapi-dev",
+      providerName: "freellmapi-dev",
+      endpoint: "http://localhost:8000/v1/chat/completions",
+      model: "dev-vision-model",
     },
   );
 });
@@ -510,6 +527,82 @@ test("requestLocalOllamaGuidance reports provider errors as unavailable", async 
   assert.match(response.error, /404/);
 });
 
+test("requestFreeLlmApiGuidance sends OpenAI-compatible vision request", async () => {
+  const calls = [];
+  const response = await requestFreeLlmApiGuidance(
+    withCandidates(validRequest),
+    {
+      provider: "freellmapi-dev",
+      providerName: "freellmapi-dev",
+      endpoint: "http://localhost:8000/v1/chat/completions",
+      model: "dev-vision-model",
+    },
+    {
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    candidateId: "message-input",
+                    instruction: "Click the message input.",
+                    confidence: 0.77,
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    },
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://localhost:8000/v1/chat/completions");
+  assert.equal(calls[0].init.method, "POST");
+
+  const body = JSON.parse(calls[0].init.body);
+
+  assert.equal(body.model, "dev-vision-model");
+  assert.equal(body.temperature, 0);
+  assert.equal(body.response_format.type, "json_object");
+  assert.equal(body.messages[0].role, "system");
+  assert.equal(body.messages[1].role, "user");
+  assert.match(body.messages[1].content[0].text, /Show me what to click next/);
+  assert.match(body.messages[1].content[0].text, /id=message-input/);
+  assert.match(
+    body.messages[1].content[1].image_url.url,
+    /^data:image\/png;base64,iVBORw0KGgo=/,
+  );
+  assert.equal(response.mode, "real");
+  assert.equal(response.providerName, "freellmapi-dev");
+  assert.equal(response.validation.valid, true);
+  assert.equal(response.result.step.target.candidateId, "message-input");
+});
+
+test("requestFreeLlmApiGuidance reports provider errors as unavailable", async () => {
+  const response = await requestFreeLlmApiGuidance(
+    validRequest,
+    {
+      provider: "freellmapi-dev",
+      providerName: "freellmapi-dev",
+      endpoint: "http://localhost:8000/v1/chat/completions",
+      model: "dev-vision-model",
+    },
+    {
+      fetchImpl: async () => new Response("rate limited", { status: 429 }),
+    },
+  );
+
+  assert.equal(response.mode, "unavailable");
+  assert.equal(response.providerName, "freellmapi-dev");
+  assert.match(response.error, /429/);
+});
+
 test("guidance smoke server calls configured local Ollama adapter", async () => {
   const response = createResponse();
 
@@ -559,4 +652,45 @@ test("guidance smoke server calls configured local Ollama adapter", async () => 
   assert.equal(body.providerName, "local-ollama");
   assert.equal(body.validation.valid, true);
   assert.equal(body.result.step.target.label, "Search");
+});
+
+test("guidance smoke server calls configured FreeLLMAPI dev adapter", async () => {
+  const response = createResponse();
+
+  await handleGuidanceSmokeRequest(
+    createRequest("POST", "/api/guidance/smoke", JSON.stringify(withCandidates(validRequest))),
+    response,
+    {
+      env: {
+        TOKI_GUIDANCE_PROVIDER: "freellmapi-dev",
+        TOKI_FREELLMAPI_ENDPOINT: "http://localhost:8000/v1/chat/completions",
+        TOKI_FREELLMAPI_MODEL: "dev-vision-model",
+      },
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    candidateId: "message-input",
+                    instruction: "Click the message input.",
+                    confidence: 0.77,
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    },
+  );
+
+  const body = response.json();
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(body.mode, "real");
+  assert.equal(body.providerName, "freellmapi-dev");
+  assert.equal(body.validation.valid, true);
+  assert.equal(body.result.step.target.label, "Message input box");
 });
