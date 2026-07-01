@@ -76,6 +76,19 @@ The bridge payload is the temporary handoff shape for the desktop app:
 
 This is not the final live bridge. It is a stable dev payload so Toki can later import exact browser candidates and rank them before provider calls.
 
+## Use with the known-screen runner
+
+After downloading `toki-browser-candidates.json`, run:
+
+```bash
+TOKI_BROWSER_CANDIDATE_PAYLOAD=/path/to/toki-browser-candidates.json \
+TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
+TOKI_KNOWN_SCREEN_SCALE=2 \
+npm run guidance:known-screen
+```
+
+When this env var is set, the known-screen runner uses browser-extension candidates before manual, Accessibility, or OCR candidates.
+
 ## Candidate shape
 
 The extension returns candidates compatible with Toki's shared `ScreenCandidate` type:

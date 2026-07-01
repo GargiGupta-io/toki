@@ -202,6 +202,8 @@ Status: Closed as a quality gate.
 - Step 2 result: added `apps/browser-extension/fixtures/candidate-page.html` and manual acceptance rules for `Create project`, `Delete project`, `Open settings`, `Project name`, `Environment selector`, and `Add notes`. This gives the browser extension a controlled page before testing real SaaS dashboards.
 - Step 3: define a local bridge payload Toki can consume.
 - Step 3 result: the extension popup can now copy or download a `schemaVersion: 1` browser candidate payload with page URL, title, viewport, and DOM candidates. This is a development handoff shape before a live desktop bridge.
+- Step 4: ingest browser candidate payloads in the known-screen provider path.
+- Step 4 result: `TOKI_BROWSER_CANDIDATE_PAYLOAD=/path/to/toki-browser-candidates.json npm run guidance:known-screen` now loads browser-extension candidates before manual, Accessibility, or OCR candidates, then ranks them before sending them to the provider.
 - Expose DOM candidates with text, ARIA label, role, bounds, URL, and scroll context.
 - Send candidates to Toki using the same candidate shape as OCR/AX.
 - Rank DOM candidates before provider calls.
