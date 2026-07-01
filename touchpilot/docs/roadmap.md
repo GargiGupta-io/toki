@@ -192,6 +192,17 @@ Status: Closed as a quality gate.
 - Step 6: run browser known-screen tests on Edge/Chrome.
 - Step 6 result: browser known-screen testing exposed candidate extraction as the blocker. The ranked provider call can run, but the current macOS Accessibility route only produced coarse browser/window candidates in this session, app-targeted Edge/Chrome were not active process names, Firefox targeting failed through the AppleScript route, and macOS Vision OCR returned `nilError` on the current known-screen PNG even after switching to a safer `CGImageSource` loader. Do not treat browser target accuracy as solved yet.
 - Step 7: record which path is reliable enough before Phase 11.
+- Step 7 result: no current browser path is reliable enough for product guidance. FreeLLMAPI/Gemini is the best development provider, and ranked candidates are the right request shape, but browser page understanding must improve before Phase 11 can safely protect real actions. Recommended next phase is Phase 10.8: Browser Candidate Extraction, starting with a browser extension companion for exact DOM candidates, while keeping native macOS AX and OCR as fallbacks.
+
+## Phase 10.8: Browser Candidate Extraction
+
+- Build a browser extension companion for development target accuracy.
+- Expose DOM candidates with text, ARIA label, role, bounds, URL, and scroll context.
+- Send candidates to Toki using the same candidate shape as OCR/AX.
+- Rank DOM candidates before provider calls.
+- Re-run known-screen browser tests on Chrome/Edge/Firefox.
+- Keep macOS AX and OCR as fallback candidate sources.
+- Close when one browser known-screen target is useful from extracted candidates, not raw screenshot guessing.
 
 ## Phase 7: Safety And Guardrails
 

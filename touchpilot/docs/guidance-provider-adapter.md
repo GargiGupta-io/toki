@@ -790,3 +790,23 @@ Step 10.7.6 browser known-screen result:
 - The OCR fallback path also failed on the current `/tmp/toki-known-screen.png` with Vision `nilError`. The Swift OCR helper was changed to use `CGImageSource` and return a cleaner error, but Vision still returned no candidates for that image.
 
 Conclusion: Step 10.7.6 did not prove browser target accuracy. It proved the next blocker more precisely: candidate extraction for browser pages is not reliable enough yet. The next decision should be whether to build the native macOS AX bridge first or move to a browser-extension companion for exact DOM candidates.
+
+Step 10.7.7 decision:
+
+No current browser path is reliable enough to move into full real-action safety work.
+
+What is reliable:
+
+- FreeLLMAPI/Gemini is the best current development provider for comparison tests.
+- The strict `GuidanceResult` validator prevents malformed or unsafe coordinates from rendering.
+- Candidate ranking is the right shape for provider requests.
+
+What is not reliable:
+
+- AppleScript Accessibility does not consistently expose browser page controls.
+- OCR is useful as a fallback, but the current Swift/Vision probe can fail on real captured images.
+- Raw screenshot targeting still produces plausible-looking wrong targets.
+
+Selected next direction:
+
+Build Phase 10.8 as Browser Candidate Extraction before Phase 11. The first implementation should be a browser extension companion because it can expose exact DOM candidates: visible text, ARIA labels, roles, bounding boxes, URL, and scroll context. Keep native macOS AX and OCR as fallback sources, not the primary browser strategy.
