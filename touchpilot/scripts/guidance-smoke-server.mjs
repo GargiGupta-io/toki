@@ -6,6 +6,8 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_GUIDANCE_PROVIDER = "unavailable";
 const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate";
 const DEFAULT_OLLAMA_MODEL = "llava:latest";
+const DEFAULT_FREELLMAPI_ENDPOINT = "http://127.0.0.1:8000/v1/chat/completions";
+const DEFAULT_FREELLMAPI_MODEL = "gpt-4o-mini";
 const MAX_PROVIDER_RAW_TEXT_CHARS = 2000;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 90_000;
 const MIN_TARGET_SIZE_CSS_PX = 4;
@@ -13,6 +15,7 @@ const MAX_SCREEN_CANDIDATES = 20;
 const SUPPORTED_GUIDANCE_PROVIDERS = new Set([
   "unavailable",
   "local-ollama",
+  "freellmapi-dev",
 ]);
 const VALID_GUIDANCE_MODES = new Set(["guide", "answer", "clarify"]);
 const VALID_RISK_CLASSES = new Set([
@@ -149,6 +152,17 @@ export function resolveGuidanceProviderConfig(env = process.env) {
       providerName: "local-ollama",
       endpoint: String(env.TOKI_OLLAMA_ENDPOINT ?? DEFAULT_OLLAMA_ENDPOINT).trim(),
       model: String(env.TOKI_OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL).trim(),
+    };
+  }
+
+  if (provider === "freellmapi-dev") {
+    return {
+      provider,
+      providerName: "freellmapi-dev",
+      endpoint: String(
+        env.TOKI_FREELLMAPI_ENDPOINT ?? DEFAULT_FREELLMAPI_ENDPOINT,
+      ).trim(),
+      model: String(env.TOKI_FREELLMAPI_MODEL ?? DEFAULT_FREELLMAPI_MODEL).trim(),
     };
   }
 
@@ -763,6 +777,131 @@ export async function requestLocalOllamaGuidance(
   }
 }
 
+function createFreeLlmApiRequest(guidanceRequest, providerConfig) {
+  const screenshot = guidanceRequest.screen.screenshotPayload;
+  const imageFormat =
+    typeof screenshot.format === "string" && screenshot.format.trim().length > 0
+      ? screenshot.format.trim()
+      : "png";
+
+  return {
+    model: providerConfig.model,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are Toki, a desktop screen guidance assistant. Return only strict JSON.",
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: createOllamaPrompt(guidanceRequest),
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:image/${imageFormat};base64,${screenshot.imageBase64}`,
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function extractOpenAiCompatibleMessageText(body) {
+  const content = body?.choices?.[0]?.message?.content;
+
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+
+        if (isObject(part) && typeof part.text === "string") {
+          return part.text;
+        }
+
+        return "";
+      })
+      .join("\n")
+      .trim();
+  }
+
+  if (typeof body?.output_text === "string") {
+    return body.output_text;
+  }
+
+  return JSON.stringify(body);
+}
+
+export async function requestFreeLlmApiGuidance(
+  guidanceRequest,
+  providerConfig,
+  options = {},
+) {
+  const fetcher = options.fetchImpl ?? fetch;
+  const timeoutMs = Number(options.timeoutMs ?? resolveProviderTimeoutMs(options.env));
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => {
+    abortController.abort();
+  }, timeoutMs);
+  let responseText = "";
+
+  try {
+    const response = await fetcher(providerConfig.endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(createFreeLlmApiRequest(guidanceRequest, providerConfig)),
+      signal: abortController.signal,
+    });
+
+    if (!response.ok) {
+      return {
+        mode: "unavailable",
+        error: `FreeLLMAPI returned ${response.status} ${response.statusText}`,
+        providerName: providerConfig.providerName,
+      };
+    }
+
+    const body = await response.json();
+    responseText = extractOpenAiCompatibleMessageText(body);
+    const providerBody = extractJsonObject(responseText);
+
+    return normalizeProviderGuidanceResponse(
+      providerBody,
+      guidanceRequest,
+      providerConfig.providerName,
+      { providerRawText: responseText },
+    );
+  } catch (error) {
+    return {
+      mode: "unavailable",
+      error:
+        error instanceof Error && error.name === "AbortError"
+          ? `FreeLLMAPI timed out after ${timeoutMs}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error),
+      providerName: providerConfig.providerName,
+      providerRawText: truncateProviderRawText(responseText),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function handleGuidanceSmokeRequest(request, response, options = {}) {
   const providerConfig = resolveGuidanceProviderConfig(options.env);
 
@@ -824,6 +963,20 @@ export async function handleGuidanceSmokeRequest(request, response, options = {}
 
   if (providerConfig.provider === "local-ollama") {
     const providerResponse = await requestLocalOllamaGuidance(body, providerConfig, {
+      fetchImpl: options.fetchImpl,
+      env: options.env,
+    });
+
+    console.log(
+      `[response] mode=${providerResponse.mode} provider=${providerResponse.providerName ?? "unknown"} target=${providerResponse.result?.step?.target?.label ?? "none"} error=${providerResponse.error ?? "none"}`,
+    );
+
+    sendJson(response, 200, providerResponse);
+    return;
+  }
+
+  if (providerConfig.provider === "freellmapi-dev") {
+    const providerResponse = await requestFreeLlmApiGuidance(body, providerConfig, {
       fetchImpl: options.fetchImpl,
       env: options.env,
     });
