@@ -223,15 +223,21 @@ Status: Closed as a quality gate.
 - Keep macOS AX and OCR as fallback candidate sources.
 - Close when one browser known-screen target is useful from extracted candidates, not raw screenshot guessing.
 
-## Phase 7: Safety And Guardrails
+## Phase 11: Safety And Guardrails
 
-- Risk classifier.
-- Policy engine.
-- Confirmation sheet.
-- Private mode.
-- Debug logs.
+- Step 1: write the safety contract and acceptance criteria.
+- Step 1 result: added `docs/phase-11-safety-guardrails.md` with the policy goal, risk classes, confirmation gate, step plan, acceptance criteria, and non-goals. Phase 11 starts from the rule that Toki may guide, but the user stays in control and risky guidance must be confirmed before it renders as normal guidance.
+- Step 2: add shared policy decision types.
+- Step 3: add the policy engine.
+- Step 4: add policy tests.
+- Step 5: route provider results through policy.
+- Step 6: add confirmation UI.
+- Step 7: show safety decisions in Debug.
+- Step 8: run manual safety QA.
+- Step 9: update docs and learning notes.
+- Step 10: close Phase 11 or escalate browser metadata.
 
-## Phase 8: Screen Intelligence Upgrade
+## Phase 12: Screen Intelligence Upgrade
 
 - OCR.
 - Accessibility tree adapters.
@@ -239,7 +245,7 @@ Status: Closed as a quality gate.
 - Region selection.
 - Confidence scoring.
 
-## Phase 9: Multi-Step Workflows
+## Phase 13: Multi-Step Workflows
 
 - Task plans.
 - Step verification.
@@ -247,14 +253,14 @@ Status: Closed as a quality gate.
 - Screen change detection.
 - Completion detection.
 
-## Phase 10: Visual Polish
+## Phase 14: Visual Polish
 
 - Refined overlay design system.
 - `react-three-fiber` guidance visuals.
 - Selective `liquid-glass-js` surfaces.
 - Brand/onboarding visuals.
 
-## Phase 11: Evals
+## Phase 15: Evals
 
 - Screenshot dataset.
 - Target annotations.
@@ -262,7 +268,7 @@ Status: Closed as a quality gate.
 - Risk classification scoring.
 - Prompt/model regression tracking.
 
-## Phase 12: Production Readiness
+## Phase 16: Production Readiness
 
 - Auto-update.
 - Signing.

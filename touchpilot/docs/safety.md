@@ -2,6 +2,8 @@
 
 Toki guides users through real software. That means it can point users toward actions with real consequences. The safety layer exists to slow down risky steps, explain consequences, and require confirmation.
 
+The active build plan lives in [Phase 11: Safety And Guardrails](./phase-11-safety-guardrails.md).
+
 ## Risk Classes
 
 ```text
@@ -36,6 +38,8 @@ Before risky guidance continues, the user should see:
 3. what they should verify,
 4. a clear confirm action,
 5. a clear cancel action.
+
+In Phase 11, confirmation means the user permits Toki to show the risky target as guidance. It does not mean Toki clicks, submits, deletes, sends, pays, or changes settings automatically.
 
 ## Non-Goals For Early Versions
 
