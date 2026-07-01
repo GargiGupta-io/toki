@@ -45,6 +45,37 @@ The candidate output should include:
 
 This step passes when the extension sees these DOM candidates on the fixture page. It does not require the desktop app to consume them yet.
 
+## Development bridge
+
+After collecting candidates, use:
+
+- `Copy JSON` to copy the bridge payload.
+- `Download` to save `toki-browser-candidates.json`.
+
+The bridge payload is the temporary handoff shape for the desktop app:
+
+```json
+{
+  "schemaVersion": 1,
+  "source": "browser-extension",
+  "capturedAt": "2026-07-02T00:00:00.000Z",
+  "page": {
+    "url": "https://example.com",
+    "title": "Example"
+  },
+  "viewport": {
+    "width": 1280,
+    "height": 720,
+    "scrollX": 0,
+    "scrollY": 0,
+    "devicePixelRatio": 2
+  },
+  "candidates": []
+}
+```
+
+This is not the final live bridge. It is a stable dev payload so Toki can later import exact browser candidates and rank them before provider calls.
+
 ## Candidate shape
 
 The extension returns candidates compatible with Toki's shared `ScreenCandidate` type:

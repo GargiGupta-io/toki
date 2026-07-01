@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "source": "browser-extension",
+  "capturedAt": "2026-07-02T00:00:00.000Z",
+  "page": {
+    "url": "file:///candidate-page.html",
+    "title": "Toki Candidate Fixture"
+  },
+  "viewport": {
+    "width": 1280,
+    "height": 720,
+    "scrollX": 0,
+    "scrollY": 0,
+    "devicePixelRatio": 2
+  },
+  "candidates": [
+    {
+      "id": "dom-create-project-1",
+      "label": "Create project",
+      "role": "dom_button",
+      "source": "dom",
+      "x": 100,
+      "y": 100,
+      "width": 120,
+      "height": 40,
+      "metadata": {
+        "tagName": "button",
+        "href": null,
+        "testId": "primary-action"
+      }
+    }
+  ]
+}
