@@ -270,8 +270,9 @@ Step 10.5.7 adds explicit server-side provider mode config:
 | `TOKI_GUIDANCE_PROVIDER` | `unavailable` | Chooses the server-side provider mode |
 | `TOKI_OLLAMA_ENDPOINT` | `http://127.0.0.1:11434/api/generate` | Local Ollama generate endpoint for the next adapter step |
 | `TOKI_OLLAMA_MODEL` | `llava:latest` | Local Ollama vision model name for the next adapter step |
-| `TOKI_FREELLMAPI_ENDPOINT` | `http://127.0.0.1:8000/v1/chat/completions` | OpenAI-compatible FreeLLMAPI dev endpoint |
-| `TOKI_FREELLMAPI_MODEL` | `gpt-4o-mini` | FreeLLMAPI dev model name |
+| `TOKI_FREELLMAPI_ENDPOINT` | `http://127.0.0.1:3001/v1/chat/completions` | OpenAI-compatible FreeLLMAPI dev endpoint |
+| `TOKI_FREELLMAPI_MODEL` | `auto` | FreeLLMAPI dev model name |
+| `TOKI_FREELLMAPI_API_KEY` | empty | Optional local FreeLLMAPI bearer token |
 
 Supported provider modes:
 
@@ -620,3 +621,26 @@ The remaining Phase 10.5 target-accuracy extension is complete when:
 - Debug shows provider name, request evidence, validation, and tester verdict
 - one known-screen target is tested manually
 - the result is recorded as useful or wrong
+
+## Phase 10.7 FreeLLMAPI Dev Run
+
+Phase 10.7 adds `freellmapi-dev` only as a development comparison provider. It should help compare target accuracy against local Ollama, but it does not change the production rule: production provider calls need a backend/proxy.
+
+Step 10.7.2 attempted a known-screen run with `/tmp/toki-known-screen.png`.
+
+Result:
+
+- Toki smoke server started in `freellmapi-dev` mode.
+- The known-screen runner reached the Toki smoke endpoint.
+- FreeLLMAPI itself was not running at `http://127.0.0.1:3001`, so the provider returned `unavailable`.
+- No useful/wrong target verdict was possible yet.
+
+Next retry:
+
+```bash
+npm run guidance:smoke:freellmapi
+TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
+TOKI_KNOWN_SCREEN_SCALE=2 \
+TOKI_KNOWN_SCREEN_AUTO_CANDIDATES=0 \
+npm run guidance:known-screen
+```
