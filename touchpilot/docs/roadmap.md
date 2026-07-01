@@ -181,6 +181,7 @@ Status: Closed as a quality gate.
 - Step 2: run known-screen tests through FreeLLMAPI vision models.
 - Step 2 result: FreeLLMAPI is installed locally at `/Users/pumba/tools/freellmapi`, responds on port `3001`, and Gemini became available after adding a provider key. A known-screen request through `freellmapi-dev` returned `real` target `next at 50,390 50x20`; this proves provider reachability, but target usefulness still needs browser/candidate comparison.
 - Step 3: compare accuracy against local Ollama.
+- Step 3 result: with the same known-screen fixture and auto-candidates disabled, FreeLLMAPI/Gemini returned a validated `real` target, while local Ollama returned normalized `0..1` coordinates and was rejected as `unavailable`.
 - Step 4: add browser candidate strategy plan:
   - short term: OCR plus layout heuristics
   - mid term: native macOS AX bridge

@@ -661,6 +661,15 @@ After adding a Google/Gemini provider key, FreeLLMAPI exposed available Gemini m
 | Confidence | `0.9` |
 | Verdict | Provider reachability proved; target usefulness still needs browser/candidate comparison. |
 
+Step 10.7.3 compared FreeLLMAPI/Gemini against local Ollama on the same known-screen fixture with automatic candidates disabled:
+
+| Provider | Model | Result | Target | Verdict |
+| --- | --- | --- | --- | --- |
+| `freellmapi-dev` | `gemini-2.5-flash` | `real` | `next at 50,390 50x20` | Validated provider result. Needs manual usefulness review. |
+| `local-ollama` | `llava:latest` | `unavailable` | rejected normalized box around `Hello World` | Failed strict validation because it returned `0..1` coordinates instead of CSS pixels. |
+
+Conclusion: FreeLLMAPI/Gemini is the stronger development provider for raw screenshot testing right now. Local Ollama remains useful as an offline fallback, especially when candidate IDs are supplied, but it should not be trusted for raw coordinate generation.
+
 Next retry:
 
 ```bash
