@@ -670,6 +670,85 @@ Step 10.7.3 compared FreeLLMAPI/Gemini against local Ollama on the same known-sc
 
 Conclusion: FreeLLMAPI/Gemini is the stronger development provider for raw screenshot testing right now. Local Ollama remains useful as an offline fallback, especially when candidate IDs are supplied, but it should not be trusted for raw coordinate generation.
 
+## Phase 10.7 Browser Candidate Strategy
+
+Raw screenshots are not enough for reliable browser guidance. A browser page can contain many repeated labels, hidden controls, icon-only buttons, sticky headers, and nested panels. A vision model can guess, but it can also return plausible-looking wrong coordinates. Toki should give the provider a ranked list of candidate targets before asking it to choose.
+
+### Short Term: OCR Plus Layout Heuristics
+
+Use the evidence we already have:
+
+- macOS Vision OCR text boxes
+- existing Accessibility candidates when available
+- screenshot/display calibration
+- layout rules around browser pages
+
+Candidate ranking should happen before the provider call. The provider should receive fewer, better candidates instead of a noisy list.
+
+Initial ranking signals:
+
+| Signal | Why it helps |
+| --- | --- |
+| Text match with the user command | `download`, `manage`, `search`, `add`, `revoke`, etc. should rise. |
+| Button-like shape | Rectangles with interactive sizing are more likely targets than paragraph text. |
+| Nearby icon/text grouping | Icon-only controls can inherit nearby visible labels. |
+| Current viewport bounds | Ignore candidates hidden behind the dock/menu bar or outside the visible browser content. |
+| Duplicate label penalty | If five `Info` labels exist, require stronger context before selecting one. |
+| Dangerous-word flag | `Delete`, `Revoke`, `Pay`, `Send`, and account/security terms should carry safety metadata. |
+
+Tradeoff: OCR is available now and works across browsers, but it does not understand semantics. It sees text, not whether the text is a button, link, tab, or decoration.
+
+Best immediate use: ask FreeLLMAPI/Gemini or Ollama to choose from ranked OCR/accessibility candidate IDs, not raw screenshot coordinates.
+
+### Mid Term: Native macOS AX Bridge
+
+Replace brittle AppleScript Accessibility traversal with a native Rust/macOS bridge using the Accessibility APIs directly.
+
+Why this is better:
+
+- fewer AppleScript runtime failures
+- better typed access to roles, labels, bounds, actions, and focus
+- better control over browser process/window selection
+- easier permission diagnostics
+
+Tradeoff: native AX work is more platform-specific and slower to build correctly, but it gives more trustworthy UI semantics than OCR.
+
+Best use: combine AX candidates with OCR candidates. AX provides roles/actions; OCR fills gaps when browsers expose poor trees.
+
+### Long Term: Browser Extension Companion
+
+Add an optional browser extension for Chrome/Edge/Safari that can expose exact DOM targets to Toki.
+
+The extension can provide:
+
+- element text
+- ARIA labels
+- role/button/link/input semantics
+- bounding boxes from `getBoundingClientRect()`
+- page URL/title
+- scroll context
+- exact clicked-target verification later
+
+Tradeoff: extensions add install friction and browser-specific packaging, but they are the most accurate way to understand web pages.
+
+Best use: web apps and SaaS dashboards where exact DOM targets matter. Keep OCR/AX as the no-extension fallback.
+
+### Selected Direction Before Phase 11
+
+Do not build Phase 11 safety on raw screenshot guessing alone.
+
+Phase 10.7 should first add a candidate ranking layer:
+
+1. collect OCR and any available AX candidates
+2. normalize all boxes into display CSS coordinates
+3. score candidates against the voice/user command
+4. keep the top candidates only
+5. ask the provider to choose one candidate ID
+6. anchor the returned target to the trusted candidate box
+7. mark safety metadata on risky labels before Phase 11
+
+Acceptance: browser known-screen tests should show whether the provider chose a useful ranked candidate. If the ranked candidates do not include the right target, fix candidate extraction/ranking before changing provider prompts.
+
 Next retry:
 
 ```bash
