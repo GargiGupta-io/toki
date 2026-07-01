@@ -44,3 +44,23 @@ export async function readBrowserCandidatePayload(payloadPath) {
 
   return normalizeBrowserCandidatePayload(payload);
 }
+
+export async function readLatestBrowserCandidateBridge(
+  endpoint = "http://127.0.0.1:8787/api/browser-candidates/latest",
+  options = {},
+) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl(endpoint);
+
+  if (!response.ok) {
+    throw new Error(`browser candidate bridge returned ${response.status}`);
+  }
+
+  const body = await response.json();
+
+  if (body?.payload == null) {
+    return null;
+  }
+
+  return normalizeBrowserCandidatePayload(body.payload);
+}
