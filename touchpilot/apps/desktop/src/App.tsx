@@ -936,7 +936,7 @@ function OverlayWindowApp() {
       const requestCalibration = getCalibration(metadata, viewport, screenshotMetadata);
       const candidateContext =
         providerMode === "real"
-          ? await collectScreenCandidatesForGuidance(screenshot, metadata.display)
+          ? await collectScreenCandidatesForGuidance(screenshot, metadata.display, goal)
           : {
               candidates: [],
               candidateSource: "none" as const,

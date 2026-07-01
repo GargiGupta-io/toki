@@ -4,6 +4,7 @@ import type {
   GuidanceScreenContext,
   ScreenshotCapture,
 } from "@toki/shared";
+import { rankScreenCandidates } from "./candidateRanking";
 
 type ScreenCandidateResult = Pick<
   GuidanceScreenContext,
@@ -15,6 +16,7 @@ const MAX_LIVE_GUIDANCE_CANDIDATES = 20;
 export async function collectScreenCandidatesForGuidance(
   screenshot: ScreenshotCapture,
   display: DisplayContext,
+  goal: string,
 ): Promise<ScreenCandidateResult> {
   try {
     const result = await invoke<ScreenCandidateResult>("collect_screen_candidates", {
@@ -30,7 +32,11 @@ export async function collectScreenCandidatesForGuidance(
 
     return {
       ...result,
-      candidates: result.candidates?.slice(0, MAX_LIVE_GUIDANCE_CANDIDATES) ?? [],
+      candidates: rankScreenCandidates(
+        result.candidates,
+        goal,
+        MAX_LIVE_GUIDANCE_CANDIDATES,
+      ),
     };
   } catch (error) {
     return {
