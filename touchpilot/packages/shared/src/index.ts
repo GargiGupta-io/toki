@@ -30,7 +30,18 @@ export type TargetBox = {
 
 export type ScreenCandidate = TargetBox & {
   id: string;
-  role: "accessibility_element" | "ocr_text" | "manual";
+  role:
+    | "accessibility_element"
+    | "ocr_text"
+    | "dom_button"
+    | "dom_link"
+    | "dom_input"
+    | "dom_select"
+    | "dom_textarea"
+    | "dom_candidate"
+    | "manual";
+  source?: "accessibility" | "ocr" | "dom" | "manual";
+  metadata?: Record<string, string | number | boolean | null>;
 };
 
 export type Bounds = {
@@ -68,7 +79,14 @@ export type GuidanceScreenContext = {
   };
   calibration?: CoordinateCalibration;
   candidates?: ScreenCandidate[];
-  candidateSource?: "manual" | "macos-accessibility" | "macos-vision-ocr" | "none" | "unsupported" | "unavailable";
+  candidateSource?:
+    | "manual"
+    | "macos-accessibility"
+    | "macos-vision-ocr"
+    | "browser-extension"
+    | "none"
+    | "unsupported"
+    | "unavailable";
   candidateError?: string;
 };
 
