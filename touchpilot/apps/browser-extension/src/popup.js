@@ -1,8 +1,10 @@
 const statusElement = document.querySelector("#status");
 const outputElement = document.querySelector("#output");
 const collectButton = document.querySelector("#collect");
+const sendButton = document.querySelector("#send");
 const copyButton = document.querySelector("#copy");
 const downloadButton = document.querySelector("#download");
+const TOKI_BRIDGE_ENDPOINT = "http://127.0.0.1:8787/api/browser-candidates/latest";
 let latestPayload = null;
 
 function setStatus(value) {
@@ -24,6 +26,7 @@ function createBridgePayload(response) {
 }
 
 function setExportEnabled(enabled) {
+  sendButton.disabled = !enabled;
   copyButton.disabled = !enabled;
   downloadButton.disabled = !enabled;
 }
@@ -63,6 +66,33 @@ collectButton.addEventListener("click", () => {
     setExportEnabled(false);
     outputElement.textContent = error instanceof Error ? error.message : String(error);
   });
+});
+
+sendButton.addEventListener("click", () => {
+  if (latestPayload == null) {
+    return;
+  }
+
+  fetch(TOKI_BRIDGE_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(latestPayload),
+  })
+    .then(async (response) => {
+      const body = await response.json().catch(() => ({}));
+
+      if (!response.ok || body.ok === false) {
+        throw new Error(body.error || `Bridge returned ${response.status}`);
+      }
+
+      setStatus(`Sent ${body.candidateCount}`);
+    })
+    .catch((error) => {
+      setStatus("Send failed");
+      outputElement.textContent = error instanceof Error ? error.message : String(error);
+    });
 });
 
 copyButton.addEventListener("click", () => {
