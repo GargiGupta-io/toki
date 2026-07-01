@@ -111,9 +111,21 @@ Use this when testing the live extension path before target accuracy work:
 5. Open the extension popup and click `Collect candidates`.
 6. Confirm the popup shows page-specific candidates, not only browser chrome.
 7. Click `Send to Toki`.
-8. Run the known-screen smoke without `TOKI_BROWSER_CANDIDATE_PAYLOAD`; the runner should read the latest payload from the live bridge automatically.
+8. Check that Toki received a real-page payload:
+
+   ```bash
+   npm run qa:browser:candidates
+   ```
+
+9. Run the known-screen smoke without `TOKI_BROWSER_CANDIDATE_PAYLOAD`; the runner should read the latest payload from the live bridge automatically.
 
 This step proves that the extension can collect DOM candidates from an actual browser page and hand them to Toki. It does not prove final target accuracy by itself; accuracy still depends on candidate ranking and the selected provider.
+
+For the controlled fixture page, the same bridge check is allowed with:
+
+```bash
+npm run qa:browser:candidates -- --allow-fixture
+```
 
 ## Use with the known-screen runner
 
