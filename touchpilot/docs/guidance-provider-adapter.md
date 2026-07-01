@@ -810,3 +810,25 @@ What is not reliable:
 Selected next direction:
 
 Build Phase 10.8 as Browser Candidate Extraction before Phase 11. The first implementation should be a browser extension companion because it can expose exact DOM candidates: visible text, ARIA labels, roles, bounding boxes, URL, and scroll context. Keep native macOS AX and OCR as fallback sources, not the primary browser strategy.
+
+Step 10.8.5 known-screen browser candidate result:
+
+```bash
+TOKI_BROWSER_CANDIDATE_PAYLOAD=apps/browser-extension/fixtures/bridge-payload.json \
+TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
+TOKI_KNOWN_SCREEN_SCALE=2 \
+TOKI_KNOWN_SCREEN_GOAL="Click Create project" \
+npm run guidance:known-screen
+```
+
+Result:
+
+- candidate source: `browser-extension`
+- candidates sent: `1`
+- provider: `freellmapi-dev`
+- mode: `real`
+- target: `Create project at 100,100 120x40`
+- risk: `safe_navigation`
+- confirmation: `false`
+
+This proves the provider can choose from exact DOM candidates when the extension payload is supplied. It does not yet prove live desktop ingestion or real SaaS-page candidate quality.
