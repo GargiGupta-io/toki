@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import test from "node:test";
 import {
   handleGuidanceSmokeRequest,
+  resetBrowserCandidateBridge,
   normalizeProviderGuidanceResponse,
   requestFreeLlmApiGuidance,
   requestLocalOllamaGuidance,
@@ -182,6 +183,62 @@ test("guidance smoke server exposes health check", async () => {
   assert.equal(response.json().ok, true);
   assert.equal(response.json().service, "toki-guidance-smoke");
   assert.equal(response.json().provider, "unavailable");
+});
+
+test("guidance smoke server stores browser candidate bridge payloads", async () => {
+  resetBrowserCandidateBridge();
+
+  const response = createResponse();
+
+  await handleGuidanceSmokeRequest(
+    createRequest(
+      "POST",
+      "/api/browser-candidates/latest",
+      JSON.stringify({
+        schemaVersion: 1,
+        source: "browser-extension",
+        capturedAt: "2026-07-02T00:00:00.000Z",
+        page: {
+          url: "https://example.com",
+          title: "Example",
+        },
+        viewport: {
+          width: 1280,
+          height: 720,
+          scrollX: 0,
+          scrollY: 0,
+          devicePixelRatio: 2,
+        },
+        candidates: [
+          {
+            id: "dom-create-project-1",
+            label: "Create project",
+            role: "dom_button",
+            source: "dom",
+            x: 100,
+            y: 100,
+            width: 120,
+            height: 40,
+          },
+        ],
+      }),
+    ),
+    response,
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().ok, true);
+  assert.equal(response.json().candidateCount, 1);
+
+  const getResponse = createResponse();
+
+  await handleGuidanceSmokeRequest(
+    createRequest("GET", "/api/browser-candidates/latest"),
+    getResponse,
+  );
+
+  assert.equal(getResponse.statusCode, 200);
+  assert.equal(getResponse.json().payload.candidates[0].label, "Create project");
 });
 
 test("guidance smoke server returns unavailable until provider is wired", async () => {

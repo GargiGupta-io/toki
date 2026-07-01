@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
+import { normalizeBrowserCandidatePayload } from "./browser-candidate-payload.mjs";
 
 const DEFAULT_PORT = 8787;
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -38,6 +39,7 @@ const CONFIRMATION_REQUIRED_RISKS = new Set([
   "permission_change",
   "unknown_risky",
 ]);
+let latestBrowserCandidatePayload = null;
 
 function jsonHeaders(extra = {}) {
   return {
@@ -52,6 +54,26 @@ function jsonHeaders(extra = {}) {
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, jsonHeaders());
   response.end(JSON.stringify(body));
+}
+
+export function getLatestBrowserCandidatePayload() {
+  return latestBrowserCandidatePayload;
+}
+
+export function resetBrowserCandidateBridge() {
+  latestBrowserCandidatePayload = null;
+}
+
+function storeBrowserCandidatePayload(payload) {
+  const normalized = normalizeBrowserCandidatePayload(payload);
+
+  latestBrowserCandidatePayload = {
+    ...payload,
+    candidates: normalized.candidates,
+    receivedAt: new Date().toISOString(),
+  };
+
+  return latestBrowserCandidatePayload;
 }
 
 function resolveProviderTimeoutMs(env = process.env) {
@@ -940,6 +962,38 @@ export async function handleGuidanceSmokeRequest(request, response, options = {}
       providerName: providerConfig.providerName,
     });
     return;
+  }
+
+  if (request.url === "/api/browser-candidates/latest") {
+    if (request.method === "GET") {
+      sendJson(response, 200, {
+        ok: true,
+        payload: latestBrowserCandidatePayload,
+      });
+      return;
+    }
+
+    if (request.method === "POST") {
+      let payload;
+
+      try {
+        payload = JSON.parse(await readRequestBody(request));
+        payload = storeBrowserCandidatePayload(payload);
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ok: true,
+        candidateCount: payload.candidates.length,
+        receivedAt: payload.receivedAt,
+      });
+      return;
+    }
   }
 
   if (request.method !== "POST" || request.url !== "/api/guidance/smoke") {
