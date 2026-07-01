@@ -190,6 +190,7 @@ Status: Closed as a quality gate.
 - Step 5: add candidate ranking before provider calls.
 - Step 5 result: candidate ranking now runs before known-screen and live desktop provider calls. It prioritizes goal-text matches, clickable roles, button-like boxes, OCR visibility, duplicate penalties, and risky-label flags before sending candidates to the provider.
 - Step 6: run browser known-screen tests on Edge/Chrome.
+- Step 6 result: browser known-screen testing exposed candidate extraction as the blocker. The ranked provider call can run, but the current macOS Accessibility route only produced coarse browser/window candidates in this session, app-targeted Edge/Chrome were not active process names, Firefox targeting failed through the AppleScript route, and macOS Vision OCR returned `nilError` on the current known-screen PNG even after switching to a safer `CGImageSource` loader. Do not treat browser target accuracy as solved yet.
 - Step 7: record which path is reliable enough before Phase 11.
 
 ## Phase 7: Safety And Guardrails

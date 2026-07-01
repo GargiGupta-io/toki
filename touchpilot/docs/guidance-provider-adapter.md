@@ -781,3 +781,12 @@ TOKI_KNOWN_SCREEN_SCALE=2 \
 TOKI_KNOWN_SCREEN_AUTO_CANDIDATES=0 \
 npm run guidance:known-screen
 ```
+
+Step 10.7.6 browser known-screen result:
+
+- FreeLLMAPI and the Toki smoke server were already running locally.
+- A ranked known-screen run through `freellmapi-dev` completed, but the provider selected a coarse browser/window candidate: `window at 0,0 1470x33`.
+- The current macOS Accessibility path did not expose useful browser page controls in this session. The visible app list showed `firefox`, while `Microsoft Edge` and `Google Chrome` were not active process names; app-targeted browser probing failed through the AppleScript route.
+- The OCR fallback path also failed on the current `/tmp/toki-known-screen.png` with Vision `nilError`. The Swift OCR helper was changed to use `CGImageSource` and return a cleaner error, but Vision still returned no candidates for that image.
+
+Conclusion: Step 10.7.6 did not prove browser target accuracy. It proved the next blocker more precisely: candidate extraction for browser pages is not reliable enough yet. The next decision should be whether to build the native macOS AX bridge first or move to a browser-extension companion for exact DOM candidates.
