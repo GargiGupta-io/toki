@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
+import { rankScreenCandidates } from "./candidate-ranking.mjs";
 import { collectMacAccessibilityCandidates } from "./macos-accessibility-candidates.mjs";
 import { collectMacVisionOcrCandidates } from "./macos-vision-ocr-candidates.mjs";
 
@@ -198,6 +199,10 @@ async function createGuidanceRequest({ imagePath, image, size }) {
     displayHeight,
     scaleFactor,
   });
+  const rankedCandidates = rankScreenCandidates(candidateResult.candidates, {
+    goal: process.env.TOKI_KNOWN_SCREEN_GOAL?.trim() || DEFAULT_GOAL,
+    maxCandidates: getNumberEnv("TOKI_KNOWN_SCREEN_MAX_CANDIDATES", 20),
+  });
 
   const request = {
     goal: process.env.TOKI_KNOWN_SCREEN_GOAL?.trim() || DEFAULT_GOAL,
@@ -243,13 +248,16 @@ async function createGuidanceRequest({ imagePath, image, size }) {
     },
   };
 
-  if (candidateResult.candidates.length > 0) {
-    request.screen.candidates = candidateResult.candidates;
+  if (rankedCandidates.length > 0) {
+    request.screen.candidates = rankedCandidates;
   }
 
   return {
     request,
-    candidateResult,
+    candidateResult: {
+      ...candidateResult,
+      candidates: rankedCandidates,
+    },
   };
 }
 
