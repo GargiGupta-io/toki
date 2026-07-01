@@ -49,6 +49,7 @@ This step passes when the extension sees these DOM candidates on the fixture pag
 
 After collecting candidates, use:
 
+- `Send to Toki` to post the payload to `http://127.0.0.1:8787/api/browser-candidates/latest`.
 - `Copy JSON` to copy the bridge payload.
 - `Download` to save `toki-browser-candidates.json`.
 
@@ -75,6 +76,14 @@ The bridge payload is the temporary handoff shape for the desktop app:
 ```
 
 This is not the final live bridge. It is a stable dev payload so Toki can later import exact browser candidates and rank them before provider calls.
+
+For `Send to Toki`, start the local smoke server first:
+
+```bash
+npm run guidance:smoke:freellmapi
+```
+
+Then collect candidates in the browser popup and click `Send to Toki`.
 
 ## Use with the known-screen runner
 
