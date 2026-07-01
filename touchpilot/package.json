@@ -15,6 +15,7 @@
     "desktop:typecheck": "npm --workspace @toki/desktop run typecheck",
     "desktop:web:build": "npm --workspace @toki/desktop run build",
     "browser-extension:check": "npm --workspace @toki/browser-extension run check",
+    "qa:browser:candidates": "node scripts/browser-candidate-bridge-qa.mjs",
     "rust:check": "cargo check --workspace",
     "rust:fmt": "cargo fmt --all",
     "guidance:smoke:dev": "node scripts/guidance-smoke-server.mjs",
