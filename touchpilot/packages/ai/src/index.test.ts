@@ -5,6 +5,7 @@ import {
   createInvalidMockGuidance,
   createMockGuidance,
   createRiskyMockGuidance,
+  evaluateSafetyPolicy,
   requestRealGuidance,
   validateGuidanceResult,
 } from "./index";
@@ -333,4 +334,213 @@ test("requestRealGuidance accepts valid provider envelope", async () => {
   assert.equal(response.mode, "real");
   assert.equal(response.result?.step?.target?.label, "Export");
   assert.equal(response.validation?.valid, true);
+});
+
+test("evaluateSafetyPolicy allows safe navigation", () => {
+  const decision = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: validResult,
+      validation: { valid: true, issues: [] },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(decision.action, "allow");
+  assert.equal(decision.reason, "safe_navigation");
+  assert.equal(decision.requiresConfirmation, false);
+});
+
+test("evaluateSafetyPolicy allows form entry with a notice", () => {
+  const decision = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: cloneResult({
+        step: {
+          ...validResult.step!,
+          risk: "form_entry",
+        },
+      }),
+      validation: { valid: true, issues: [] },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(decision.action, "allow");
+  assert.equal(decision.reason, "form_entry_notice");
+});
+
+test("evaluateSafetyPolicy requires confirmation for risky actions", () => {
+  const riskyClasses: RiskClass[] = [
+    "external_send",
+    "delete",
+    "payment",
+    "security_change",
+    "account_change",
+    "permission_change",
+  ];
+
+  for (const risk of riskyClasses) {
+    const decision = evaluateSafetyPolicy({
+      provider: {
+        mode: "real",
+        result: cloneResult({
+          step: {
+            ...validResult.step!,
+            risk,
+            requiresConfirmation: true,
+          },
+        }),
+        validation: { valid: true, issues: [] },
+      },
+      minConfidence: 0.7,
+    });
+
+    assert.equal(decision.action, "confirm");
+    assert.equal(decision.reason, "risky_action");
+    assert.equal(decision.risk, risk);
+    assert.equal(decision.requiresConfirmation, true);
+  }
+});
+
+test("evaluateSafetyPolicy treats unknown risk as confirmation required", () => {
+  const decision = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: cloneResult({
+        step: {
+          ...validResult.step!,
+          risk: "unknown_risky",
+          requiresConfirmation: true,
+        },
+      }),
+      validation: { valid: true, issues: [] },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(decision.action, "confirm");
+  assert.equal(decision.reason, "unknown_risk");
+});
+
+test("evaluateSafetyPolicy clarifies low-confidence guidance", () => {
+  const decision = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: cloneResult({
+        step: {
+          ...validResult.step!,
+          confidence: 0.42,
+        },
+      }),
+      validation: { valid: true, issues: [] },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(decision.action, "clarify");
+  assert.equal(decision.reason, "low_confidence");
+  assert.deepEqual(decision.details, ["confidence=0.42", "minimum=0.7"]);
+});
+
+test("evaluateSafetyPolicy blocks unavailable and validation-failed providers", () => {
+  const unavailable = evaluateSafetyPolicy({
+    provider: {
+      mode: "unavailable",
+      error: "provider quota exceeded",
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(unavailable.action, "block");
+  assert.equal(unavailable.reason, "provider_unavailable");
+
+  const validationFailed = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: validResult,
+      validation: {
+        valid: false,
+        issues: [{ path: "step.target", message: "Target is offscreen." }],
+      },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(validationFailed.action, "block");
+  assert.equal(validationFailed.reason, "validation_failed");
+  assert.deepEqual(validationFailed.details, [
+    "step.target: Target is offscreen.",
+  ]);
+});
+
+test("evaluateSafetyPolicy clarifies missing targets and blocks invalid targets", () => {
+  const missingTarget = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: cloneResult({
+        step: {
+          ...validResult.step!,
+          target: undefined,
+        },
+      }),
+      validation: { valid: true, issues: [] },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(missingTarget.action, "clarify");
+  assert.equal(missingTarget.reason, "missing_target");
+
+  const invalidTarget = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: cloneResult({
+        step: {
+          ...validResult.step!,
+          target: {
+            label: " ",
+            x: 120,
+            y: 80,
+            width: 0,
+            height: 40,
+          },
+        },
+      }),
+      validation: { valid: true, issues: [] },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(invalidTarget.action, "block");
+  assert.equal(invalidTarget.reason, "invalid_target");
+});
+
+test("evaluateSafetyPolicy blocks missing guide steps but clarifies clarify results", () => {
+  const missingStep = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: cloneResult({ step: undefined }),
+      validation: { valid: true, issues: [] },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(missingStep.action, "block");
+  assert.equal(missingStep.reason, "missing_step");
+
+  const clarify = evaluateSafetyPolicy({
+    provider: {
+      mode: "real",
+      result: {
+        mode: "clarify",
+        summary: "Which settings page do you mean?",
+      },
+      validation: { valid: true, issues: [] },
+    },
+    minConfidence: 0.7,
+  });
+
+  assert.equal(clarify.action, "clarify");
+  assert.equal(clarify.reason, "missing_step");
 });
