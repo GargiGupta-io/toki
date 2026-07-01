@@ -832,3 +832,19 @@ Result:
 - confirmation: `false`
 
 This proves the provider can choose from exact DOM candidates when the extension payload is supplied. It does not yet prove live desktop ingestion or real SaaS-page candidate quality.
+
+Step 10.8.8 live bridge result:
+
+The smoke server was restarted with the local FreeLLMAPI unified key, the browser candidate fixture was posted to `/api/browser-candidates/latest`, and the known-screen runner was executed without `TOKI_BROWSER_CANDIDATE_PAYLOAD`.
+
+Result:
+
+- candidate source: `browser-extension`
+- candidates sent: `1`
+- provider: `freellmapi-dev`
+- mode: `real`
+- target: `Create project at 100,100 120x40`
+- risk: `safe_navigation`
+- confirmation: `false`
+
+This proves the local live bridge works for the controlled fixture path. The remaining product test is a real browser page where the extension popup collects candidates from the page and sends them to the bridge.
