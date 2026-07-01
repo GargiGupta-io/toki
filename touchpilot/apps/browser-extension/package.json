@@ -1,0 +1,10 @@
+{
+  "name": "@toki/browser-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Development browser extension for extracting exact DOM target candidates for Toki.",
+  "scripts": {
+    "check": "node --check src/content.js && node --check src/popup.js"
+  }
+}
