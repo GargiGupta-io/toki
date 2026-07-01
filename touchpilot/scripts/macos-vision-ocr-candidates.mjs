@@ -27,6 +27,7 @@ function slugCandidateId(label, index) {
 function createVisionOcrSwiftSource() {
   return `
 import AppKit
+import ImageIO
 import Foundation
 import Vision
 
@@ -55,12 +56,8 @@ guard arguments.count >= 2 else {
 let imagePath = arguments[1]
 let imageUrl = URL(fileURLWithPath: imagePath)
 
-guard let image = NSImage(contentsOf: imageUrl) else {
-  fputs("could not open image\\n", stderr)
-  exit(2)
-}
-
-guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+guard let imageSource = CGImageSourceCreateWithURL(imageUrl as CFURL, nil),
+      let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
   fputs("could not decode image\\n", stderr)
   exit(2)
 }
@@ -69,8 +66,14 @@ let request = VNRecognizeTextRequest()
 request.recognitionLevel = .accurate
 request.usesLanguageCorrection = true
 
-let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-try handler.perform([request])
+let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+
+do {
+  try handler.perform([request])
+} catch {
+  fputs("vision text recognition failed: \\(error)\\n", stderr)
+  exit(2)
+}
 
 let observations = request.results ?? []
 let items = observations.compactMap { observation -> OcrItem? in
