@@ -270,6 +270,8 @@ Step 10.5.7 adds explicit server-side provider mode config:
 | `TOKI_GUIDANCE_PROVIDER` | `unavailable` | Chooses the server-side provider mode |
 | `TOKI_OLLAMA_ENDPOINT` | `http://127.0.0.1:11434/api/generate` | Local Ollama generate endpoint for the next adapter step |
 | `TOKI_OLLAMA_MODEL` | `llava:latest` | Local Ollama vision model name for the next adapter step |
+| `TOKI_FREELLMAPI_ENDPOINT` | `http://127.0.0.1:8000/v1/chat/completions` | OpenAI-compatible FreeLLMAPI dev endpoint |
+| `TOKI_FREELLMAPI_MODEL` | `gpt-4o-mini` | FreeLLMAPI dev model name |
 
 Supported provider modes:
 
@@ -277,6 +279,7 @@ Supported provider modes:
 | --- | --- |
 | `unavailable` | Safe default. Returns unavailable and no target. |
 | `local-ollama` | Sends screenshot + goal to a local Ollama vision model and returns the provider JSON. |
+| `freellmapi-dev` | Sends screenshot + goal to an OpenAI-compatible FreeLLMAPI dev endpoint and validates the returned JSON. Development only, not a production provider path. |
 
 Run the default safe server:
 
@@ -288,6 +291,12 @@ Run the server in local Ollama mode:
 
 ```bash
 npm run guidance:smoke:ollama
+```
+
+Run the server in FreeLLMAPI dev mode:
+
+```bash
+npm run guidance:smoke:freellmapi
 ```
 
 Step 10.5.8 wires the local Ollama adapter:
