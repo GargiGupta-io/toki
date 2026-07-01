@@ -18,6 +18,7 @@
     "rust:fmt": "cargo fmt --all",
     "guidance:smoke:dev": "node scripts/guidance-smoke-server.mjs",
     "guidance:smoke:ollama": "TOKI_GUIDANCE_PROVIDER=local-ollama node scripts/guidance-smoke-server.mjs",
+    "guidance:smoke:freellmapi": "TOKI_GUIDANCE_PROVIDER=freellmapi-dev node scripts/guidance-smoke-server.mjs",
     "guidance:provider:check": "node scripts/guidance-provider-check.mjs",
     "guidance:known-screen": "node scripts/guidance-known-screen-smoke.mjs",
     "test:guidance:smoke": "node --test scripts/guidance-smoke-server.test.mjs scripts/macos-accessibility-candidates.test.mjs scripts/macos-vision-ocr-candidates.test.mjs",
