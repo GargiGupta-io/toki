@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import { readBrowserCandidatePayload } from "./browser-candidate-payload.mjs";
+import {
+  readBrowserCandidatePayload,
+  readLatestBrowserCandidateBridge,
+} from "./browser-candidate-payload.mjs";
 import { rankScreenCandidates } from "./candidate-ranking.mjs";
 import { collectMacAccessibilityCandidates } from "./macos-accessibility-candidates.mjs";
 import { collectMacVisionOcrCandidates } from "./macos-vision-ocr-candidates.mjs";
@@ -129,11 +132,25 @@ function parseKnownScreenCandidates() {
 async function resolveBrowserCandidatePayload() {
   const payloadPath = process.env.TOKI_BROWSER_CANDIDATE_PAYLOAD?.trim();
 
-  if (payloadPath == null || payloadPath.length === 0) {
+  if (payloadPath != null && payloadPath.length > 0) {
+    return readBrowserCandidatePayload(payloadPath);
+  }
+
+  if (process.env.TOKI_BROWSER_CANDIDATE_BRIDGE === "0") {
     return null;
   }
 
-  return readBrowserCandidatePayload(payloadPath);
+  try {
+    return await readLatestBrowserCandidateBridge(
+      process.env.TOKI_BROWSER_CANDIDATE_BRIDGE_ENDPOINT,
+    );
+  } catch (error) {
+    if (process.env.TOKI_BROWSER_CANDIDATE_BRIDGE_REQUIRED === "1") {
+      throw error;
+    }
+
+    return null;
+  }
 }
 
 async function resolveKnownScreenCandidates({
