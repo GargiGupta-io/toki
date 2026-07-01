@@ -136,6 +136,34 @@ export type GuidanceProviderResponse = {
   providerName?: string;
 };
 
+export type SafetyPolicyAction = "allow" | "confirm" | "clarify" | "block";
+
+export type SafetyPolicyReason =
+  | "safe_navigation"
+  | "form_entry_notice"
+  | "risky_action"
+  | "unknown_risk"
+  | "low_confidence"
+  | "missing_step"
+  | "missing_target"
+  | "invalid_target"
+  | "provider_unavailable"
+  | "validation_failed";
+
+export type SafetyPolicyDecision = {
+  action: SafetyPolicyAction;
+  reason: SafetyPolicyReason;
+  risk: RiskClass;
+  requiresConfirmation: boolean;
+  message: string;
+  details?: string[];
+};
+
+export type SafetyPolicyInput = {
+  provider: GuidanceProviderResponse;
+  minConfidence: number;
+};
+
 export type GestureCommand =
   | { type: "toggle_voice"; confidence: number }
   | { type: "pause"; confidence: number }
