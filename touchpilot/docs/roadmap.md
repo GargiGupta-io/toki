@@ -179,7 +179,7 @@ Status: Closed as a quality gate.
 - Scope: development only. FreeLLMAPI can be used as a dev provider aggregator, but not as the production provider.
 - Step 1: add `freellmapi-dev` provider mode.
 - Step 2: run known-screen tests through FreeLLMAPI vision models.
-- Step 2 result: attempted with `/tmp/toki-known-screen.png`; Toki smoke server reached `freellmapi-dev`, but FreeLLMAPI was not running locally, so the provider returned `unavailable`.
+- Step 2 result: FreeLLMAPI is installed locally at `/Users/pumba/tools/freellmapi` and responds on port `3001`, but the known-screen request returned `429 Too Many Requests` because no vision-capable upstream provider key is enabled.
 - Step 3: compare accuracy against local Ollama.
 - Step 4: add browser candidate strategy plan:
   - short term: OCR plus layout heuristics

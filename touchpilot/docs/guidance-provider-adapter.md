@@ -635,9 +635,27 @@ Result:
 - FreeLLMAPI itself was not running at `http://127.0.0.1:3001`, so the provider returned `unavailable`.
 - No useful/wrong target verdict was possible yet.
 
+FreeLLMAPI local setup was then completed under `/Users/pumba/tools/freellmapi`:
+
+- dependencies installed with `npm install`
+- local `.env` created with `ENCRYPTION_KEY` and `PORT=3001`
+- `npm run dev` started the dashboard and API
+- authenticated `GET /v1/models` worked with the generated local FreeLLMAPI key
+
+The next blocker is upstream vision capacity, not the local server. A known-screen request reached FreeLLMAPI, but FreeLLMAPI returned `429 Too Many Requests` because its router had no usable vision provider:
+
+- most free/anonymous routes reported `no vision support`
+- vision-capable models such as Gemini reported `no enabled+healthy key for platform`
+
+So FreeLLMAPI is installed and reachable, but it still needs at least one enabled vision-capable upstream provider key before it can be compared against Ollama for screenshot target accuracy.
+
 Next retry:
 
 ```bash
+cd /Users/pumba/tools/freellmapi
+npm run dev
+
+cd /Users/pumba/Documents/Codex/clicky/touchpilot
 npm run guidance:smoke:freellmapi
 TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
 TOKI_KNOWN_SCREEN_SCALE=2 \
