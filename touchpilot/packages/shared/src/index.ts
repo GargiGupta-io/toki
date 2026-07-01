@@ -44,6 +44,24 @@ export type ScreenCandidate = TargetBox & {
   metadata?: Record<string, string | number | boolean | null>;
 };
 
+export type BrowserCandidatePayload = {
+  schemaVersion: 1;
+  source: "browser-extension";
+  capturedAt: string;
+  page: {
+    url: string;
+    title: string;
+  };
+  viewport: {
+    width: number;
+    height: number;
+    scrollX: number;
+    scrollY: number;
+    devicePixelRatio: number;
+  };
+  candidates: ScreenCandidate[];
+};
+
 export type Bounds = {
   x: number;
   y: number;
