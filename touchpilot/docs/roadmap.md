@@ -198,6 +198,8 @@ Status: Closed as a quality gate.
 
 - Step 1: build a browser extension companion scaffold for development target accuracy.
 - Step 1 result: added `@toki/browser-extension` as a Manifest V3 unpacked extension. It can collect visible DOM candidates from buttons, links, inputs, ARIA labels, and test IDs, then show the first candidates in a small popup for manual QA. It does not yet bridge candidates into the desktop app.
+- Step 2: verify extraction on a known browser fixture.
+- Step 2 result: added `apps/browser-extension/fixtures/candidate-page.html` and manual acceptance rules for `Create project`, `Delete project`, `Open settings`, `Project name`, `Environment selector`, and `Add notes`. This gives the browser extension a controlled page before testing real SaaS dashboards.
 - Expose DOM candidates with text, ARIA label, role, bounds, URL, and scroll context.
 - Send candidates to Toki using the same candidate shape as OCR/AX.
 - Rank DOM candidates before provider calls.
