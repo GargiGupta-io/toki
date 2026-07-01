@@ -61,6 +61,15 @@ Write the safety rules, phase plan, and pass/fail acceptance criteria.
 
 Add shared safety policy types for decisions such as `allow`, `confirm`, `clarify`, and `block`.
 
+Result: shared policy types now live in `@toki/shared`:
+
+- `SafetyPolicyAction`
+- `SafetyPolicyReason`
+- `SafetyPolicyDecision`
+- `SafetyPolicyInput`
+
+These types define the contract for the later policy engine without changing runtime behavior yet.
+
 ### Step 11.3: Policy Engine
 
 Add a pure safety policy engine that evaluates guidance result risk, confidence, target quality, and candidate metadata.

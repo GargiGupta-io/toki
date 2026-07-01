@@ -228,6 +228,7 @@ Status: Closed as a quality gate.
 - Step 1: write the safety contract and acceptance criteria.
 - Step 1 result: added `docs/phase-11-safety-guardrails.md` with the policy goal, risk classes, confirmation gate, step plan, acceptance criteria, and non-goals. Phase 11 starts from the rule that Toki may guide, but the user stays in control and risky guidance must be confirmed before it renders as normal guidance.
 - Step 2: add shared policy decision types.
+- Step 2 result: added shared safety policy types in `@toki/shared`: `SafetyPolicyAction`, `SafetyPolicyReason`, `SafetyPolicyDecision`, and `SafetyPolicyInput`. The policy vocabulary is now `allow`, `confirm`, `clarify`, and `block`, but runtime behavior has not changed yet.
 - Step 3: add the policy engine.
 - Step 4: add policy tests.
 - Step 5: route provider results through policy.
