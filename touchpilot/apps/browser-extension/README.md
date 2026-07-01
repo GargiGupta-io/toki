@@ -19,8 +19,16 @@ Screenshots, OCR, and macOS Accessibility are not reliable enough for browser pa
 2. Enable developer mode.
 3. Choose `Load unpacked`.
 4. Select `apps/browser-extension`.
-5. Open `apps/browser-extension/fixtures/candidate-page.html` in the browser.
-6. Click `Collect candidates`.
+5. Start the fixture server:
+
+   ```bash
+   npm --workspace @toki/browser-extension run fixture:serve
+   ```
+
+6. Open `http://127.0.0.1:8788/fixtures/candidate-page.html` in the browser.
+7. Click `Collect candidates`.
+
+Do not open the fixture through `file://` for normal QA. The extension content script is intentionally scoped to normal `http` and `https` pages, matching how it will run on real browser dashboards.
 
 ## Manual acceptance
 
@@ -85,7 +93,27 @@ npm run guidance:smoke:freellmapi
 
 Restart the smoke server after pulling new bridge code. An older running server will return `route not found` for `/api/browser-candidates/latest`.
 
-Then collect candidates in the browser popup and click `Send to Toki`.
+Then open a normal web page, collect candidates in the browser popup, and click `Send to Toki`.
+
+## Real browser page QA
+
+Use this when testing the live extension path before target accuracy work:
+
+1. Start FreeLLMAPI and make sure it has a working unified key.
+2. Start the Toki guidance smoke server:
+
+   ```bash
+   npm run guidance:smoke:freellmapi
+   ```
+
+3. Load the unpacked extension from `apps/browser-extension`.
+4. Open a real dashboard page in Chrome or Edge.
+5. Open the extension popup and click `Collect candidates`.
+6. Confirm the popup shows page-specific candidates, not only browser chrome.
+7. Click `Send to Toki`.
+8. Run the known-screen smoke without `TOKI_BROWSER_CANDIDATE_PAYLOAD`; the runner should read the latest payload from the live bridge automatically.
+
+This step proves that the extension can collect DOM candidates from an actual browser page and hand them to Toki. It does not prove final target accuracy by itself; accuracy still depends on candidate ranking and the selected provider.
 
 ## Use with the known-screen runner
 

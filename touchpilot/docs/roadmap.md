@@ -212,6 +212,8 @@ Status: Closed as a quality gate.
 - Step 7 result: the known-screen runner now checks the live browser-candidate bridge when `TOKI_BROWSER_CANDIDATE_PAYLOAD` is not set. File payloads still take priority, and `TOKI_BROWSER_CANDIDATE_BRIDGE=0` disables automatic bridge lookup. Manual live testing requires restarting the smoke server so `/api/browser-candidates/latest` is available.
 - Step 8: restart the smoke server and run the live bridge provider test end to end.
 - Step 8 result: after restarting the smoke server with the local FreeLLMAPI unified key, the bridge accepted the extension payload, the known-screen runner consumed it without `TOKI_BROWSER_CANDIDATE_PAYLOAD`, and `freellmapi-dev` returned a validated real target: `Create project at 100,100 120x40`.
+- Step 9: make real browser extension QA repeatable.
+- Step 9 result: added a localhost fixture server for the extension, because the manifest correctly runs on `http`/`https` pages and should not require `file://` extension permissions. The README now documents the real manual loop: start the fixture server, load the unpacked extension, collect candidates on a normal browser page, send them to the live Toki bridge, then run known-screen guidance without a payload file.
 - Expose DOM candidates with text, ARIA label, role, bounds, URL, and scroll context.
 - Send candidates to Toki using the same candidate shape as OCR/AX.
 - Rank DOM candidates before provider calls.
