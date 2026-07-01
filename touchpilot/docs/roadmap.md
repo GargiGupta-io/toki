@@ -232,6 +232,7 @@ Status: Closed as a quality gate.
 - Step 3: add the policy engine.
 - Step 3 result: added `evaluateSafetyPolicy()` in `@toki/ai`. The pure policy gate blocks unavailable/invalid provider results, clarifies missing or low-confidence targets, confirms risky actions, and allows safe navigation/form-entry guidance.
 - Step 4: add policy tests.
+- Step 4 result: added `@toki/ai` tests for every policy outcome: safe/form allow, risky/unknown confirm, low-confidence/missing-target clarify, and unavailable/invalid block.
 - Step 5: route provider results through policy.
 - Step 6: add confirmation UI.
 - Step 7: show safety decisions in Debug.

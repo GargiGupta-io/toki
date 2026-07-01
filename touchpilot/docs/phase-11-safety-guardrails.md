@@ -80,6 +80,8 @@ Result: `evaluateSafetyPolicy()` now lives in `@toki/ai`. It blocks unavailable 
 
 Add focused tests for safe navigation, form entry, delete/payment/security risks, unknown risks, and low-confidence outputs.
 
+Result: `@toki/ai` tests now cover allow, confirm, clarify, and block outcomes for safe navigation, form entry, risky classes, unknown risk, low confidence, provider unavailability, validation failure, missing targets, invalid targets, missing steps, and clarify-mode responses.
+
 ### Step 11.5: Provider Integration
 
 Run provider results through the safety policy before the overlay accepts them.
