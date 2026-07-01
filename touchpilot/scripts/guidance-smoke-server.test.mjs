@@ -446,6 +446,37 @@ test("normalizeProviderGuidanceResponse accepts direct GuidanceResult output", (
   assert.equal(response.result.step.target.label, "Search");
 });
 
+test("normalizeProviderGuidanceResponse keeps adapter-owned provider name", () => {
+  const response = normalizeProviderGuidanceResponse(
+    {
+      mode: "real",
+      providerName: "spoofed-provider",
+      result: {
+        mode: "guide",
+        summary: "Click the search field.",
+        step: {
+          instruction: "Click Search.",
+          target: {
+            label: "Search",
+            x: 400,
+            y: 120,
+            width: 240,
+            height: 44,
+          },
+          confidence: 0.66,
+          risk: "safe_navigation",
+          requiresConfirmation: false,
+        },
+      },
+    },
+    validRequest,
+    "freellmapi-dev",
+  );
+
+  assert.equal(response.mode, "real");
+  assert.equal(response.providerName, "freellmapi-dev");
+});
+
 test("normalizeProviderGuidanceResponse anchors matching candidate targets", () => {
   const response = normalizeProviderGuidanceResponse(
     {

@@ -675,7 +675,7 @@ export function normalizeProviderGuidanceResponse(
     return {
       mode: "unavailable",
       error: providerBody.error ?? "provider returned unavailable",
-      providerName: providerBody.providerName ?? providerName,
+      providerName,
     };
   }
 
@@ -696,7 +696,7 @@ export function normalizeProviderGuidanceResponse(
     return {
       mode: "unavailable",
       error: "provider returned an invalid GuidanceResult",
-      providerName: providerBody.providerName ?? providerName,
+      providerName,
       providerRawText,
       validation,
     };
@@ -704,7 +704,7 @@ export function normalizeProviderGuidanceResponse(
 
   return {
     mode: "real",
-    providerName: providerBody.providerName ?? providerName,
+    providerName,
     result: anchoredResult,
     validation,
     providerRawText,
