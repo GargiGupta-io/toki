@@ -173,6 +173,21 @@ Status: Closed as a quality gate.
 - Keep the useful/wrong verdict in Debug as the acceptance gate.
 - Done when one known-screen target is useful and the failure mode is recorded.
 
+## Phase 10.7: Browser And Provider Accuracy Upgrade
+
+- Goal: improve target accuracy before Phase 11 by testing better development providers and improving browser screen evidence.
+- Scope: development only. FreeLLMAPI can be used as a dev provider aggregator, but not as the production provider.
+- Step 1: add `freellmapi-dev` provider mode.
+- Step 2: run known-screen tests through FreeLLMAPI vision models.
+- Step 3: compare accuracy against local Ollama.
+- Step 4: add browser candidate strategy plan:
+  - short term: OCR plus layout heuristics
+  - mid term: native macOS AX bridge
+  - long term: browser extension companion
+- Step 5: add candidate ranking before provider calls.
+- Step 6: run browser known-screen tests on Edge/Chrome.
+- Step 7: record which path is reliable enough before Phase 11.
+
 ## Phase 7: Safety And Guardrails
 
 - Risk classifier.
