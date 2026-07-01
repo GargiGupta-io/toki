@@ -83,6 +83,8 @@ For `Send to Toki`, start the local smoke server first:
 npm run guidance:smoke:freellmapi
 ```
 
+Restart the smoke server after pulling new bridge code. An older running server will return `route not found` for `/api/browser-candidates/latest`.
+
 Then collect candidates in the browser popup and click `Send to Toki`.
 
 ## Use with the known-screen runner
@@ -97,6 +99,16 @@ npm run guidance:known-screen
 ```
 
 When this env var is set, the known-screen runner uses browser-extension candidates before manual, Accessibility, or OCR candidates.
+
+If no file path is provided, the known-screen runner tries the live bridge automatically:
+
+```bash
+TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
+TOKI_KNOWN_SCREEN_SCALE=2 \
+npm run guidance:known-screen
+```
+
+Set `TOKI_BROWSER_CANDIDATE_BRIDGE=0` to disable this automatic bridge lookup.
 
 ## Candidate shape
 

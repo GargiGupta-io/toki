@@ -208,6 +208,8 @@ Status: Closed as a quality gate.
 - Step 5 result: `freellmapi-dev` selected the browser-extension candidate `Create project` from `apps/browser-extension/fixtures/bridge-payload.json` and returned a validated real target at `100,100 120x40`. This proves the provider can choose exact DOM candidates. Caveat: this used a fixture payload file, not a live desktop bridge yet.
 - Step 6: add a local live bridge for extension candidates.
 - Step 6 result: the guidance smoke server now exposes `POST/GET /api/browser-candidates/latest`, and the extension popup can send the latest browser candidate payload directly to Toki's local dev server. Copy/download remain fallback paths.
+- Step 7: make known-screen tests consume the latest live bridge payload automatically.
+- Step 7 result: the known-screen runner now checks the live browser-candidate bridge when `TOKI_BROWSER_CANDIDATE_PAYLOAD` is not set. File payloads still take priority, and `TOKI_BROWSER_CANDIDATE_BRIDGE=0` disables automatic bridge lookup. Manual live testing requires restarting the smoke server so `/api/browser-candidates/latest` is available.
 - Expose DOM candidates with text, ARIA label, role, bounds, URL, and scroll context.
 - Send candidates to Toki using the same candidate shape as OCR/AX.
 - Rank DOM candidates before provider calls.
