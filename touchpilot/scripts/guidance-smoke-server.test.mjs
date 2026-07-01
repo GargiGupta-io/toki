@@ -148,14 +148,16 @@ test("resolveGuidanceProviderConfig supports FreeLLMAPI dev mode", () => {
   assert.deepEqual(
     resolveGuidanceProviderConfig({
       TOKI_GUIDANCE_PROVIDER: "freellmapi-dev",
-      TOKI_FREELLMAPI_ENDPOINT: "http://localhost:8000/v1/chat/completions",
+      TOKI_FREELLMAPI_ENDPOINT: "http://localhost:3001/v1/chat/completions",
       TOKI_FREELLMAPI_MODEL: "dev-vision-model",
+      TOKI_FREELLMAPI_API_KEY: "test-key",
     }),
     {
       provider: "freellmapi-dev",
       providerName: "freellmapi-dev",
-      endpoint: "http://localhost:8000/v1/chat/completions",
+      endpoint: "http://localhost:3001/v1/chat/completions",
       model: "dev-vision-model",
+      apiKey: "test-key",
     },
   );
 });
@@ -534,8 +536,9 @@ test("requestFreeLlmApiGuidance sends OpenAI-compatible vision request", async (
     {
       provider: "freellmapi-dev",
       providerName: "freellmapi-dev",
-      endpoint: "http://localhost:8000/v1/chat/completions",
+      endpoint: "http://localhost:3001/v1/chat/completions",
       model: "dev-vision-model",
+      apiKey: "test-key",
     },
     {
       fetchImpl: async (url, init) => {
@@ -562,8 +565,9 @@ test("requestFreeLlmApiGuidance sends OpenAI-compatible vision request", async (
   );
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "http://localhost:8000/v1/chat/completions");
+  assert.equal(calls[0].url, "http://localhost:3001/v1/chat/completions");
   assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].init.headers.authorization, "Bearer test-key");
 
   const body = JSON.parse(calls[0].init.body);
 
@@ -590,8 +594,9 @@ test("requestFreeLlmApiGuidance reports provider errors as unavailable", async (
     {
       provider: "freellmapi-dev",
       providerName: "freellmapi-dev",
-      endpoint: "http://localhost:8000/v1/chat/completions",
+      endpoint: "http://localhost:3001/v1/chat/completions",
       model: "dev-vision-model",
+      apiKey: "",
     },
     {
       fetchImpl: async () => new Response("rate limited", { status: 429 }),
@@ -663,8 +668,9 @@ test("guidance smoke server calls configured FreeLLMAPI dev adapter", async () =
     {
       env: {
         TOKI_GUIDANCE_PROVIDER: "freellmapi-dev",
-        TOKI_FREELLMAPI_ENDPOINT: "http://localhost:8000/v1/chat/completions",
+        TOKI_FREELLMAPI_ENDPOINT: "http://localhost:3001/v1/chat/completions",
         TOKI_FREELLMAPI_MODEL: "dev-vision-model",
+        TOKI_FREELLMAPI_API_KEY: "test-key",
       },
       fetchImpl: async () =>
         new Response(

@@ -6,8 +6,8 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_GUIDANCE_PROVIDER = "unavailable";
 const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate";
 const DEFAULT_OLLAMA_MODEL = "llava:latest";
-const DEFAULT_FREELLMAPI_ENDPOINT = "http://127.0.0.1:8000/v1/chat/completions";
-const DEFAULT_FREELLMAPI_MODEL = "gpt-4o-mini";
+const DEFAULT_FREELLMAPI_ENDPOINT = "http://127.0.0.1:3001/v1/chat/completions";
+const DEFAULT_FREELLMAPI_MODEL = "auto";
 const MAX_PROVIDER_RAW_TEXT_CHARS = 2000;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 90_000;
 const MIN_TARGET_SIZE_CSS_PX = 4;
@@ -163,6 +163,7 @@ export function resolveGuidanceProviderConfig(env = process.env) {
         env.TOKI_FREELLMAPI_ENDPOINT ?? DEFAULT_FREELLMAPI_ENDPOINT,
       ).trim(),
       model: String(env.TOKI_FREELLMAPI_MODEL ?? DEFAULT_FREELLMAPI_MODEL).trim(),
+      apiKey: String(env.TOKI_FREELLMAPI_API_KEY ?? "").trim(),
     };
   }
 
@@ -844,6 +845,21 @@ function extractOpenAiCompatibleMessageText(body) {
   return JSON.stringify(body);
 }
 
+function formatProviderError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? error.cause : null;
+
+  if (!isObject(cause)) {
+    return message;
+  }
+
+  const causeCode = typeof cause.code === "string" ? cause.code : "";
+  const causeMessage = typeof cause.message === "string" ? cause.message : "";
+  const causeText = [causeCode, causeMessage].filter(Boolean).join(": ");
+
+  return causeText.length > 0 ? `${message} (${causeText})` : message;
+}
+
 export async function requestFreeLlmApiGuidance(
   guidanceRequest,
   providerConfig,
@@ -862,6 +878,9 @@ export async function requestFreeLlmApiGuidance(
       method: "POST",
       headers: {
         "content-type": "application/json",
+        ...(providerConfig.apiKey.length > 0
+          ? { authorization: `Bearer ${providerConfig.apiKey}` }
+          : {}),
       },
       body: JSON.stringify(createFreeLlmApiRequest(guidanceRequest, providerConfig)),
       signal: abortController.signal,
@@ -892,7 +911,7 @@ export async function requestFreeLlmApiGuidance(
         error instanceof Error && error.name === "AbortError"
           ? `FreeLLMAPI timed out after ${timeoutMs}ms`
           : error instanceof Error
-            ? error.message
+            ? formatProviderError(error)
             : String(error),
       providerName: providerConfig.providerName,
       providerRawText: truncateProviderRawText(responseText),
