@@ -248,11 +248,20 @@ Status: Closed as a quality gate.
 
 ## Phase 12: Screen Intelligence Upgrade
 
-- OCR.
-- Accessibility tree adapters.
-- Unified UI element map.
-- Region selection.
-- Confidence scoring.
+- Goal: improve target accuracy by building a stronger screen-evidence layer before guidance reaches the provider.
+- Active plan: `docs/phase-12-screen-intelligence.md`.
+- Step 1: write the screen-intelligence contract and acceptance criteria.
+- Step 1 result: added `docs/phase-12-screen-intelligence.md` with the phase goal, evidence sources, tradeoffs, steps, acceptance criteria, and non-goals. Phase 12 starts from the rule that raw screenshots are not enough: Toki should combine browser DOM candidates, OCR boxes, Accessibility nodes, manual fixtures, and screenshot geometry into one stronger element map.
+- Step 2: inventory current candidate sources.
+- Step 3: add a unified element schema.
+- Step 4: add a candidate fusion layer.
+- Step 5: improve candidate ranking.
+- Step 6: run browser known-screen QA.
+- Step 7: run OCR/AX fallback QA.
+- Step 8: update provider prompts to prefer candidate IDs.
+- Step 9: add Debug screen-intelligence view.
+- Step 10: record accuracy notes.
+- Step 11: close Phase 12 or escalate to browser-extension-first screen understanding.
 
 ## Phase 13: Multi-Step Workflows
 
