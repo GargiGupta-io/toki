@@ -42,6 +42,11 @@ export type ScreenCandidate = TargetBox & {
     | "dom_candidate"
     | "manual";
   source?: "accessibility" | "ocr" | "dom" | "manual";
+  rank?: {
+    position?: number;
+    score: number;
+    reasons: string[];
+  };
   metadata?: Record<string, string | number | boolean | null>;
 };
 
