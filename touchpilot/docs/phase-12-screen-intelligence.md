@@ -82,6 +82,8 @@ Result: the current candidate inventory is documented below. Toki already has a 
 
 Create one shared element shape that can represent candidates from every source.
 
+Result: `@toki/shared` now has a richer `UiElement` schema for Phase 12 fusion work. It keeps `ScreenCandidate` as the compatibility shape for existing provider requests, but adds a stronger element model with `primarySource`, multiple source provenance entries, role, label, alternate labels, bounds, confidence, visibility, interactability, risky hint, source candidate IDs, ranking metadata, and general metadata.
+
 ### Step 12.4: Candidate Fusion Layer
 
 Merge candidates from multiple sources into one element map while preserving source metadata.
@@ -147,6 +149,29 @@ ScreenCandidate = {
 ```
 
 This is good enough for Phase 12 to start because all candidate sources can already speak a similar language. The next schema step should decide whether this exact shape is enough or whether Phase 12 needs a richer `UiElement` shape with source confidence, merged labels, duplicate links, viewport state, and provenance.
+
+Step 12.3 decision: keep `ScreenCandidate` for compatibility, and use `UiElement` as the richer fused-map shape.
+
+```ts
+UiElement = {
+  id,
+  primarySource,
+  sources,
+  role,
+  label,
+  alternateLabels,
+  bounds,
+  confidence,
+  visible,
+  interactable,
+  risky,
+  sourceCandidateIds,
+  rank,
+  metadata,
+}
+```
+
+This lets Phase 12 merge multiple observations into one element. For example, browser DOM may identify a `Download` button, OCR may also read the word `Download`, and Accessibility may expose a generic clickable region. Those should become one fused element, not three unrelated candidates.
 
 ## Source Priority Today
 
