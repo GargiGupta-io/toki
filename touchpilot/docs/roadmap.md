@@ -257,6 +257,7 @@ Status: Closed as a quality gate.
 - Step 3: add a unified element schema.
 - Step 3 result: expanded the shared `UiElement` schema in `@toki/shared` so Phase 12 can represent fused screen elements with source provenance, role, label, bounds, confidence, visibility, interactability, risk hints, ranking metadata, and links back to source candidate IDs. `ScreenCandidate` remains the compatibility shape for existing provider requests.
 - Step 4: add a candidate fusion layer.
+- Step 4 result: added `fuseScreenCandidates()` in `@toki/ai`. It converts existing candidates into `UiElement[]`, filters invalid boxes, preserves source provenance, marks interactable/risky hints, and merges obvious duplicate observations across sources.
 - Step 5: improve candidate ranking.
 - Step 6: run browser known-screen QA.
 - Step 7: run OCR/AX fallback QA.

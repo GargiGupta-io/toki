@@ -88,6 +88,8 @@ Result: `@toki/shared` now has a richer `UiElement` schema for Phase 12 fusion w
 
 Merge candidates from multiple sources into one element map while preserving source metadata.
 
+Result: `@toki/ai` now exports `fuseScreenCandidates()`. It converts existing `ScreenCandidate[]` into `UiElement[]`, filters invalid candidates, tags source provenance, marks interactable and risky-looking elements, and merges obvious duplicate observations such as a DOM button and OCR text box for the same visible label.
+
 ### Step 12.5: Ranking Improvements
 
 Improve candidate ranking using goal text, role, geometry, visibility, source trust, and risky labels.
@@ -189,6 +191,23 @@ Live desktop guidance currently calls `collect_screen_candidates`, which on macO
 ## Inventory Decision
 
 Phase 12 should not create another isolated candidate format. It should build on the existing `ScreenCandidate` contract and add a fusion layer around it. Browser DOM should be treated as the highest-trust source for browser pages, OCR as the text fallback, Accessibility as the semantic fallback where available, and manual candidates as the QA baseline.
+
+## First Fusion Layer
+
+Step 12.4 added the first pure candidate fusion helper:
+
+```ts
+fuseScreenCandidates(candidates, options) -> UiElement[]
+```
+
+The helper does four things:
+
+1. rejects invalid candidates with missing labels or impossible boxes,
+2. converts every remaining `ScreenCandidate` into a richer `UiElement`,
+3. preserves source provenance so Debug can later explain where the element came from,
+4. merges same-label candidates that are very close or strongly overlapping.
+
+This is not the final fusion algorithm. It is the first safe layer that turns disconnected candidate boxes into a screen element map without changing provider behavior yet.
 
 ## Acceptance Criteria
 
