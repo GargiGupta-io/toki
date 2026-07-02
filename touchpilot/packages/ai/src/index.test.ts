@@ -7,6 +7,7 @@ import {
   createMockGuidance,
   createRiskyMockGuidance,
   evaluateSafetyPolicy,
+  fuseScreenCandidates,
   requestRealGuidance,
   validateGuidanceResult,
 } from "./index";
@@ -36,6 +37,89 @@ function cloneResult(overrides: Partial<GuidanceResult> = {}): GuidanceResult {
     ...overrides,
   };
 }
+
+test("fuseScreenCandidates converts candidates into ui elements", () => {
+  const elements = fuseScreenCandidates([
+    {
+      id: "download-button",
+      label: "Download",
+      role: "dom_button",
+      source: "dom",
+      x: 100,
+      y: 80,
+      width: 120,
+      height: 36,
+    },
+  ]);
+
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0].primarySource, "browser-dom");
+  assert.equal(elements[0].label, "Download");
+  assert.equal(elements[0].interactable, true);
+  assert.deepEqual(elements[0].sourceCandidateIds, ["download-button"]);
+});
+
+test("fuseScreenCandidates merges duplicate observations", () => {
+  const elements = fuseScreenCandidates([
+    {
+      id: "dom-delete",
+      label: "Delete",
+      role: "dom_button",
+      source: "dom",
+      x: 240,
+      y: 100,
+      width: 96,
+      height: 36,
+    },
+    {
+      id: "ocr-delete",
+      label: "Delete",
+      role: "ocr_text",
+      source: "ocr",
+      x: 244,
+      y: 104,
+      width: 82,
+      height: 24,
+      metadata: {
+        confidence: 0.72,
+      },
+    },
+  ]);
+
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0].primarySource, "browser-dom");
+  assert.equal(elements[0].sources.length, 2);
+  assert.deepEqual(elements[0].sourceCandidateIds, ["dom-delete", "ocr-delete"]);
+  assert.equal(elements[0].risky, true);
+});
+
+test("fuseScreenCandidates ignores invalid candidates", () => {
+  const elements = fuseScreenCandidates([
+    {
+      id: "broken",
+      label: "",
+      role: "manual",
+      source: "manual",
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 20,
+    },
+    {
+      id: "valid",
+      label: "Open settings",
+      role: "manual",
+      source: "manual",
+      x: 10,
+      y: 20,
+      width: 120,
+      height: 32,
+    },
+  ]);
+
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0].id, "element-manual-valid");
+});
 
 test("createMockGuidance returns valid guidance centered on the display", () => {
   const result = createMockGuidance({

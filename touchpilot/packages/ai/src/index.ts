@@ -8,7 +8,12 @@ import type {
   RiskClass,
   SafetyPolicyDecision,
   SafetyPolicyInput,
+  ScreenCandidate,
   TargetBox,
+  UiElement,
+  UiElementProvenance,
+  UiElementRole,
+  UiElementSource,
 } from "@toki/shared";
 
 const validRiskClasses: RiskClass[] = [
@@ -32,6 +37,249 @@ const confirmationRequiredRisks: RiskClass[] = [
   "permission_change",
   "unknown_risky",
 ];
+
+const sourceTrust: Record<UiElementSource, number> = {
+  "browser-dom": 6,
+  manual: 5,
+  accessibility: 4,
+  ocr: 3,
+  vision: 2,
+  screenshot: 1,
+};
+
+const riskyTargetWords = new Set([
+  "delete",
+  "remove",
+  "revoke",
+  "pay",
+  "send",
+  "transfer",
+  "password",
+  "secret",
+  "token",
+  "billing",
+  "admin",
+  "permission",
+]);
+
+export type CandidateFusionOptions = {
+  capturedAt?: string;
+  mergeDistance?: number;
+};
+
+function normalizeText(value: unknown): string {
+  return typeof value === "string"
+    ? value.trim().toLowerCase().replace(/\s+/g, " ")
+    : "";
+}
+
+function candidateSource(candidate: ScreenCandidate): UiElementSource {
+  if (candidate.source === "dom" || candidate.role.startsWith("dom_")) {
+    return "browser-dom";
+  }
+
+  if (candidate.source === "ocr" || candidate.role === "ocr_text") {
+    return "ocr";
+  }
+
+  if (candidate.source === "accessibility") {
+    return "accessibility";
+  }
+
+  if (candidate.source === "manual" || candidate.role === "manual") {
+    return "manual";
+  }
+
+  return "screenshot";
+}
+
+function candidateConfidence(candidate: ScreenCandidate, source: UiElementSource): number {
+  const metadataConfidence = Number(candidate.metadata?.confidence);
+
+  if (Number.isFinite(metadataConfidence)) {
+    return Math.max(0, Math.min(1, metadataConfidence));
+  }
+
+  if (source === "browser-dom") {
+    return 0.9;
+  }
+
+  if (source === "manual") {
+    return 1;
+  }
+
+  if (source === "accessibility") {
+    return 0.78;
+  }
+
+  if (source === "ocr") {
+    return 0.66;
+  }
+
+  return 0.5;
+}
+
+function isValidCandidate(candidate: ScreenCandidate): boolean {
+  return (
+    typeof candidate.id === "string" &&
+    candidate.id.trim().length > 0 &&
+    typeof candidate.label === "string" &&
+    candidate.label.trim().length > 0 &&
+    Number.isFinite(candidate.x) &&
+    Number.isFinite(candidate.y) &&
+    Number.isFinite(candidate.width) &&
+    Number.isFinite(candidate.height) &&
+    candidate.width > 0 &&
+    candidate.height > 0
+  );
+}
+
+function isInteractableRole(role: UiElementRole): boolean {
+  return /button|link|input|select|textarea|checkbox|radio|tab|manual|accessibility/.test(
+    role,
+  );
+}
+
+function hasRiskyText(label: string): boolean {
+  return normalizeText(label)
+    .split(/[^a-z0-9]+/g)
+    .some((token) => riskyTargetWords.has(token));
+}
+
+function candidateToElement(
+  candidate: ScreenCandidate,
+  options: CandidateFusionOptions,
+): UiElement {
+  const source = candidateSource(candidate);
+  const confidence = candidateConfidence(candidate, source);
+  const provenance: UiElementProvenance = {
+    source,
+    sourceId: candidate.id,
+    capturedAt: options.capturedAt,
+    confidence,
+  };
+
+  return {
+    id: `element-${source}-${candidate.id}`,
+    primarySource: source,
+    sources: [provenance],
+    role: candidate.role,
+    label: candidate.label.trim(),
+    bounds: {
+      x: candidate.x,
+      y: candidate.y,
+      width: candidate.width,
+      height: candidate.height,
+    },
+    confidence,
+    visible: true,
+    interactable: isInteractableRole(candidate.role),
+    risky: hasRiskyText(candidate.label),
+    sourceCandidateIds: [candidate.id],
+    metadata: candidate.metadata,
+  };
+}
+
+function centerDistance(a: UiElement, b: UiElement): number {
+  const ax = a.bounds.x + a.bounds.width / 2;
+  const ay = a.bounds.y + a.bounds.height / 2;
+  const bx = b.bounds.x + b.bounds.width / 2;
+  const by = b.bounds.y + b.bounds.height / 2;
+
+  return Math.hypot(ax - bx, ay - by);
+}
+
+function overlapRatio(a: UiElement, b: UiElement): number {
+  const left = Math.max(a.bounds.x, b.bounds.x);
+  const top = Math.max(a.bounds.y, b.bounds.y);
+  const right = Math.min(a.bounds.x + a.bounds.width, b.bounds.x + b.bounds.width);
+  const bottom = Math.min(a.bounds.y + a.bounds.height, b.bounds.y + b.bounds.height);
+  const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+  const smallerArea = Math.min(
+    a.bounds.width * a.bounds.height,
+    b.bounds.width * b.bounds.height,
+  );
+
+  return smallerArea > 0 ? intersection / smallerArea : 0;
+}
+
+function shouldMergeElements(
+  existing: UiElement,
+  incoming: UiElement,
+  mergeDistance: number,
+): boolean {
+  return (
+    normalizeText(existing.label) === normalizeText(incoming.label) &&
+    (centerDistance(existing, incoming) <= mergeDistance ||
+      overlapRatio(existing, incoming) >= 0.65)
+  );
+}
+
+function uniqueValues<T>(values: T[]): T[] {
+  return [...new Set(values)];
+}
+
+function mergeElements(existing: UiElement, incoming: UiElement): UiElement {
+  const incomingIsBetterSource =
+    sourceTrust[incoming.primarySource] > sourceTrust[existing.primarySource];
+  const incomingIsMoreConfident = incoming.confidence > existing.confidence;
+  const preferred = incomingIsBetterSource || incomingIsMoreConfident ? incoming : existing;
+  const other = preferred === incoming ? existing : incoming;
+
+  return {
+    ...preferred,
+    alternateLabels: uniqueValues([
+      ...(preferred.alternateLabels ?? []),
+      ...(other.alternateLabels ?? []),
+      preferred.label,
+      other.label,
+    ]).filter((label) => normalizeText(label) !== normalizeText(preferred.label)),
+    sources: [...existing.sources, ...incoming.sources],
+    confidence: Math.max(existing.confidence, incoming.confidence),
+    visible: existing.visible || incoming.visible,
+    interactable: Boolean(existing.interactable || incoming.interactable),
+    risky: Boolean(existing.risky || incoming.risky),
+    sourceCandidateIds: uniqueValues([
+      ...(existing.sourceCandidateIds ?? []),
+      ...(incoming.sourceCandidateIds ?? []),
+    ]),
+    metadata: {
+      ...(other.metadata ?? {}),
+      ...(preferred.metadata ?? {}),
+    },
+  };
+}
+
+export function fuseScreenCandidates(
+  candidates: ScreenCandidate[] | undefined,
+  options: CandidateFusionOptions = {},
+): UiElement[] {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return [];
+  }
+
+  const mergeDistance = options.mergeDistance ?? 12;
+  const elements: UiElement[] = [];
+
+  for (const candidate of candidates) {
+    if (!isValidCandidate(candidate)) {
+      continue;
+    }
+
+    const incoming = candidateToElement(candidate, options);
+    const matchIndex = elements.findIndex((existing) =>
+      shouldMergeElements(existing, incoming, mergeDistance),
+    );
+
+    if (matchIndex >= 0) {
+      elements[matchIndex] = mergeElements(elements[matchIndex], incoming);
+    } else {
+      elements.push(incoming);
+    }
+  }
+
+  return elements;
+}
 
 export function createMockGuidance(request: GuidanceRequest): GuidanceResult {
   const targetWidth = 112;
