@@ -21,6 +21,7 @@ export type AssistantState =
   | "error";
 
 export type TargetBox = {
+  candidateId?: string;
   label: string;
   x: number;
   y: number;
