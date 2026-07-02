@@ -100,6 +100,8 @@ Result: candidate ranking now weighs source trust, exact label matches, clickabl
 
 Run known-screen tests on browser pages using browser DOM candidates.
 
+Result: added `npm run qa:browser:known-screen`, a deterministic browser known-screen QA script that reads a browser-extension payload, ranks DOM candidates, and verifies that known commands choose the expected browser target. The controlled fixture now carries six realistic DOM candidates from an HTTP page: `Create project`, `Delete project`, `Open settings`, `Project name`, `Environment selector`, and `Add notes`. This proves the browser candidate and ranking path without depending on FreeLLMAPI, Ollama, screenshots, or a live browser session.
+
 ### Step 12.7: OCR/AX Fallback QA
 
 Run known-screen tests when browser DOM candidates are unavailable.
@@ -239,6 +241,7 @@ Phase 12 is done when:
 - browser DOM, OCR, Accessibility, and manual candidates can be compared together,
 - provider requests prefer candidate IDs over raw coordinate guessing,
 - known-screen browser QA records useful and wrong targets clearly,
+- browser DOM known-screen QA passes independently of provider uptime,
 - Debug can explain which candidates existed and which target was selected,
 - the docs say whether browser extension candidates are optional or required for reliable web-app guidance.
 

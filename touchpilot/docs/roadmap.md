@@ -261,6 +261,7 @@ Status: Closed as a quality gate.
 - Step 5: improve candidate ranking.
 - Step 5 result: improved known-screen and desktop candidate ranking with source trust, exact label matches, weak-region penalties, hidden/disabled penalties, and stronger geometry/role scoring. Broad browser/window candidates should now lose to trusted DOM/manual click targets when labels match.
 - Step 6: run browser known-screen QA.
+- Step 6 result: added `npm run qa:browser:known-screen` and expanded the browser-extension fixture payload to six HTTP-page DOM candidates. The deterministic QA now proves ranking selects the expected browser target for `Create project`, `Open settings`, `Add notes`, and `Delete project` without requiring a provider, screenshot, or live browser.
 - Step 7: run OCR/AX fallback QA.
 - Step 8: update provider prompts to prefer candidate IDs.
 - Step 9: add Debug screen-intelligence view.
