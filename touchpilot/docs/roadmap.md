@@ -240,6 +240,7 @@ Status: Closed as a quality gate.
 - Step 7: show safety decisions in Debug.
 - Step 7 result: Debug now includes a Safety Review section showing policy action, reason, risk, confirmation requirement, message, and details.
 - Step 8: run manual safety QA.
+- Step 8 result: added a low-confidence fixture, routed mock fixtures through the same policy gate, and documented manual safety QA in `docs/phase-11-safety-qa.md`. Debug can now test allow, confirm, clarify, and block without requiring a live provider.
 - Step 9: update docs and learning notes.
 - Step 10: close Phase 11 or escalate browser metadata.
 

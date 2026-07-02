@@ -104,6 +104,8 @@ Result: Debug now has a dedicated Safety Review section with action, reason, ris
 
 Run safe, risky, invalid, and low-confidence fixture paths.
 
+Result: Debug fixture QA now covers all four safety outcomes. `Safe` should allow, `Risky` should confirm, `Invalid` should block, and `Low confidence` should clarify. The checklist lives in `docs/phase-11-safety-qa.md`.
+
 ### Step 11.9: Docs And Learning
 
 Update safety docs, roadmap, and learning notes with what was actually built.
