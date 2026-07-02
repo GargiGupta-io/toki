@@ -86,6 +86,8 @@ Result: `@toki/ai` tests now cover allow, confirm, clarify, and block outcomes f
 
 Run provider results through the safety policy before the overlay accepts them.
 
+Result: real-provider guidance now runs through `evaluateSafetyPolicy()` before the overlay accepts the result. `allow` shows normal guidance, `confirm` enters `confirmation_required`, `clarify` hides the target and returns to idle, and `block` hides the target and enters error. Debug also receives the safety action and reason.
+
 ### Step 11.6: Confirmation UI
 
 Add a small confirmation state in the user-facing overlay for risky guidance.
