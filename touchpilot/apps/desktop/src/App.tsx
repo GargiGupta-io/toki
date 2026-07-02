@@ -5,6 +5,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import {
   createInvalidMockGuidance,
+  createLowConfidenceMockGuidance,
   createMockGuidance,
   createRiskyMockGuidance,
   evaluateSafetyPolicy,
@@ -19,6 +20,7 @@ import type {
   CoordinateCalibration,
   GuidanceRequest,
   GuidanceProviderMode,
+  GuidanceProviderResponse,
   GuidanceResult,
   GuidanceStep,
   GuidanceValidationIssue,
@@ -71,7 +73,7 @@ declare global {
   }
 }
 
-type GuidanceFixture = "safe" | "risky" | "invalid";
+type GuidanceFixture = "safe" | "risky" | "invalid" | "low-confidence";
 
 type OverlayStateMeta = {
   label: string;
@@ -201,6 +203,7 @@ const debugGuidanceFixtures: Array<{
 }> = [
   { fixture: "safe", label: "Safe" },
   { fixture: "risky", label: "Risky" },
+  { fixture: "low-confidence", label: "Low confidence" },
   { fixture: "invalid", label: "Invalid" },
 ];
 
@@ -1032,15 +1035,52 @@ function OverlayWindowApp() {
       const nextGuidance =
         guidanceFixture === "invalid"
           ? createInvalidMockGuidance(nextGuidanceRequest)
+          : guidanceFixture === "low-confidence"
+            ? createLowConfidenceMockGuidance(nextGuidanceRequest)
           : guidanceFixture === "risky"
             ? createRiskyMockGuidance(nextGuidanceRequest)
             : createMockGuidance(nextGuidanceRequest);
       const validation = validateGuidanceResult(nextGuidance);
+      const providerResponse: GuidanceProviderResponse = validation.valid
+        ? {
+            mode: "mock",
+            result: nextGuidance,
+            validation,
+            providerName: "mock-fixture",
+          }
+        : {
+            mode: "mock",
+            validation,
+            providerName: "mock-fixture",
+          };
+      const nextSafetyDecision = evaluateSafetyPolicy({
+        provider: providerResponse,
+        minConfidence: 0.7,
+      });
 
       setGuidanceIssues(validation.issues);
-      setSafetyDecision(null);
-      setGuidanceResult(validation.valid ? nextGuidance : null);
-      setOverlayState(validation.valid ? "guiding" : "error");
+      setSafetyDecision(nextSafetyDecision);
+      setGuidanceProviderError(
+        nextSafetyDecision.action === "allow" ||
+          nextSafetyDecision.action === "confirm"
+          ? null
+          : nextSafetyDecision.message,
+      );
+
+      if (
+        nextSafetyDecision.action === "allow" ||
+        nextSafetyDecision.action === "confirm"
+      ) {
+        setGuidanceResult(nextGuidance);
+        setOverlayState(
+          nextSafetyDecision.action === "confirm"
+            ? "confirmation_required"
+            : "guiding",
+        );
+      } else {
+        setGuidanceResult(null);
+        setOverlayState(nextSafetyDecision.action === "clarify" ? "idle" : "error");
+      }
     } catch (error) {
       setCaptureError(formatCaptureError(error));
       if (providerMode === "real") {
