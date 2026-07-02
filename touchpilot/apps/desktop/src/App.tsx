@@ -427,6 +427,30 @@ function StepBubble({
   );
 }
 
+function ConfirmationBubble({
+  decision,
+  target,
+}: {
+  decision: SafetyPolicyDecision;
+  target: RenderedGuidanceTarget;
+}) {
+  return (
+    <aside
+      className="confirmation-bubble"
+      style={{
+        left: target.x + target.width / 2 + 22,
+        top: target.y - target.height / 2,
+      }}
+      aria-label={`Confirmation required for ${target.label}`}
+    >
+      <span className="bubble-anchor" aria-hidden="true" />
+      <span className="confirmation-cue-kicker">Confirm first</span>
+      <span className="step-cue-label">{target.label}</span>
+      <span className="step-cue-text">{decision.message}</span>
+    </aside>
+  );
+}
+
 function SettingsPopup({
   overlayState,
   hasAcceptedGuidance,
@@ -1486,7 +1510,11 @@ function OverlayWindowApp() {
       {overlayState !== "idle" && hasAcceptedGuidance && (
         <>
           <PointerRing target={activeTarget} />
-          <StepBubble step={activeStep} target={activeTarget} />
+          {overlayState === "confirmation_required" && safetyDecision != null ? (
+            <ConfirmationBubble decision={safetyDecision} target={activeTarget} />
+          ) : (
+            <StepBubble step={activeStep} target={activeTarget} />
+          )}
         </>
       )}
       <AssistantPuck
