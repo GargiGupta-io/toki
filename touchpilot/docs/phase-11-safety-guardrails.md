@@ -92,6 +92,8 @@ Result: real-provider guidance now runs through `evaluateSafetyPolicy()` before 
 
 Add a small confirmation state in the user-facing overlay for risky guidance.
 
+Result: the overlay now renders a compact confirmation cue when safety returns `confirm`. The target marker can remain visible for review, but the normal step cue is replaced with a "Confirm first" message and the puck does not send normal guidance droplets.
+
 ### Step 11.7: Debug Safety Review
 
 Show policy decision, reason, risk class, and confirmation requirement in Debug.

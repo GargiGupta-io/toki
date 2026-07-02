@@ -236,6 +236,7 @@ Status: Closed as a quality gate.
 - Step 5: route provider results through policy.
 - Step 5 result: real-provider responses now run through `evaluateSafetyPolicy()` before the overlay accepts them. Allowed guidance renders normally, confirmation-required guidance enters `confirmation_required`, clarify decisions hide the target, block decisions enter error, and Debug receives the safety action/reason.
 - Step 6: add confirmation UI.
+- Step 6 result: confirmation-required guidance now renders a compact "Confirm first" cue instead of the normal step bubble. The target marker can stay visible for review, but the puck does not animate it as ordinary safe guidance.
 - Step 7: show safety decisions in Debug.
 - Step 8: run manual safety QA.
 - Step 9: update docs and learning notes.
