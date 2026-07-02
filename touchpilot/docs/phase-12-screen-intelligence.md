@@ -118,6 +118,8 @@ Result: provider prompts now make candidate selection the primary path when cand
 
 Show candidate sources, ranked candidates, selected target, and misses in Debug.
 
+Result: the Debug Guidance tab now shows the selected target with its `candidateId` when available and lists the top ranked candidates from the latest guidance request. Each row includes label, id, role, box, score, and ranking reasons. `ScreenCandidate` now carries optional `rank` metadata so Debug can explain why one candidate appeared above another.
+
 ### Step 12.10: Accuracy Notes
 
 Record accuracy results, misses, model limits, and source reliability.
@@ -249,6 +251,7 @@ Phase 12 is done when:
 - browser DOM known-screen QA passes independently of provider uptime,
 - OCR/AX fallback QA passes without browser DOM candidates,
 - Debug can explain which candidates existed and which target was selected,
+- Debug can show candidate rank scores and reasons,
 - the docs say whether browser extension candidates are optional or required for reliable web-app guidance.
 
 ## Non-Goals

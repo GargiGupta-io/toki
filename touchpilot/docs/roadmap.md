@@ -267,6 +267,7 @@ Status: Closed as a quality gate.
 - Step 8: update provider prompts to prefer candidate IDs.
 - Step 8 result: provider prompts now require candidate selection when ranked candidates exist. The expected provider output is a `candidateId`, not invented coordinates, and the smoke adapter anchors the result back to the chosen candidate's exact label and box.
 - Step 9: add Debug screen-intelligence view.
+- Step 9 result: Debug Guidance now shows the selected target's `candidateId` and the top ranked candidates from the latest request, including label, id, role, box, score, and ranking reasons.
 - Step 10: record accuracy notes.
 - Step 11: close Phase 12 or escalate to browser-extension-first screen understanding.
 
