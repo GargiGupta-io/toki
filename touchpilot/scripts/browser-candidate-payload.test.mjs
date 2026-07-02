@@ -18,7 +18,7 @@ test("readBrowserCandidatePayload normalizes extension payloads", async () => {
   const result = await readBrowserCandidatePayload(fixturePath);
 
   assert.equal(result.source, "browser-extension");
-  assert.equal(result.candidates.length, 1);
+  assert.equal(result.candidates.length, 6);
   assert.equal(result.candidates[0].label, "Create project");
   assert.equal(result.candidates[0].role, "dom_button");
   assert.equal(result.candidates[0].source, "dom");

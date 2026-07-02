@@ -367,6 +367,8 @@ test("requestLocalOllamaGuidance sends candidate evidence to Ollama", async () =
   const body = JSON.parse(calls[0].init.body);
 
   assert.match(body.prompt, /Candidate UI elements are provided/);
+  assert.match(body.prompt, /must choose from the candidate list/);
+  assert.match(body.prompt, /Return the candidate id, not raw coordinates/);
   assert.match(body.prompt, /id=message-input/);
   assert.match(body.prompt, /box=520,790,420x44/);
 });
@@ -665,6 +667,11 @@ test("requestFreeLlmApiGuidance sends OpenAI-compatible vision request", async (
   assert.equal(body.messages[0].role, "system");
   assert.equal(body.messages[1].role, "user");
   assert.match(body.messages[1].content[0].text, /Show me what to click next/);
+  assert.match(body.messages[1].content[0].text, /must choose from the candidate list/);
+  assert.match(
+    body.messages[1].content[0].text,
+    /Return the candidate id, not raw coordinates/,
+  );
   assert.match(body.messages[1].content[0].text, /id=message-input/);
   assert.match(
     body.messages[1].content[1].image_url.url,
