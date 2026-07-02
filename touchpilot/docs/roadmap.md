@@ -259,6 +259,7 @@ Status: Closed as a quality gate.
 - Step 4: add a candidate fusion layer.
 - Step 4 result: added `fuseScreenCandidates()` in `@toki/ai`. It converts existing candidates into `UiElement[]`, filters invalid boxes, preserves source provenance, marks interactable/risky hints, and merges obvious duplicate observations across sources.
 - Step 5: improve candidate ranking.
+- Step 5 result: improved known-screen and desktop candidate ranking with source trust, exact label matches, weak-region penalties, hidden/disabled penalties, and stronger geometry/role scoring. Broad browser/window candidates should now lose to trusted DOM/manual click targets when labels match.
 - Step 6: run browser known-screen QA.
 - Step 7: run OCR/AX fallback QA.
 - Step 8: update provider prompts to prefer candidate IDs.

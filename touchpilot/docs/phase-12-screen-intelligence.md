@@ -94,6 +94,8 @@ Result: `@toki/ai` now exports `fuseScreenCandidates()`. It converts existing `S
 
 Improve candidate ranking using goal text, role, geometry, visibility, source trust, and risky labels.
 
+Result: candidate ranking now weighs source trust, exact label matches, clickable roles, weak region/window roles, button-sized geometry, large-region penalties, hidden/disabled metadata, duplicate labels, and risky words. The same signals are used by the known-screen script ranking and the desktop runtime ranking.
+
 ### Step 12.6: Browser Known-Screen QA
 
 Run known-screen tests on browser pages using browser DOM candidates.
@@ -208,6 +210,26 @@ The helper does four things:
 4. merges same-label candidates that are very close or strongly overlapping.
 
 This is not the final fusion algorithm. It is the first safe layer that turns disconnected candidate boxes into a screen element map without changing provider behavior yet.
+
+## Ranking Signals
+
+Step 12.5 strengthened the current candidate ranking layer before provider calls.
+
+Current signals:
+
+- source trust: browser DOM and manual candidates outrank OCR and broad Accessibility regions,
+- exact label match: a candidate whose label appears directly in the command gets a strong boost,
+- goal token match: labels matching command words score higher,
+- clickable role: buttons, links, inputs, tabs, and similar roles score higher,
+- OCR visibility: OCR text gets a small positive signal, but not enough to beat a trusted DOM button by itself,
+- weak region role: browser windows, app windows, groups, toolbars, and broad regions score lower,
+- button-sized geometry: plausible click targets score higher,
+- large region penalty: huge rectangles are less likely to be precise targets,
+- hidden/disabled penalty: metadata can push unavailable targets down,
+- duplicate label penalty: repeated generic labels like `Info` are less trusted,
+- risky word flag: labels like `delete`, `revoke`, `pay`, and `send` are marked down for caution.
+
+This still does not make ranking perfect. It makes bad candidates less likely to reach the provider as the top options, especially broad browser/window regions that previously looked valid but were not useful click targets.
 
 ## Acceptance Criteria
 
