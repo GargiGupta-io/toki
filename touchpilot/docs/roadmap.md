@@ -253,6 +253,7 @@ Status: Closed as a quality gate.
 - Step 1: write the screen-intelligence contract and acceptance criteria.
 - Step 1 result: added `docs/phase-12-screen-intelligence.md` with the phase goal, evidence sources, tradeoffs, steps, acceptance criteria, and non-goals. Phase 12 starts from the rule that raw screenshots are not enough: Toki should combine browser DOM candidates, OCR boxes, Accessibility nodes, manual fixtures, and screenshot geometry into one stronger element map.
 - Step 2: inventory current candidate sources.
+- Step 2 result: documented the current candidate inventory in `docs/phase-12-screen-intelligence.md`: browser-extension DOM candidates, live browser bridge payloads, manual known-screen candidates, macOS Accessibility probes, macOS Vision OCR probes, desktop live OCR candidates, and first-pass candidate ranking. The decision is to build on the existing `ScreenCandidate` contract instead of adding another isolated format.
 - Step 3: add a unified element schema.
 - Step 4: add a candidate fusion layer.
 - Step 5: improve candidate ranking.

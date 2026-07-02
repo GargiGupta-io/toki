@@ -76,6 +76,8 @@ Define the goals, evidence sources, acceptance criteria, tradeoffs, and non-goal
 
 Record what current browser DOM, OCR, Accessibility, screenshot, and manual candidate paths already produce.
 
+Result: the current candidate inventory is documented below. Toki already has a shared `ScreenCandidate` shape, browser-extension DOM candidates, manual known-screen candidates, script-based macOS Accessibility candidates, script-based macOS Vision OCR candidates, live desktop macOS Vision OCR candidates, and a first-pass ranking layer. The main gap is not "no candidates exist"; the gap is that the sources are not fused into one explainable element map yet.
+
 ### Step 12.3: Unified Element Schema
 
 Create one shared element shape that can represent candidates from every source.
@@ -111,6 +113,57 @@ Record accuracy results, misses, model limits, and source reliability.
 ### Step 12.11: Close Or Escalate
 
 Close Phase 12 if target accuracy is usable on known screens, or escalate to browser-extension-first screen understanding.
+
+## Current Candidate Source Inventory
+
+This is the state at the start of Phase 12.
+
+| Source | Current path | Shape | Strength | Current limit |
+| --- | --- | --- | --- | --- |
+| Browser DOM | `apps/browser-extension` plus `POST /api/browser-candidates/latest` | `BrowserCandidatePayload` with `ScreenCandidate[]` | Best source for browser apps because it sees labels, roles, boxes, URL, and viewport | Development extension only; not production packaged; requires user/browser setup |
+| Manual known-screen candidates | `TOKI_KNOWN_SCREEN_CANDIDATES` | `ScreenCandidate[]` | Stable QA path for controlled screens | Not automatic; does not prove real screen understanding |
+| Live bridge browser candidates | `npm run qa:browser:candidates` and `guidance:known-screen` bridge lookup | `ScreenCandidate[]` from latest bridge payload | Lets a real browser page hand candidates to the provider runner | Depends on smoke server and extension popup send flow |
+| macOS Accessibility probe | `npm run qa:mac:candidates` | normalized `ScreenCandidate[]` | Can expose roles, labels, and boxes from apps that support Accessibility | Browser trees can be coarse; permission and app targeting matter |
+| macOS Vision OCR probe | `npm run qa:mac:ocr:candidates` | normalized `ScreenCandidate[]` with `role: "ocr_text"` | Finds visible text when Accessibility is weak | Text only; can fail on some captures; no semantic role |
+| Desktop live OCR | `collect_screen_candidates` Tauri command | `ScreenCandidateResult` with `candidateSource: "macos-vision-ocr"` | Available during live desktop guidance on macOS | OCR-only today; unsupported on non-macOS in this command |
+| Candidate ranking | `scripts/candidate-ranking.mjs` and `apps/desktop/src/candidateRanking.ts` | ranked candidates with score/reasons | Reduces noisy candidate lists before provider calls | Ranking is still heuristic and not a true fused UI map |
+
+## Current Shared Shape
+
+The current shared target candidate shape lives in `packages/shared/src/index.ts`:
+
+```ts
+ScreenCandidate = {
+  id,
+  label,
+  role,
+  source,
+  x,
+  y,
+  width,
+  height,
+  metadata,
+}
+```
+
+This is good enough for Phase 12 to start because all candidate sources can already speak a similar language. The next schema step should decide whether this exact shape is enough or whether Phase 12 needs a richer `UiElement` shape with source confidence, merged labels, duplicate links, viewport state, and provenance.
+
+## Source Priority Today
+
+Known-screen provider runs currently prefer candidate sources in this order:
+
+1. explicit browser payload path,
+2. latest live browser bridge payload,
+3. manual candidates,
+4. macOS Accessibility candidates,
+5. macOS Vision OCR candidates,
+6. no candidates.
+
+Live desktop guidance currently calls `collect_screen_candidates`, which on macOS uses Vision OCR, then ranks candidates before sending them with the guidance request.
+
+## Inventory Decision
+
+Phase 12 should not create another isolated candidate format. It should build on the existing `ScreenCandidate` contract and add a fusion layer around it. Browser DOM should be treated as the highest-trust source for browser pages, OCR as the text fallback, Accessibility as the semantic fallback where available, and manual candidates as the QA baseline.
 
 ## Acceptance Criteria
 
