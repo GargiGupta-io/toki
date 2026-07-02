@@ -422,13 +422,49 @@ export type CoordinateCalibration = {
   notes?: string;
 };
 
-export type UiElementSource = "vision" | "ocr" | "accessibility" | "dom";
+export type UiElementSource =
+  | "browser-dom"
+  | "ocr"
+  | "accessibility"
+  | "manual"
+  | "vision"
+  | "screenshot";
+
+export type UiElementRole =
+  | ScreenCandidate["role"]
+  | "text"
+  | "image"
+  | "region"
+  | "window"
+  | "unknown";
+
+export type UiElementProvenance = {
+  source: UiElementSource;
+  sourceId?: string;
+  capturedAt?: string;
+  confidence?: number;
+  notes?: string;
+};
+
+export type UiElementRanking = {
+  score: number;
+  position?: number;
+  reasons: string[];
+};
 
 export type UiElement = {
   id: string;
-  source: UiElementSource;
-  role?: string;
-  label?: string;
+  primarySource: UiElementSource;
+  sources: UiElementProvenance[];
+  role: UiElementRole;
+  label: string;
+  alternateLabels?: string[];
   bounds: Bounds;
   confidence: number;
+  visible: boolean;
+  interactable?: boolean;
+  risky?: boolean;
+  sourceCandidateIds?: string[];
+  rank?: UiElementRanking;
+  metadata?: Record<string, string | number | boolean | null>;
 };
