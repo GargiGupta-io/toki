@@ -244,6 +244,7 @@ Status: Closed as a quality gate.
 - Step 9: update docs and learning notes.
 - Step 9 result: updated the active safety docs and learning note with the actual Phase 11 behavior: real provider results and mock fixtures share one policy gate, safe guidance can render, risky guidance confirms, weak guidance clarifies, and invalid/unavailable guidance blocks.
 - Step 10: close Phase 11 or escalate browser metadata.
+- Step 10 result: Phase 11 is closed as the safety-foundation phase. Risky guidance is confirmation-gated, weak guidance clarifies, invalid/unavailable guidance blocks, Debug explains decisions, and Toki still does not click automatically. Browser target accuracy remains Phase 12 screen-intelligence work.
 
 ## Phase 12: Screen Intelligence Upgrade
 

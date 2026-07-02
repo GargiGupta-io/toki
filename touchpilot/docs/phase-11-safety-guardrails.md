@@ -116,6 +116,30 @@ Result: safety documentation now summarizes the actual Phase 11 runtime behavior
 
 Close Phase 11 if risky guidance is confirmation-gated and unsafe results do not render as confident targets. If the policy cannot reliably classify browser actions, escalate browser candidate metadata before continuing.
 
+Result: Phase 11 is closed. Risky guidance is confirmation-gated, low-confidence guidance clarifies, invalid or unavailable guidance blocks, Debug explains the decision, and Toki still does not click automatically. Browser target accuracy and richer candidate metadata remain important, but they are Phase 12 screen-intelligence work rather than a blocker for the safety gate.
+
+## Closure Decision
+
+Phase 11 closes as a safety-foundation phase.
+
+What is done:
+
+- one shared policy vocabulary exists: `allow`, `confirm`, `clarify`, and `block`,
+- provider guidance passes through the policy gate before the overlay accepts it,
+- mock fixtures also pass through the same gate for repeatable QA,
+- risky guidance renders as a confirmation state instead of normal guidance,
+- low-confidence guidance does not show a confident target,
+- invalid and unavailable provider results remain blocked,
+- Debug exposes the policy action, reason, risk, message, and details,
+- manual QA has a repeatable checklist.
+
+What is intentionally not solved here:
+
+- final browser target accuracy,
+- full OCR/accessibility/DOM candidate ranking,
+- production legal/compliance policy,
+- autonomous clicking or action execution.
+
 ## Acceptance Criteria
 
 Phase 11 is done when:
