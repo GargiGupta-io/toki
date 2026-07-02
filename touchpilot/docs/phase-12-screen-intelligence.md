@@ -106,6 +106,8 @@ Result: added `npm run qa:browser:known-screen`, a deterministic browser known-s
 
 Run known-screen tests when browser DOM candidates are unavailable.
 
+Result: added `npm run qa:fallback:known-screen`, a deterministic fallback QA script that uses only Accessibility and OCR candidates. It verifies that `Download the report` chooses the Accessibility `Download` button, `Invite a team member` can fall back to OCR text, and `Search for a project` chooses the Accessibility search field. This proves the no-browser fallback ranking path while keeping live macOS permission/app-specific checks separate.
+
 ### Step 12.8: Provider Prompt Update
 
 Make providers choose candidate IDs where possible instead of inventing raw coordinates.
@@ -242,6 +244,7 @@ Phase 12 is done when:
 - provider requests prefer candidate IDs over raw coordinate guessing,
 - known-screen browser QA records useful and wrong targets clearly,
 - browser DOM known-screen QA passes independently of provider uptime,
+- OCR/AX fallback QA passes without browser DOM candidates,
 - Debug can explain which candidates existed and which target was selected,
 - the docs say whether browser extension candidates are optional or required for reliable web-app guidance.
 

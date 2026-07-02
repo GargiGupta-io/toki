@@ -263,6 +263,7 @@ Status: Closed as a quality gate.
 - Step 6: run browser known-screen QA.
 - Step 6 result: added `npm run qa:browser:known-screen` and expanded the browser-extension fixture payload to six HTTP-page DOM candidates. The deterministic QA now proves ranking selects the expected browser target for `Create project`, `Open settings`, `Add notes`, and `Delete project` without requiring a provider, screenshot, or live browser.
 - Step 7: run OCR/AX fallback QA.
+- Step 7 result: added `npm run qa:fallback:known-screen`, which verifies the fallback path using only Accessibility and OCR candidates. It proves Accessibility can win for real controls such as `Download` and `Search`, while OCR can still provide a useful text target such as `Invite` when browser DOM candidates are unavailable.
 - Step 8: update provider prompts to prefer candidate IDs.
 - Step 9: add Debug screen-intelligence view.
 - Step 10: record accuracy notes.
