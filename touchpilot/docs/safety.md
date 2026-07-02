@@ -29,6 +29,17 @@ unknown_risky
 - Camera frames should be processed locally by default.
 - Private mode should avoid screenshot and session storage.
 
+## Current Phase 11 Behavior
+
+Toki now has four policy outcomes:
+
+- `allow`: show normal guidance for safe, confident targets.
+- `confirm`: show a confirmation cue before risky guidance becomes normal guidance.
+- `clarify`: hide the target and ask for a better command or stronger evidence.
+- `block`: reject invalid, unavailable, or unsafe guidance.
+
+Both real provider results and Debug mock fixtures go through this policy gate. This means the app can test safe, risky, invalid, and low-confidence guidance without pretending every target is equally safe.
+
 ## Confirmation Requirements
 
 Before risky guidance continues, the user should see:

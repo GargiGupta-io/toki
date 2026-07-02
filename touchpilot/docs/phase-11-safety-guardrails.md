@@ -110,6 +110,8 @@ Result: Debug fixture QA now covers all four safety outcomes. `Safe` should allo
 
 Update safety docs, roadmap, and learning notes with what was actually built.
 
+Result: safety documentation now summarizes the actual Phase 11 runtime behavior: provider results and mock fixtures both pass through the same policy gate, safe guidance can render normally, risky guidance enters confirmation, weak guidance clarifies, and invalid/unavailable guidance blocks.
+
 ### Step 11.10: Close Phase 11 Or Escalate
 
 Close Phase 11 if risky guidance is confirmation-gated and unsafe results do not render as confident targets. If the policy cannot reliably classify browser actions, escalate browser candidate metadata before continuing.
