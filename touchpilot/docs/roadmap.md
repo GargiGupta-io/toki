@@ -265,6 +265,7 @@ Status: Closed as a quality gate.
 - Step 7: run OCR/AX fallback QA.
 - Step 7 result: added `npm run qa:fallback:known-screen`, which verifies the fallback path using only Accessibility and OCR candidates. It proves Accessibility can win for real controls such as `Download` and `Search`, while OCR can still provide a useful text target such as `Invite` when browser DOM candidates are unavailable.
 - Step 8: update provider prompts to prefer candidate IDs.
+- Step 8 result: provider prompts now require candidate selection when ranked candidates exist. The expected provider output is a `candidateId`, not invented coordinates, and the smoke adapter anchors the result back to the chosen candidate's exact label and box.
 - Step 9: add Debug screen-intelligence view.
 - Step 10: record accuracy notes.
 - Step 11: close Phase 12 or escalate to browser-extension-first screen understanding.

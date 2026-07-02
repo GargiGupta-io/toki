@@ -112,6 +112,8 @@ Result: added `npm run qa:fallback:known-screen`, a deterministic fallback QA sc
 
 Make providers choose candidate IDs where possible instead of inventing raw coordinates.
 
+Result: provider prompts now make candidate selection the primary path when candidates exist. When Toki sends ranked candidates, the model is told to return a `candidateId` instead of raw coordinates, and the adapter copies the chosen candidate's exact label and box after validation. `TargetBox` now includes optional `candidateId`, so this link can travel with guidance results.
+
 ### Step 12.9: Debug Screen Intelligence View
 
 Show candidate sources, ranked candidates, selected target, and misses in Debug.
@@ -242,6 +244,7 @@ Phase 12 is done when:
 - Toki has one shared element/candidate shape,
 - browser DOM, OCR, Accessibility, and manual candidates can be compared together,
 - provider requests prefer candidate IDs over raw coordinate guessing,
+- guidance targets can preserve the selected `candidateId`,
 - known-screen browser QA records useful and wrong targets clearly,
 - browser DOM known-screen QA passes independently of provider uptime,
 - OCR/AX fallback QA passes without browser DOM candidates,
