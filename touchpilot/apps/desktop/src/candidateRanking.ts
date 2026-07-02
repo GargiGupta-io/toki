@@ -16,6 +16,14 @@ const RISK_WORDS = new Set([
 ]);
 const CLICKABLE_ROLE_RE =
   /(button|link|menu item|checkbox|radio|textbox|text field|tab|cell|row)/i;
+const WEAK_REGION_ROLE_RE = /(window|application|group|toolbar|menubar|region)/i;
+const SOURCE_TRUST = new Map<string, number>([
+  ["dom", 14],
+  ["browser-extension", 14],
+  ["manual", 12],
+  ["accessibility", 8],
+  ["ocr", 4],
+]);
 
 type RankedCandidate = ScreenCandidate & {
   rank?: {
@@ -43,8 +51,38 @@ function countMatchingTokens(label: string, goalTokens: string[]): number {
   return goalTokens.filter((token) => labelText.includes(token)).length;
 }
 
+function hasExactLabelMatch(label: string, goal: string): boolean {
+  const labelText = normalizeText(label);
+  const goalText = normalizeText(goal);
+
+  return labelText.length >= 3 && goalText.includes(labelText);
+}
+
 function hasRiskWord(label: string): boolean {
   return tokenize(label).some((token) => RISK_WORDS.has(token));
+}
+
+function sourceTrust(candidate: ScreenCandidate): number {
+  const source = normalizeText(candidate.source);
+  const role = normalizeText(candidate.role);
+
+  if (source === "dom" || role.startsWith("dom_")) {
+    return SOURCE_TRUST.get("dom") ?? 0;
+  }
+
+  if (source === "manual" || role === "manual") {
+    return SOURCE_TRUST.get("manual") ?? 0;
+  }
+
+  if (source === "accessibility" || role.startsWith("ax")) {
+    return SOURCE_TRUST.get("accessibility") ?? 0;
+  }
+
+  if (source === "ocr" || role === "ocr_text") {
+    return SOURCE_TRUST.get("ocr") ?? 0;
+  }
+
+  return 0;
 }
 
 export function rankScreenCandidates(
@@ -75,6 +113,17 @@ export function rankScreenCandidates(
       const duplicateCount = labelCounts.get(normalizeText(candidate.label)) ?? 1;
       let score = 0;
       const reasons: string[] = [];
+      const sourceScore = sourceTrust(candidate);
+
+      if (sourceScore > 0) {
+        score += sourceScore;
+        reasons.push(`source-trust:${sourceScore}`);
+      }
+
+      if (hasExactLabelMatch(candidate.label, goal)) {
+        score += 18;
+        reasons.push("exact-label");
+      }
 
       if (matchCount > 0) {
         score += matchCount * 12;
@@ -91,14 +140,32 @@ export function rankScreenCandidates(
         reasons.push("ocr-visible");
       }
 
+      if (WEAK_REGION_ROLE_RE.test(role)) {
+        score -= 12;
+        reasons.push("weak-region-role");
+      }
+
       if (candidate.width >= 24 && candidate.height >= 16 && area <= 90_000) {
         score += 6;
         reasons.push("button-sized");
       }
 
       if (candidate.width > 500 || candidate.height > 160) {
-        score -= 10;
+        score -= 14;
         reasons.push("large-region");
+      }
+
+      if (
+        candidate.metadata?.visible === false ||
+        candidate.metadata?.hidden === true
+      ) {
+        score -= 16;
+        reasons.push("not-visible");
+      }
+
+      if (candidate.metadata?.disabled === true) {
+        score -= 14;
+        reasons.push("disabled");
       }
 
       if (duplicateCount > 1) {

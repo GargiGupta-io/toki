@@ -41,6 +41,77 @@ const candidates = [
   },
 ];
 
+test("rankScreenCandidates prefers exact trusted DOM targets over broad regions", () => {
+  const ranked = rankScreenCandidates(
+    [
+      {
+        id: "browser-window",
+        label: "Download",
+        role: "window",
+        source: "accessibility",
+        x: 0,
+        y: 0,
+        width: 1440,
+        height: 900,
+      },
+      {
+        id: "dom-download",
+        label: "Download",
+        role: "dom_button",
+        source: "dom",
+        x: 1180,
+        y: 520,
+        width: 132,
+        height: 44,
+      },
+    ],
+    {
+      goal: "Download the report",
+    },
+  );
+
+  assert.equal(ranked[0].id, "dom-download");
+  assert.ok(ranked[0].rank.reasons.includes("source-trust:14"));
+  assert.ok(ranked[0].rank.reasons.includes("exact-label"));
+  assert.ok(ranked[1].rank.reasons.includes("weak-region-role"));
+});
+
+test("rankScreenCandidates penalizes hidden and disabled candidates", () => {
+  const ranked = rankScreenCandidates(
+    [
+      {
+        id: "hidden-submit",
+        label: "Submit",
+        role: "dom_button",
+        source: "dom",
+        x: 200,
+        y: 200,
+        width: 96,
+        height: 40,
+        metadata: {
+          hidden: true,
+        },
+      },
+      {
+        id: "visible-submit",
+        label: "Submit",
+        role: "dom_button",
+        source: "dom",
+        x: 200,
+        y: 260,
+        width: 96,
+        height: 40,
+      },
+    ],
+    {
+      goal: "Submit the form",
+    },
+  );
+
+  assert.equal(ranked[0].id, "visible-submit");
+  assert.ok(ranked[1].rank.reasons.includes("not-visible"));
+});
+
 test("rankScreenCandidates prioritizes matching clickable targets", () => {
   const ranked = rankScreenCandidates(candidates, {
     goal: "Click the download button",
