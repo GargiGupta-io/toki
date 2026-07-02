@@ -83,6 +83,33 @@ export function createRiskyMockGuidance(request: GuidanceRequest): GuidanceResul
   };
 }
 
+export function createLowConfidenceMockGuidance(
+  request: GuidanceRequest,
+): GuidanceResult {
+  const targetWidth = 118;
+  const targetHeight = 42;
+  const x = Math.round(request.screen.display.width / 2 - 140);
+  const y = Math.round(request.screen.display.height / 2 + 54);
+
+  return {
+    mode: "guide",
+    summary: `Low-confidence mock guidance for: ${request.goal}`,
+    step: {
+      instruction: "This target is intentionally uncertain for safety QA.",
+      target: {
+        label: "Maybe target",
+        x,
+        y,
+        width: targetWidth,
+        height: targetHeight,
+      },
+      confidence: 0.42,
+      risk: "safe_navigation",
+      requiresConfirmation: false,
+    },
+  };
+}
+
 export function createInvalidMockGuidance(request: GuidanceRequest): GuidanceResult {
   return {
     mode: "guide",

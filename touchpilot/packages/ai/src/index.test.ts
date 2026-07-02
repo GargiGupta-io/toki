@@ -3,6 +3,7 @@ import test from "node:test";
 import type { GuidanceResult, RiskClass } from "@toki/shared";
 import {
   createInvalidMockGuidance,
+  createLowConfidenceMockGuidance,
   createMockGuidance,
   createRiskyMockGuidance,
   evaluateSafetyPolicy,
@@ -77,6 +78,27 @@ test("createRiskyMockGuidance returns valid confirmation-gated guidance", () => 
   assert.equal(result.step?.target?.label, "Pay now");
   assert.equal(result.step?.risk, "payment");
   assert.equal(result.step?.requiresConfirmation, true);
+});
+
+test("createLowConfidenceMockGuidance returns valid uncertain guidance", () => {
+  const result = createLowConfidenceMockGuidance({
+    goal: "Force a low confidence policy path.",
+    screen: {
+      display: {
+        id: "display-1",
+        width: 1440,
+        height: 900,
+        scaleFactor: 1,
+      },
+    },
+  });
+
+  const validation = validateGuidanceResult(result);
+
+  assert.equal(validation.valid, true);
+  assert.deepEqual(validation.issues, []);
+  assert.equal(result.step?.target?.label, "Maybe target");
+  assert.equal(result.step?.confidence, 0.42);
 });
 
 test("createInvalidMockGuidance returns a rejected QA fixture", () => {
