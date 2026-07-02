@@ -17,6 +17,7 @@
     "browser-extension:check": "npm --workspace @toki/browser-extension run check",
     "qa:browser:candidates": "node scripts/browser-candidate-bridge-qa.mjs",
     "qa:browser:known-screen": "node scripts/browser-known-screen-qa.mjs",
+    "qa:fallback:known-screen": "node scripts/fallback-known-screen-qa.mjs",
     "rust:check": "cargo check --workspace",
     "rust:fmt": "cargo fmt --all",
     "guidance:smoke:dev": "node scripts/guidance-smoke-server.mjs",
