@@ -2352,6 +2352,43 @@ function DebugWindowApp() {
             )}
           </section>
 
+          <section className="debug-section">
+            <h2>Safety Review</h2>
+            <dl>
+              <div>
+                <dt>Action</dt>
+                <dd>{snapshot.safetyDecision?.action ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Reason</dt>
+                <dd>{snapshot.safetyDecision?.reason ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Risk</dt>
+                <dd>{snapshot.safetyDecision?.risk ?? guidanceStep?.risk ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Confirm</dt>
+                <dd>
+                  {snapshot.safetyDecision?.requiresConfirmation
+                    ? "Required"
+                    : "Not required"}
+                </dd>
+              </div>
+            </dl>
+            <p>
+              {snapshot.safetyDecision?.message ??
+                "Run real guidance to review the safety policy decision."}
+            </p>
+            {snapshot.safetyDecision?.details?.length ? (
+              <ul>
+                {snapshot.safetyDecision.details.map((detail) => (
+                  <li key={detail}>{detail}</li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+
           <section className="debug-section debug-section-wide">
             <h2>Camera Preview</h2>
             <div className="debug-section-header-row">
