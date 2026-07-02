@@ -124,6 +124,8 @@ Result: the Debug Guidance tab now shows the selected target with its `candidate
 
 Record accuracy results, misses, model limits, and source reliability.
 
+Result: accuracy notes are recorded below. The current Phase 12 work proves that candidate extraction, ranking, candidate-id provider prompting, and Debug explanation are structurally healthier than raw screenshot guessing. It does not prove final real-world target accuracy yet. Browser DOM candidates are the most reliable web-app source, OCR/Accessibility are fallback sources, and live provider accuracy still depends on real browser QA with the extension bridge plus a reachable provider.
+
 ### Step 12.11: Close Or Escalate
 
 Close Phase 12 if target accuracy is usable on known screens, or escalate to browser-extension-first screen understanding.
@@ -141,6 +143,38 @@ This is the state at the start of Phase 12.
 | macOS Vision OCR probe | `npm run qa:mac:ocr:candidates` | normalized `ScreenCandidate[]` with `role: "ocr_text"` | Finds visible text when Accessibility is weak | Text only; can fail on some captures; no semantic role |
 | Desktop live OCR | `collect_screen_candidates` Tauri command | `ScreenCandidateResult` with `candidateSource: "macos-vision-ocr"` | Available during live desktop guidance on macOS | OCR-only today; unsupported on non-macOS in this command |
 | Candidate ranking | `scripts/candidate-ranking.mjs` and `apps/desktop/src/candidateRanking.ts` | ranked candidates with score/reasons | Reduces noisy candidate lists before provider calls | Ranking is still heuristic and not a true fused UI map |
+
+## Accuracy Notes
+
+This is the current accuracy state after Step 12.10.
+
+| Area | Current result | What it proves | What it does not prove |
+| --- | --- | --- | --- |
+| Browser fixture candidates | `npm run qa:browser:known-screen` passes for `Create project`, `Open settings`, `Add notes`, and `Delete project` | Browser DOM candidates and ranking can pick the intended target on a controlled page | Real SaaS dashboards still need manual bridge tests |
+| OCR/AX fallback | `npm run qa:fallback:known-screen` passes for `Download`, `Invite`, and `Search` | Ranking can use Accessibility controls and OCR text when browser DOM is absent | macOS permissions and app-specific trees can still fail live |
+| Candidate-id provider prompts | Provider prompts now require `candidateId` when candidates exist | The provider should choose from real candidates instead of inventing boxes | A weak provider can still choose the wrong candidate id |
+| Debug explanation | Guidance tab shows target id, ranked candidates, scores, and reasons | Wrong targets can be inspected instead of guessed about | Debug does not improve accuracy by itself |
+| Raw screenshot-only guidance | Still allowed only when no candidates exist | Keeps a fallback path for unknown screens | This remains the weakest and least trusted path |
+
+Source reliability, highest to lowest:
+
+1. Browser DOM candidates from the extension for web apps.
+2. Manual known-screen candidates for repeatable QA.
+3. Accessibility candidates for native apps and some browser controls.
+4. OCR candidates for visible text fallback.
+5. Raw screenshot coordinate guessing only when no candidates exist.
+
+Known misses and risks:
+
+- Browser Accessibility can expose only coarse browser/window regions instead of page controls.
+- OCR can read visible text but cannot always tell whether the text is a button, label, paragraph, or tooltip.
+- Ranking is still heuristic; it does not yet merge nearby DOM/OCR/AX observations into one final fused element inside the desktop runtime.
+- Provider selection is now safer because it chooses candidate ids, but model choice can still be wrong if the candidate list is noisy or missing the correct element.
+- Real dashboard QA still needs live extension payloads from Chrome/Edge/Safari-like browser flows, not only deterministic fixtures.
+
+Decision:
+
+Phase 12 can move to closure only if we accept this as a screen-intelligence foundation. If we require product-grade target accuracy before moving on, the next escalation should be browser-extension-first screen understanding with live dashboard test cases and candidate fusion exposed directly in Debug.
 
 ## Current Shared Shape
 

@@ -269,6 +269,7 @@ Status: Closed as a quality gate.
 - Step 9: add Debug screen-intelligence view.
 - Step 9 result: Debug Guidance now shows the selected target's `candidateId` and the top ranked candidates from the latest request, including label, id, role, box, score, and ranking reasons.
 - Step 10: record accuracy notes.
+- Step 10 result: recorded the current accuracy state. Browser DOM fixture QA and OCR/AX fallback QA pass, candidate-id prompting is safer than raw coordinate guessing, and Debug can explain ranking. Real product accuracy is still not proven until live browser-extension payloads are tested on real dashboards with a provider.
 - Step 11: close Phase 12 or escalate to browser-extension-first screen understanding.
 
 ## Phase 13: Multi-Step Workflows
