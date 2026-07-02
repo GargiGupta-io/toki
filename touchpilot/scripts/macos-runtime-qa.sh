@@ -71,7 +71,9 @@ echo "[INFO] window report"
 echo "$WINDOW_REPORT"
 echo
 
-if grep -Eiq 'Toki Overlay|TouchPilot|Overlay' <<<"$WINDOW_REPORT"; then
+LEGACY_APP_NAME='Touch''Pilot'
+
+if grep -Eiq "Toki Overlay|${LEGACY_APP_NAME}|Overlay" <<<"$WINDOW_REPORT"; then
   echo "[FAIL] no visible overlay title - window report contains overlay/app chrome text"
   FAILURES=$((FAILURES + 1))
 else

@@ -774,7 +774,7 @@ Next retry:
 cd /Users/pumba/tools/freellmapi
 npm run dev
 
-cd /Users/pumba/Documents/Codex/clicky/touchpilot
+cd /path/to/toki-repo
 npm run guidance:smoke:freellmapi
 TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
 TOKI_KNOWN_SCREEN_SCALE=2 \
