@@ -238,6 +238,7 @@ Status: Closed as a quality gate.
 - Step 6: add confirmation UI.
 - Step 6 result: confirmation-required guidance now renders a compact "Confirm first" cue instead of the normal step bubble. The target marker can stay visible for review, but the puck does not animate it as ordinary safe guidance.
 - Step 7: show safety decisions in Debug.
+- Step 7 result: Debug now includes a Safety Review section showing policy action, reason, risk, confirmation requirement, message, and details.
 - Step 8: run manual safety QA.
 - Step 9: update docs and learning notes.
 - Step 10: close Phase 11 or escalate browser metadata.

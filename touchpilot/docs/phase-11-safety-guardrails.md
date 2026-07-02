@@ -98,6 +98,8 @@ Result: the overlay now renders a compact confirmation cue when safety returns `
 
 Show policy decision, reason, risk class, and confirmation requirement in Debug.
 
+Result: Debug now has a dedicated Safety Review section with action, reason, risk, confirmation requirement, policy message, and policy details. This makes manual QA easier because a tester can see exactly why guidance rendered, confirmed, clarified, or blocked.
+
 ### Step 11.8: Manual Safety QA
 
 Run safe, risky, invalid, and low-confidence fixture paths.
