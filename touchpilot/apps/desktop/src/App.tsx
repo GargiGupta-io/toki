@@ -7,6 +7,7 @@ import {
   createInvalidMockGuidance,
   createMockGuidance,
   createRiskyMockGuidance,
+  evaluateSafetyPolicy,
   requestRealGuidance,
   validateGuidanceResult,
 } from "@toki/ai";
@@ -27,6 +28,7 @@ import type {
   HandLandmarkFrame,
   ScreenshotCapture,
   ScreenshotMetadata,
+  SafetyPolicyDecision,
   TargetBox,
   VoiceActivationSource,
   VoiceCommandRequest,
@@ -95,6 +97,7 @@ type DebugSnapshot = OverlaySnapshot & {
   guidanceResult: GuidanceResult | null;
   guidanceIssues: GuidanceValidationIssue[];
   guidanceProviderError: string | null;
+  safetyDecision: SafetyPolicyDecision | null;
   captureError: string | null;
   viewport: ViewportMetrics;
   calibration: CoordinateCalibration;
@@ -162,6 +165,12 @@ const stateMeta: Record<OverlayState, OverlayStateMeta> = {
     description: "Pointer and step bubble guidance will connect to this state.",
     tone: "active",
   },
+  confirmation_required: {
+    label: "Confirm",
+    title: "Confirmation is required.",
+    description: "Review the risky target before allowing guidance.",
+    tone: "active",
+  },
   paused: {
     label: "Paused",
     title: "Guidance is paused.",
@@ -181,6 +190,7 @@ const debugOverlayStates: OverlayState[] = [
   "listening",
   "thinking",
   "guiding",
+  "confirmation_required",
   "paused",
   "error",
 ];
@@ -788,6 +798,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     guidanceResult: null,
     guidanceIssues: [],
     guidanceProviderError: null,
+    safetyDecision: null,
     captureError: null,
     viewport,
     calibration: getCalibration(null, viewport),
@@ -805,6 +816,9 @@ function OverlayWindowApp() {
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
   const [guidanceProviderError, setGuidanceProviderError] = useState<string | null>(
+    null,
+  );
+  const [safetyDecision, setSafetyDecision] = useState<SafetyPolicyDecision | null>(
     null,
   );
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -876,6 +890,7 @@ function OverlayWindowApp() {
       guidanceResult,
       guidanceIssues,
       guidanceProviderError,
+      safetyDecision,
       captureError,
       viewport,
       calibration,
@@ -890,6 +905,7 @@ function OverlayWindowApp() {
       guidanceResult,
       guidanceIssues,
       guidanceProviderError,
+      safetyDecision,
       captureError,
       viewport,
       calibration,
@@ -914,6 +930,7 @@ function OverlayWindowApp() {
     setGuidanceProviderError(null);
     setGuidanceProviderMode(providerMode);
     setGuidanceIssues([]);
+    setSafetyDecision(null);
     setGuidanceRequest(null);
     setGuidanceResult(null);
     setCaptureMetadata(null);
@@ -963,8 +980,28 @@ function OverlayWindowApp() {
         setGuidanceProviderMode(providerResponse.mode);
         setGuidanceProviderError(providerResponse.error ?? null);
         setGuidanceIssues(providerResponse.validation?.issues ?? []);
-        setGuidanceResult(providerResponse.result ?? null);
-        setOverlayState(providerResponse.result ? "guiding" : "error");
+        const nextSafetyDecision = evaluateSafetyPolicy({
+          provider: providerResponse,
+          minConfidence: 0.7,
+        });
+
+        setSafetyDecision(nextSafetyDecision);
+
+        if (
+          nextSafetyDecision.action === "allow" ||
+          nextSafetyDecision.action === "confirm"
+        ) {
+          setGuidanceResult(providerResponse.result ?? null);
+          setOverlayState(
+            nextSafetyDecision.action === "confirm"
+              ? "confirmation_required"
+              : "guiding",
+          );
+        } else {
+          setGuidanceResult(null);
+          setGuidanceProviderError(nextSafetyDecision.message);
+          setOverlayState(nextSafetyDecision.action === "clarify" ? "idle" : "error");
+        }
         return;
       }
 
@@ -977,6 +1014,7 @@ function OverlayWindowApp() {
       const validation = validateGuidanceResult(nextGuidance);
 
       setGuidanceIssues(validation.issues);
+      setSafetyDecision(null);
       setGuidanceResult(validation.valid ? nextGuidance : null);
       setOverlayState(validation.valid ? "guiding" : "error");
     } catch (error) {
@@ -986,6 +1024,7 @@ function OverlayWindowApp() {
       }
       setGuidanceRequest(null);
       setGuidanceIssues([]);
+      setSafetyDecision(null);
       setGuidanceResult(null);
       setOverlayState("error");
     } finally {
@@ -2627,6 +2666,14 @@ function DebugWindowApp() {
               <div>
                 <dt>Provider</dt>
                 <dd>{snapshot.guidanceProviderMode}</dd>
+              </div>
+              <div>
+                <dt>Safety</dt>
+                <dd>{snapshot.safetyDecision?.action ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Reason</dt>
+                <dd>{snapshot.safetyDecision?.reason ?? "None"}</dd>
               </div>
               <div>
                 <dt>Fixture</dt>

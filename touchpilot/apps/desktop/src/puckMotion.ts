@@ -3,6 +3,7 @@ export type OverlayState =
   | "listening"
   | "thinking"
   | "guiding"
+  | "confirmation_required"
   | "paused"
   | "error";
 
@@ -62,6 +63,13 @@ export function getPuckMotionModel(input: PuckMotionInput): PuckMotionModel {
     return {
       state: "guiding",
       canSendTargetDroplets: true,
+    };
+  }
+
+  if (input.overlayState === "confirmation_required") {
+    return {
+      state: "forming",
+      canSendTargetDroplets: false,
     };
   }
 
