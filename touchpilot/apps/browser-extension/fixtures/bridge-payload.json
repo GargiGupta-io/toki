@@ -3,7 +3,7 @@
   "source": "browser-extension",
   "capturedAt": "2026-07-02T00:00:00.000Z",
   "page": {
-    "url": "file:///candidate-page.html",
+    "url": "http://127.0.0.1:8788/fixtures/candidate-page.html",
     "title": "Toki Candidate Fixture"
   },
   "viewport": {
@@ -27,6 +27,75 @@
         "tagName": "button",
         "href": null,
         "testId": "primary-action"
+      }
+    },
+    {
+      "id": "dom-delete-project-1",
+      "label": "Delete project",
+      "role": "dom_button",
+      "source": "dom",
+      "x": 240,
+      "y": 100,
+      "width": 100,
+      "height": 40,
+      "metadata": {
+        "tagName": "button",
+        "ariaLabel": "Delete project"
+      }
+    },
+    {
+      "id": "dom-open-settings-1",
+      "label": "Open settings",
+      "role": "dom_link",
+      "source": "dom",
+      "x": 360,
+      "y": 100,
+      "width": 120,
+      "height": 40,
+      "metadata": {
+        "tagName": "a",
+        "href": "#settings"
+      }
+    },
+    {
+      "id": "dom-project-name-1",
+      "label": "Project name",
+      "role": "dom_textbox",
+      "source": "dom",
+      "x": 100,
+      "y": 190,
+      "width": 560,
+      "height": 42,
+      "metadata": {
+        "tagName": "input",
+        "testId": "project-name-input"
+      }
+    },
+    {
+      "id": "dom-environment-selector-1",
+      "label": "Environment selector",
+      "role": "dom_combobox",
+      "source": "dom",
+      "x": 100,
+      "y": 285,
+      "width": 560,
+      "height": 42,
+      "metadata": {
+        "tagName": "select",
+        "ariaLabel": "Environment selector"
+      }
+    },
+    {
+      "id": "dom-add-notes-1",
+      "label": "Add notes",
+      "role": "dom_textbox",
+      "source": "dom",
+      "x": 100,
+      "y": 380,
+      "width": 560,
+      "height": 120,
+      "metadata": {
+        "tagName": "textarea"
       }
     }
   ]
