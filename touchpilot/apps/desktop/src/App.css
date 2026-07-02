@@ -536,6 +536,41 @@ html {
   text-underline-offset: 4px;
 }
 
+.debug-candidate-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.debug-candidate-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 10px;
+  border-radius: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.debug-candidate-list div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.debug-candidate-list strong {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.debug-candidate-list span {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
 .debug-device-list {
   display: grid;
   gap: 8px;

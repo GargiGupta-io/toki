@@ -1790,6 +1790,7 @@ function DebugWindowApp() {
   const guidancePayload = guidanceScreen?.screenshotPayload ?? null;
   const guidanceCandidateCount = guidanceScreen?.candidates?.length ?? 0;
   const guidanceCandidateSource = guidanceScreen?.candidateSource ?? "none";
+  const guidanceCandidates = guidanceScreen?.candidates?.slice(0, 8) ?? [];
   const guidancePayloadSize = guidancePayload
     ? `${(guidancePayload.byteLength / 1024 / 1024).toFixed(2)} MB`
     : "Missing";
@@ -2816,7 +2817,11 @@ function DebugWindowApp() {
               </div>
               <div>
                 <dt>Target</dt>
-                <dd>{target?.label ?? "None"}</dd>
+                <dd>
+                  {target?.candidateId
+                    ? `${target.label} (${target.candidateId})`
+                    : target?.label ?? "None"}
+                </dd>
               </div>
               <div>
                 <dt>Box</dt>
@@ -2915,6 +2920,42 @@ function DebugWindowApp() {
                 <dd>{guidanceScreen?.candidateError ?? "None"}</dd>
               </div>
             </dl>
+          </section>
+
+          <section className="debug-section debug-section-wide">
+            <h2>Ranked Candidates</h2>
+            {guidanceCandidates.length > 0 ? (
+              <ol className="debug-candidate-list">
+                {guidanceCandidates.map((candidate, index) => (
+                  <li key={candidate.id}>
+                    <div>
+                      <strong>
+                        {index + 1}. {candidate.label}
+                      </strong>
+                      <span>
+                        {candidate.id} / {candidate.role}
+                      </span>
+                    </div>
+                    <div>
+                      <span>
+                        {candidate.x}, {candidate.y}, {candidate.width} x{" "}
+                        {candidate.height}
+                      </span>
+                      {candidate.rank ? (
+                        <span>
+                          score {candidate.rank.score}:{" "}
+                          {candidate.rank.reasons.join(", ") || "no reasons"}
+                        </span>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="debug-muted">
+                No candidates were attached to the latest guidance request.
+              </p>
+            )}
           </section>
 
             </>
