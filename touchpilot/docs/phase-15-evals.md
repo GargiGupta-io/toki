@@ -101,6 +101,8 @@ Add shared eval data contracts:
 - expected safety action
 - expected workflow result
 
+Result: completed. `@toki/evals` now exports typed eval dataset contracts plus a small known-screen baseline dataset. The schema covers fixture sources, target annotations, ranking expectations, safety expectations, and workflow expectations.
+
 ### Step 15.3: Target Scoring Helpers
 
 Add pure scoring helpers:
