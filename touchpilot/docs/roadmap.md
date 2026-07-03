@@ -291,6 +291,12 @@ Status: Closed as a quality gate.
 - Step 9 result: workflow steps now inherit Phase 11 safety rules. Risky workflow steps require confirmation, the controlled delete-project workflow proves delete-risk metadata, runtime Next blocks confirmation-required steps, and the overlay cue shows a compact confirmation marker.
 - Step 10 result: Phase 13 is closed as the controlled multi-step workflow foundation. Schema, mock planning, runtime state, Debug inspection, overlay step cues, next/back/stop, candidate verification, workflow QA, and safety gating are in place. Live arbitrary dashboard accuracy remains a future browser/provider QA problem, not a Phase 13 claim.
 
+## Phase 13.5: Click-Aware Step Advancement
+
+- Goal: let Toki notice when the user clicks the highlighted target and continue the workflow after screen verification, without ever clicking for the user.
+- Active plan: `docs/phase-13-5-click-aware-step-advancement.md`.
+- Step 1 result: added `docs/phase-13-5-click-aware-step-advancement.md` with the product rule, selected Mac-first native listener approach, privacy/false-trigger/missed-click/permission mitigations, alternatives, step list, acceptance criteria, and non-goals. Phase 13.5 starts from the rule that click-aware advancement observes the user's own click and then verifies the screen; it does not add autonomous clicking.
+
 ## Phase 14: Visual Polish
 
 - Step 1 result: added `docs/phase-14-visual-polish.md` as the Phase 14 plan. The phase is scoped to cursor-first polish: puck proximity and edge behavior, compact guidance/workflow cues, subtle target rings, settings/menu popup polish, Debug cleanup, optional WebGL/R3F spike only if CSS is not enough, and manual visual QA.
