@@ -116,6 +116,8 @@ Result: completed. The desktop overlay runtime now owns a `WorkflowRuntimeState`
 
 Show minimal current-step UI near the cursor and add next/back/stop controls without turning the overlay into a dashboard.
 
+Result: completed. The overlay can now show a compact workflow step cue with the current step number, title, instruction, and Back/Next/Stop controls. Workflow targets can drive the existing pointer ring and puck target vector, while screen verification remains deferred to Step 13.7.
+
 ### Step 13.6: Debug Workflow View
 
 Add a Debug tab or section that shows the full workflow plan, current step, verification result, and blocked reason.
