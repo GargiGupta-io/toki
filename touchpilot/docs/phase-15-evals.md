@@ -136,6 +136,8 @@ Run risk fixtures through `evaluateSafetyPolicy()` and report:
 - reason
 - pass/fail
 
+Result: completed. `@toki/evals` now exports safety scoring helpers that run the real `evaluateSafetyPolicy()` gate and compare actual policy action/risk against expected eval annotations.
+
 ### Step 15.6: Known-Screen Eval CLI
 
 Add a CLI that runs deterministic known-screen fixtures and outputs a report.

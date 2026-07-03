@@ -315,6 +315,7 @@ Status: Closed as a quality gate.
 - Step 2 result: added typed eval dataset contracts in `@toki/evals` plus a known-screen baseline dataset covering target, ranking, and safety annotations for safe and risky browser fixture cases.
 - Step 3 result: added target scoring helpers in `@toki/evals` for center distance, center hit, IoU, normalized label matching, candidate id matching, and threshold-based pass/fail output.
 - Step 4 result: added candidate ranking helpers in `@toki/evals` for expected-candidate lookup, top-1/top-3/max-rank scoring, source breakdown, label mismatch reporting, and missing-candidate failures.
+- Step 5 result: added safety scoring helpers in `@toki/evals` that run the real `evaluateSafetyPolicy()` gate and compare actual policy action/risk against expected eval annotations.
 - Screenshot dataset.
 - Target annotations.
 - Coordinate scoring.
