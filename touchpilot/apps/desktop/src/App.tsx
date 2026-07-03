@@ -38,6 +38,7 @@ import type {
   VoiceRuntimeState,
   VoiceTranscript,
   WorkflowRuntimeState,
+  WorkflowStep,
 } from "@toki/shared";
 import { probeCameraDevices } from "./cameraDevices";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
@@ -117,6 +118,9 @@ type OverlayCommand =
   | { type: "set-guidance-fixture"; fixture: GuidanceFixture }
   | { type: "start-mock-workflow"; goal: string }
   | { type: "clear-workflow" }
+  | { type: "advance-workflow-step" }
+  | { type: "retreat-workflow-step" }
+  | { type: "stop-workflow" }
   | { type: "set-camera-enabled"; enabled: boolean }
   | {
       type: "set-camera-preview-status";
@@ -431,6 +435,57 @@ function StepBubble({
       <span className="bubble-anchor" aria-hidden="true" />
       <span className="step-cue-label">{target.label}</span>
       <span className="step-cue-text">{step?.instruction ?? target.instruction}</span>
+    </aside>
+  );
+}
+
+function WorkflowStepCue({
+  runtime,
+  step,
+  pointerShadow,
+  onPrevious,
+  onNext,
+  onStop,
+}: {
+  runtime: WorkflowRuntimeState;
+  step: WorkflowStep | null;
+  pointerShadow: PointerShadowPosition | null;
+  onPrevious: () => void;
+  onNext: () => void;
+  onStop: () => void;
+}) {
+  if (runtime.plan == null || step == null || pointerShadow == null) {
+    return null;
+  }
+
+  const isFirstStep = runtime.currentStepIndex <= 0;
+  const isLastStep = runtime.currentStepIndex >= runtime.plan.steps.length - 1;
+
+  return (
+    <aside
+      className="workflow-step-cue"
+      style={{
+        left: pointerShadow.x + 30,
+        top: pointerShadow.y + 52,
+      }}
+      aria-label={`Workflow step ${step.index + 1} of ${runtime.plan.steps.length}`}
+    >
+      <span className="workflow-step-count">
+        {step.index + 1}/{runtime.plan.steps.length}
+      </span>
+      <span className="workflow-step-title">{step.title}</span>
+      <span className="workflow-step-instruction">{step.instruction}</span>
+      <span className="workflow-step-actions">
+        <button type="button" onClick={onPrevious} disabled={isFirstStep}>
+          Back
+        </button>
+        <button type="button" onClick={onNext}>
+          {isLastStep ? "Done" : "Next"}
+        </button>
+        <button type="button" onClick={onStop}>
+          Stop
+        </button>
+      </span>
     </aside>
   );
 }
@@ -820,6 +875,41 @@ function createEmptyWorkflowRuntimeState(): WorkflowRuntimeState {
   };
 }
 
+function setWorkflowActiveStep(
+  runtime: WorkflowRuntimeState,
+  nextStepIndex: number,
+): WorkflowRuntimeState {
+  if (runtime.plan == null) {
+    return runtime;
+  }
+
+  const boundedIndex = Math.max(0, Math.min(nextStepIndex, runtime.plan.steps.length - 1));
+  const currentStep = runtime.plan.steps[boundedIndex];
+
+  return {
+    ...runtime,
+    status: currentStep == null ? "completed" : "active",
+    currentStepIndex: currentStep?.index ?? -1,
+    currentStepId: currentStep?.id,
+    lastVerification: {
+      status: "untested",
+    },
+    blockedReason: undefined,
+    plan: {
+      ...runtime.plan,
+      steps: runtime.plan.steps.map((step) => ({
+        ...step,
+        status:
+          step.index < boundedIndex
+            ? "completed"
+            : step.index === boundedIndex
+              ? "active"
+              : "pending",
+      })),
+    },
+  };
+}
+
 function createInactiveGestureClassification(): GestureClassification {
   return createDefaultGestureRuntimeState().currentGesture;
 }
@@ -884,13 +974,21 @@ function OverlayWindowApp() {
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep = activeStep?.target != null ? activeStep : null;
   const acceptedTarget = acceptedStep?.target ?? null;
-  const hasAcceptedGuidance = acceptedTarget != null;
+  const currentWorkflowStep =
+    workflowRuntime.plan?.steps[workflowRuntime.currentStepIndex] ?? null;
+  const workflowTarget = currentWorkflowStep?.target ?? null;
+  const hasAcceptedGuidance = acceptedTarget != null || workflowTarget != null;
   const activeTarget: RenderedGuidanceTarget =
     acceptedTarget != null && acceptedStep != null
       ? {
           ...acceptedTarget,
           instruction: acceptedStep.instruction,
         }
+      : workflowTarget != null && currentWorkflowStep != null
+        ? {
+            ...workflowTarget,
+            instruction: currentWorkflowStep.instruction,
+          }
       : testTarget;
   const puckMotion = getPuckMotionModel({
     overlayState,
@@ -900,9 +998,10 @@ function OverlayWindowApp() {
     hasCaptureError: captureError != null,
     guidanceIssueCount: guidanceIssues.length,
   });
+  const puckVectorTarget = acceptedTarget ?? workflowTarget;
   const puckTargetVector =
-    puckMotion.canSendTargetDroplets && acceptedTarget != null
-      ? getPuckTargetVector(acceptedTarget, viewport)
+    puckMotion.canSendTargetDroplets && puckVectorTarget != null
+      ? getPuckTargetVector(puckVectorTarget, viewport)
       : null;
   const calibration = useMemo(
     () => getCalibration(captureMetadata, viewport),
@@ -1239,21 +1338,78 @@ function OverlayWindowApp() {
           return;
         }
 
-        const firstStep = plan.steps[0];
-        setWorkflowRuntime({
-          status: firstStep != null ? "active" : "completed",
-          plan,
-          currentStepIndex: firstStep?.index ?? -1,
-          currentStepId: firstStep?.id,
-          lastVerification: {
-            status: "untested",
-          },
-        });
+        setOverlayState("guiding");
+        setWorkflowRuntime(
+          setWorkflowActiveStep(
+            {
+              status: "planning",
+              plan,
+              currentStepIndex: 0,
+              lastVerification: {
+                status: "untested",
+              },
+            },
+            0,
+          ),
+        );
         return;
       }
 
       if (event.payload.type === "clear-workflow") {
         setWorkflowRuntime(createEmptyWorkflowRuntimeState());
+        return;
+      }
+
+      if (event.payload.type === "advance-workflow-step") {
+        setWorkflowRuntime((currentState) => {
+          if (currentState.plan == null) {
+            return currentState;
+          }
+
+          const isLastStep =
+            currentState.currentStepIndex >= currentState.plan.steps.length - 1;
+
+          if (isLastStep) {
+            setOverlayState("idle");
+            return {
+              ...setWorkflowActiveStep(currentState, currentState.currentStepIndex),
+              status: "completed",
+              currentStepId: undefined,
+              lastVerification: {
+                status: "untested",
+                message: "Workflow marked complete manually.",
+              },
+            };
+          }
+
+          setOverlayState("guiding");
+          return setWorkflowActiveStep(currentState, currentState.currentStepIndex + 1);
+        });
+        return;
+      }
+
+      if (event.payload.type === "retreat-workflow-step") {
+        setWorkflowRuntime((currentState) =>
+          setWorkflowActiveStep(currentState, currentState.currentStepIndex - 1),
+        );
+        setOverlayState("guiding");
+        return;
+      }
+
+      if (event.payload.type === "stop-workflow") {
+        setWorkflowRuntime((currentState) => ({
+          ...createEmptyWorkflowRuntimeState(),
+          status: currentState.plan == null ? "idle" : "cancelled",
+          plan: currentState.plan,
+          currentStepIndex: currentState.currentStepIndex,
+          currentStepId: currentState.currentStepId,
+          lastVerification: {
+            status: "blocked",
+            message: "Workflow stopped manually.",
+          },
+          blockedReason: "Workflow stopped manually.",
+        }));
+        setOverlayState("idle");
         return;
       }
 
@@ -1621,6 +1777,28 @@ function OverlayWindowApp() {
         pointerShadow={pointerShadow}
         targetVector={puckTargetVector}
       />
+      {workflowRuntime.status === "active" ? (
+        <WorkflowStepCue
+          runtime={workflowRuntime}
+          step={currentWorkflowStep}
+          pointerShadow={pointerShadow}
+          onPrevious={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "retreat-workflow-step",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onNext={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "advance-workflow-step",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onStop={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "stop-workflow",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+        />
+      ) : null}
       <VoiceStatusCue voiceRuntime={voiceRuntime} pointerShadow={pointerShadow} />
     </main>
   );
