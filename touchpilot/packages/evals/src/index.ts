@@ -29,6 +29,16 @@ export {
   scoreTargetMatch,
 } from "./targetScoring";
 export type {
+  WorkflowTransitionKind,
+  WorkflowTransitionScoreResult,
+  WorkflowTransitionSnapshot,
+  WorkflowVerificationScoreResult,
+} from "./workflowScoring";
+export {
+  scoreWorkflowTransition,
+  scoreWorkflowVerification,
+} from "./workflowScoring";
+export type {
   EvalCase,
   EvalCaseKind,
   EvalDataset,
