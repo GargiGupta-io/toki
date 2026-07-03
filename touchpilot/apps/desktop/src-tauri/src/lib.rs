@@ -4,17 +4,21 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
-    menu::MenuBuilder, tray::TrayIconBuilder, Manager, PhysicalPosition, PhysicalSize, Position,
-    Size, State,
+    menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, PhysicalPosition, PhysicalSize,
+    Position, Size, State,
 };
+use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 use toki_capture::{
     capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
 };
+
+static VOICE_SHORTCUT_HELD: AtomicBool = AtomicBool::new(false);
 
 #[derive(Default)]
 struct VoiceCaptureStore {
@@ -36,6 +40,15 @@ struct VoiceCaptureStreamInfo {
     sample_rate: u32,
     channels: u16,
     device_name: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type")]
+enum OverlayCommandPayload {
+    #[serde(rename = "start-voice-listening")]
+    StartVoiceListening { source: &'static str },
+    #[serde(rename = "submit-voice-listening")]
+    SubmitVoiceListening,
 }
 
 #[derive(Serialize)]
@@ -812,6 +825,34 @@ fn show_settings_window(app: &tauri::AppHandle) {
     }
 }
 
+fn emit_overlay_command(app: &tauri::AppHandle, payload: OverlayCommandPayload) {
+    if let Err(error) = app.emit_to("overlay", "toki://overlay-command", payload) {
+        eprintln!("failed to emit overlay command: {error}");
+    }
+}
+
+fn handle_voice_shortcut(app: &tauri::AppHandle, state: ShortcutState) {
+    match state {
+        ShortcutState::Pressed => {
+            if VOICE_SHORTCUT_HELD.swap(true, Ordering::SeqCst) {
+                return;
+            }
+
+            emit_overlay_command(
+                app,
+                OverlayCommandPayload::StartVoiceListening { source: "hotkey" },
+            );
+        }
+        ShortcutState::Released => {
+            if !VOICE_SHORTCUT_HELD.swap(false, Ordering::SeqCst) {
+                return;
+            }
+
+            emit_overlay_command(app, OverlayCommandPayload::SubmitVoiceListening);
+        }
+    }
+}
+
 #[tauri::command]
 fn native_voice_capture_status(
     store: State<'_, Mutex<VoiceCaptureStore>>,
@@ -1159,6 +1200,15 @@ fn native_cursor_position() -> Result<NativeCursorPosition, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcut(Shortcut::new(Some(Modifiers::ALT), Code::Space))
+                .expect("failed to configure Toki voice shortcut")
+                .with_handler(|app, _shortcut, event| {
+                    handle_voice_shortcut(app, event.state());
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(VoiceCaptureStore::default()))
         .setup(|app| {
