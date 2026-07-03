@@ -274,6 +274,49 @@ export type WorkflowRuntimeState = {
   blockedReason?: string;
 };
 
+export type ClickAwarePermissionState =
+  | "unknown"
+  | "ready"
+  | "unsupported"
+  | "denied"
+  | "error";
+
+export type ClickAwareHitStatus =
+  | "idle"
+  | "armed"
+  | "hit"
+  | "miss"
+  | "advancing"
+  | "disabled"
+  | "error";
+
+export type ClickAwareNativeClick = {
+  x: number;
+  y: number;
+  button: "left";
+  timestampMs: number;
+  source: "native-macos-coregraphics" | "unsupported";
+};
+
+export type ClickAwareRuntimeState = {
+  enabled: boolean;
+  armed: boolean;
+  permission: ClickAwarePermissionState;
+  status: ClickAwareHitStatus;
+  targetId?: string;
+  targetLabel?: string;
+  hitPadding: number;
+  lastClick?: ClickAwareNativeClick;
+  lastHit?: {
+    status: "hit" | "miss";
+    targetId?: string;
+    targetLabel?: string;
+    distanceFromCenter: number;
+    checkedAt: string;
+  };
+  message?: string;
+};
+
 export type SafetyPolicyAction = "allow" | "confirm" | "clarify" | "block";
 
 export type SafetyPolicyReason =
