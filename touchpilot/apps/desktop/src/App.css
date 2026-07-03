@@ -1055,49 +1055,6 @@ h1 {
   user-select: none;
   z-index: 6;
 }
-
-.blob-container {
-  position: relative;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.blob-puck-filter {
-  position: absolute;
-  width: 0;
-  height: 0;
-}
-
-.blob-main {
-  pointer-events: none;
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: transparent;
-  user-select: none;
-  cursor: default;
-}
-
-.blob {
-  position: absolute;
-  will-change: transform, opacity;
-  transform: translate(-50%, -50%);
-}
-
-.inner-dot {
-  position: absolute;
-}
-
-.blob-puck[data-motion="paused"] .blob {
-  filter: grayscale(0.28) saturate(0.76);
-}
-
-.blob-puck[data-motion="error"] .blob {
-  background: #ff3860 !important;
-}
 @keyframes target-pulse {
   0% {
     transform: scale(0.96);
