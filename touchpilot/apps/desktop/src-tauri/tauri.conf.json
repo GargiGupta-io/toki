@@ -63,6 +63,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "GargiGupta-io",
+    "category": "Productivity",
+    "shortDescription": "Cursor-first AI screen guidance assistant.",
+    "longDescription": "Toki is a desktop guidance assistant that uses voice, screen context, and cursor-adjacent visual cues to help users find the next target without taking control of their computer.",
+    "copyright": "Copyright 2026 GargiGupta-io",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

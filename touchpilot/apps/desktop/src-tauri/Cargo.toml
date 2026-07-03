@@ -1,8 +1,8 @@
 [package]
 name = "toki-desktop"
 version = "0.1.0"
-description = "Cross-platform AI screen guide desktop shell"
-authors = ["you"]
+description = "Toki desktop screen guidance shell"
+authors = ["GargiGupta-io"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
