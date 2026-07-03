@@ -129,6 +129,22 @@ Only if CSS cannot reach the desired puck/target feel:
 - measure bundle/performance impact
 - do not move all overlay UI into WebGL
 
+Result: deferred. Instead of jumping to WebGL/R3F, Toki now uses a lighter React Bits-inspired blob puck with GSAP. This keeps the renderer in React/CSS, avoids a full Three.js dependency, and preserves the current CSS puck as the reduced-motion fallback.
+
+### Step 14.12: React Bits Blob Puck
+
+Add a stronger liquid cursor companion inspired by React Bits Blob Cursor:
+
+- add `gsap`
+- create a Toki-specific `BlobPuck`
+- drive blob movement from native cursor polling, not `onMouseMove`
+- keep the blob close to the real cursor
+- preserve edge flipping/clamping through `overlayGeometry`
+- keep the old CSS puck as the reduced-motion fallback
+- tune the blob toward a visible blue/purple liquid look
+
+Result: completed. `BlobPuck` now renders a merged blue-purple droplet using GSAP-controlled blob nodes and an SVG blur/color-matrix filter. Unlike the React Bits reference, Toki does not listen to overlay mouse movement because the overlay is click-through. The blob receives `pointerShadow` from native cursor polling, so it follows the same OS cursor path as the previous puck. The older CSS puck remains inside a fallback wrapper and is shown for reduced-motion users.
+
 Result: completed as a documented deferral in `docs/phase-14-webgl-r3f-spike.md`. CSS is currently good enough for the Phase 14 baseline, so we did not add Three.js/R3F dependencies. The doc records the trigger conditions, adapter shape, dependency boundary, and acceptance criteria for a future spike.
 
 ### Step 14.9: Performance And Reduced Motion QA

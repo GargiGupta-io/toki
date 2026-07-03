@@ -317,6 +317,7 @@ Status: Closed as a quality gate.
 - Step 9 result: added `npm run qa:visual:motion` to guard reduced-motion coverage, decorative animation disabling, cursor polling responsiveness, pointer pulse fallback, and compositor-friendly puck motion properties.
 - Step 10 result: added `docs/phase-14-manual-visual-qa.md` and `npm run qa:visual:manual` as the human product-feel gate for default runtime, settings/menu panel, target ring, workflow cue, Debug, and reduced-motion review.
 - Step 11 result: Phase 14 is closed for implementation and QA guardrails. Closure checks passed for visual motion QA, manual checklist command, and desktop typecheck. Final product-feel acceptance still requires launching Toki and walking through the manual visual QA checklist.
+- Step 12 result: added a React Bits-inspired blob puck. Toki now uses `gsap` to animate a blue-purple liquid blob driven by native cursor polling, not overlay mouse events, while keeping the previous CSS puck as the reduced-motion fallback. Edge flipping/clamping still comes from the shared overlay geometry.
 - Refined overlay design system.
 - Optional `react-three-fiber` guidance/puck spike with CSS fallback.
 - Selective liquid/glass surface polish where it improves product feel.
