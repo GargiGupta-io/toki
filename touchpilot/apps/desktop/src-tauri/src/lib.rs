@@ -21,6 +21,11 @@ use toki_capture::{
 static VOICE_SHORTCUT_HELD: AtomicBool = AtomicBool::new(false);
 
 #[derive(Default)]
+struct NativeClickMonitorState {
+    armed: AtomicBool,
+}
+
+#[derive(Default)]
 struct VoiceCaptureStore {
     active_session: Option<VoiceCaptureSession>,
 }
@@ -56,6 +61,30 @@ enum OverlayCommandPayload {
 struct NativeCursorPosition {
     x: f64,
     y: f64,
+    source: &'static str,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeClickMonitorRequest {
+    armed: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeClickMonitorStatus {
+    armed: bool,
+    supported: bool,
+    source: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeClickEvent {
+    x: f64,
+    y: f64,
+    button: &'static str,
+    timestamp_ms: u128,
     source: &'static str,
 }
 
@@ -193,6 +222,7 @@ mod native_cursor {
     extern "C" {
         fn CGEventCreate(source: *const c_void) -> *mut c_void;
         fn CGEventGetLocation(event: *mut c_void) -> CGPoint;
+        fn CGEventSourceButtonState(state_id: i32, button: u32) -> bool;
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
@@ -213,6 +243,18 @@ mod native_cursor {
         }
 
         Ok((location.x, location.y))
+    }
+
+    pub fn left_mouse_button_down() -> bool {
+        const K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: i32 = 0;
+        const K_CG_MOUSE_BUTTON_LEFT: u32 = 0;
+
+        unsafe {
+            CGEventSourceButtonState(
+                K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE,
+                K_CG_MOUSE_BUTTON_LEFT,
+            )
+        }
     }
 }
 
@@ -853,6 +895,86 @@ fn handle_voice_shortcut(app: &tauri::AppHandle, state: ShortcutState) {
     }
 }
 
+fn emit_native_click(app: &tauri::AppHandle, payload: NativeClickEvent) {
+    if let Err(error) = app.emit_to("overlay", "toki://native-click", payload) {
+        eprintln!("failed to emit native click: {error}");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn start_native_click_monitor(
+    app: tauri::AppHandle,
+    monitor_state: Arc<NativeClickMonitorState>,
+) {
+    thread::spawn(move || {
+        let mut was_down = false;
+
+        loop {
+            thread::sleep(Duration::from_millis(16));
+
+            if !monitor_state.armed.load(Ordering::SeqCst) {
+                was_down = false;
+                continue;
+            }
+
+            let is_down = native_cursor::left_mouse_button_down();
+
+            if is_down && !was_down {
+                match native_cursor::cursor_position() {
+                    Ok((x, y)) => emit_native_click(
+                        &app,
+                        NativeClickEvent {
+                            x,
+                            y,
+                            button: "left",
+                            timestamp_ms: now_ms(),
+                            source: "native-macos-coregraphics",
+                        },
+                    ),
+                    Err(error) => eprintln!("native click monitor cursor error: {error}"),
+                }
+            }
+
+            was_down = is_down;
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn start_native_click_monitor(
+    _app: tauri::AppHandle,
+    _monitor_state: Arc<NativeClickMonitorState>,
+) {
+}
+
+#[tauri::command]
+fn native_click_monitor_set_armed(
+    request: NativeClickMonitorRequest,
+    monitor_state: State<'_, Arc<NativeClickMonitorState>>,
+) -> NativeClickMonitorStatus {
+    #[cfg(target_os = "macos")]
+    {
+        monitor_state.armed.store(request.armed, Ordering::SeqCst);
+
+        return NativeClickMonitorStatus {
+            armed: request.armed,
+            supported: true,
+            source: "native-macos-coregraphics",
+        };
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        monitor_state.armed.store(false, Ordering::SeqCst);
+
+        NativeClickMonitorStatus {
+            armed: false,
+            supported: false,
+            source: "unsupported",
+        }
+    }
+}
+
 #[tauri::command]
 fn native_voice_capture_status(
     store: State<'_, Mutex<VoiceCaptureStore>>,
@@ -1199,6 +1321,8 @@ fn native_cursor_position() -> Result<NativeCursorPosition, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let native_click_monitor_state = Arc::new(NativeClickMonitorState::default());
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -1211,7 +1335,10 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(VoiceCaptureStore::default()))
+        .manage(native_click_monitor_state.clone())
         .setup(|app| {
+            start_native_click_monitor(app.handle().clone(), native_click_monitor_state);
+
             if let Some(overlay) = app.get_webview_window("overlay") {
                 let _ = overlay.set_title(" ");
                 let _ = overlay.set_decorations(false);
@@ -1324,6 +1451,7 @@ pub fn run() {
             capture_screenshot,
             collect_screen_candidates,
             hide_settings_window,
+            native_click_monitor_set_armed,
             native_cursor_position,
             native_voice_capture_status,
             native_voice_capture_start,
