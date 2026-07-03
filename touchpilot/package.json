@@ -19,6 +19,7 @@
     "qa:browser:known-screen": "node scripts/browser-known-screen-qa.mjs",
     "qa:fallback:known-screen": "node scripts/fallback-known-screen-qa.mjs",
     "qa:workflow:known-screen": "node --import tsx scripts/workflow-known-screen-qa.mjs",
+    "qa:eval:known-screen": "npm --workspace @toki/evals run known-screen",
     "qa:visual:motion": "node scripts/visual-motion-qa.mjs",
     "qa:visual:manual": "bash scripts/macos-visual-manual-qa.sh",
     "rust:check": "cargo check --workspace",

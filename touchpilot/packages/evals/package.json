@@ -5,10 +5,15 @@
   "type": "module",
   "description": "Evaluation harness for screen-target accuracy and risk classification.",
   "scripts": {
+    "known-screen": "node --import tsx src/knownScreenCli.ts",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
     "@toki/ai": "0.1.0",
     "@toki/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.4"
   }
 }
