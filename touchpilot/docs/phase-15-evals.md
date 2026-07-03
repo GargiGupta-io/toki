@@ -144,6 +144,8 @@ Add a CLI that runs deterministic known-screen fixtures and outputs a report.
 
 It should not require a running desktop app.
 
+Result: completed. `npm run qa:eval:known-screen` now runs the known-screen baseline dataset without launching the desktop app. It loads the browser fixture, normalizes older DOM textbox roles, scores target/ranking/safety annotations, prints pass/fail lines per case, and exits nonzero on failures.
+
 ### Step 15.7: Workflow Eval
 
 Reuse Phase 13 workflow fixtures to score:
