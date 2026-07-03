@@ -23,6 +23,7 @@ import type {
   GuidanceProviderMode,
   GuidanceProviderResponse,
   GuidanceResult,
+  GuidanceSession,
   GuidanceStep,
   GuidanceValidationIssue,
   GestureActionEvent,
@@ -103,6 +104,7 @@ type DebugSnapshot = OverlaySnapshot & {
   screenshotCapture: ScreenshotCapture | null;
   guidanceRequest: GuidanceRequest | null;
   guidanceResult: GuidanceResult | null;
+  guidanceSession: GuidanceSession | null;
   guidanceIssues: GuidanceValidationIssue[];
   guidanceProviderError: string | null;
   safetyDecision: SafetyPolicyDecision | null;
@@ -890,6 +892,75 @@ function createDefaultVoiceRuntimeState(): VoiceRuntimeState {
   };
 }
 
+function createGuidanceSession(goal: string, now = new Date().toISOString()): GuidanceSession {
+  return {
+    id: `guidance-${Date.now().toString(36)}`,
+    originalGoal: goal,
+    currentStepIndex: 0,
+    steps: [],
+    lastScreenshot: null,
+    previousTargets: [],
+    completedTargets: [],
+    failedTargets: [],
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function getGuidanceSessionContext(session: GuidanceSession): GuidanceRequest["session"] {
+  return {
+    id: session.id,
+    originalGoal: session.originalGoal,
+    currentStepIndex: session.currentStepIndex,
+    status: session.status,
+    previousTargets: session.previousTargets.map((record) => record.target),
+    completedTargets: session.completedTargets.map((record) => record.target),
+    failedTargets: session.failedTargets.map((record) => record.target),
+  };
+}
+
+function recordGuidanceSessionResult({
+  session,
+  result,
+  screenshot,
+  providerMode,
+  allowed,
+}: {
+  session: GuidanceSession;
+  result: GuidanceResult | null | undefined;
+  screenshot: ScreenshotMetadata | null;
+  providerMode: GuidanceProviderMode;
+  allowed: boolean;
+}): GuidanceSession {
+  const now = new Date().toISOString();
+  const step = result?.step ?? null;
+  const target = step?.target ?? null;
+  const nextStepIndex = target == null ? session.currentStepIndex : session.steps.length;
+  const targetRecord =
+    target == null
+      ? null
+      : {
+          stepIndex: nextStepIndex,
+          recordedAt: now,
+          target,
+          instruction: step?.instruction,
+          confidence: step?.confidence,
+          providerMode,
+        };
+
+  return {
+    ...session,
+    currentStepIndex: nextStepIndex,
+    steps: step == null ? session.steps : [...session.steps, step],
+    lastScreenshot: screenshot,
+    previousTargets:
+      targetRecord == null ? session.previousTargets : [...session.previousTargets, targetRecord],
+    status: allowed && target != null ? "waiting_for_user" : "blocked",
+    updatedAt: now,
+  };
+}
+
 function createEmptyWorkflowRuntimeState(): WorkflowRuntimeState {
   return {
     status: "idle",
@@ -1047,6 +1118,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     screenshotCapture: null,
     guidanceRequest: null,
     guidanceResult: null,
+    guidanceSession: null,
     guidanceIssues: [],
     guidanceProviderError: null,
     safetyDecision: null,
@@ -1065,6 +1137,7 @@ function OverlayWindowApp() {
     useState<GuidanceProviderMode>("unavailable");
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
+  const [guidanceSession, setGuidanceSession] = useState<GuidanceSession | null>(null);
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
   const [guidanceProviderError, setGuidanceProviderError] = useState<string | null>(
     null,
@@ -1152,6 +1225,7 @@ function OverlayWindowApp() {
       screenshotCapture,
       guidanceRequest,
       guidanceResult,
+      guidanceSession,
       guidanceIssues,
       guidanceProviderError,
       safetyDecision,
@@ -1168,6 +1242,7 @@ function OverlayWindowApp() {
       screenshotCapture,
       guidanceRequest,
       guidanceResult,
+      guidanceSession,
       guidanceIssues,
       guidanceProviderError,
       safetyDecision,
@@ -1211,6 +1286,22 @@ function OverlayWindowApp() {
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
       const screenshotMetadata = getScreenshotMetadata(screenshot);
+      const shouldTrackSession = providerMode === "real";
+      const nextSession =
+        shouldTrackSession && guidanceSession?.originalGoal === goal
+          ? {
+              ...guidanceSession,
+              status: "active" as const,
+              updatedAt: new Date().toISOString(),
+            }
+          : shouldTrackSession
+            ? createGuidanceSession(goal)
+            : null;
+
+      if (nextSession != null) {
+        setGuidanceSession(nextSession);
+      }
+
       const screenshotPayload =
         providerMode === "real"
           ? await getProviderScreenshotPayload(screenshot)
@@ -1234,6 +1325,7 @@ function OverlayWindowApp() {
           ...candidateContext,
         },
         previousStep: guidanceResult?.step ?? null,
+        session: nextSession == null ? undefined : getGuidanceSessionContext(nextSession),
       };
       setGuidanceRequest(nextGuidanceRequest);
 
@@ -1252,10 +1344,23 @@ function OverlayWindowApp() {
 
         setSafetyDecision(nextSafetyDecision);
 
-        if (
+        const guidanceAllowed =
           nextSafetyDecision.action === "allow" ||
-          nextSafetyDecision.action === "confirm"
-        ) {
+          nextSafetyDecision.action === "confirm";
+
+        if (nextSession != null) {
+          setGuidanceSession(
+            recordGuidanceSessionResult({
+              session: nextSession,
+              result: providerResponse.result,
+              screenshot: screenshotMetadata,
+              providerMode: providerResponse.mode,
+              allowed: guidanceAllowed,
+            }),
+          );
+        }
+
+        if (guidanceAllowed) {
           setGuidanceResult(providerResponse.result ?? null);
           setOverlayState(
             nextSafetyDecision.action === "confirm"
@@ -1336,6 +1441,15 @@ function OverlayWindowApp() {
       if (providerMode === "real") {
         setGuidanceProviderMode("unavailable");
       }
+      setGuidanceSession((currentSession) =>
+        currentSession == null
+          ? currentSession
+          : {
+              ...currentSession,
+              status: "error",
+              updatedAt: new Date().toISOString(),
+            },
+      );
       setGuidanceRequest(null);
       setGuidanceIssues([]);
       setSafetyDecision(null);
@@ -3478,6 +3592,22 @@ function DebugWindowApp() {
                 <dd>{guidanceGoal}</dd>
               </div>
               <div>
+                <dt>Session</dt>
+                <dd>{snapshot.guidanceSession?.id ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Session status</dt>
+                <dd>{snapshot.guidanceSession?.status ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Session step</dt>
+                <dd>
+                  {snapshot.guidanceSession
+                    ? `${snapshot.guidanceSession.currentStepIndex + 1}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
                 <dt>Risk</dt>
                 <dd>{guidanceStep?.risk ?? "None"}</dd>
               </div>
@@ -3558,6 +3688,12 @@ function DebugWindowApp() {
             {snapshot.guidanceProviderError ? (
               <p className="debug-muted">
                 Provider unavailable: {snapshot.guidanceProviderError}
+              </p>
+            ) : null}
+            {snapshot.guidanceSession ? (
+              <p className="debug-muted">
+                Session remembers {snapshot.guidanceSession.previousTargets.length} target(s)
+                for "{snapshot.guidanceSession.originalGoal}".
               </p>
             ) : null}
           </section>
