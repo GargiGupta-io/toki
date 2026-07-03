@@ -82,6 +82,8 @@ Improve the cursor companion:
 - keep reduced-motion stable
 - document when native cursor/R3F should replace CSS
 
+Result: completed. The puck geometry now places the puck very close to the cursor by default, flips it left/up when it would overflow near screen edges, and computes target droplet vectors from the actual cursor-following puck position instead of the old bottom-right fallback anchor.
+
 ### Step 14.5: Target Ring Polish
 
 Make target guidance feel less mock-like:
