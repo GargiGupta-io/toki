@@ -20,21 +20,21 @@ export function BlobPuck({
           clientY: pointerShadow.y + pointerShadowGeometry.height / 2,
         }}
         blobType="circle"
-        fillColor="rgba(82, 39, 255, 0.62)"
+        fillColor="rgba(82, 39, 255, 0.82)"
         trailCount={3}
-        sizes={[34, 54, 42]}
+        sizes={[42, 64, 52]}
         innerSizes={[0, 0, 0]}
         innerColor="rgba(255,255,255,0)"
-        opacities={[0.58, 0.42, 0.46]}
-        shadowColor="rgba(0,0,0,0.42)"
-        shadowBlur={7}
-        shadowOffsetX={5}
-        shadowOffsetY={7}
+        opacities={[0.78, 0.68, 0.7]}
+        shadowColor="rgba(0,0,0,0.52)"
+        shadowBlur={8}
+        shadowOffsetX={6}
+        shadowOffsetY={8}
         filterId="toki-blob-puck"
-        filterStdDeviation={18}
+        filterStdDeviation={26}
         useFilter={true}
-        fastDuration={0.08}
-        slowDuration={0.18}
+        fastDuration={0.07}
+        slowDuration={0.1}
         zIndex={100}
       />
     </span>
