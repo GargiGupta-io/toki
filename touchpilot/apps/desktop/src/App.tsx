@@ -126,6 +126,7 @@ type OverlayCommand =
   | { type: "set-guidance-fixture"; fixture: GuidanceFixture }
   | { type: "start-mock-workflow"; goal: string }
   | { type: "clear-workflow" }
+  | { type: "continue-guidance-session" }
   | { type: "advance-workflow-step" }
   | { type: "retreat-workflow-step" }
   | { type: "stop-workflow" }
@@ -793,6 +794,61 @@ function getScreenshotPayload(screenshot: ScreenshotCapture) {
 }
 
 type ScreenshotPayload = ReturnType<typeof getScreenshotPayload>;
+
+function getScreenshotSignature(screenshot: ScreenshotMetadata | ScreenshotCapture | null) {
+  if (screenshot == null) {
+    return "none";
+  }
+
+  const base = [
+    screenshot.source,
+    screenshot.format,
+    screenshot.imageWidth,
+    screenshot.imageHeight,
+    screenshot.byteLength,
+    screenshot.activeWindow?.appName ?? "",
+    screenshot.activeWindow?.title ?? "",
+  ].join(":");
+
+  if (!("imageBase64" in screenshot)) {
+    return base;
+  }
+
+  const sample = `${screenshot.imageBase64.slice(0, 96)}:${screenshot.imageBase64.slice(-96)}`;
+  return `${base}:${sample}`;
+}
+
+function verifySessionScreenChange(
+  session: GuidanceSession,
+  screenshot: ScreenshotCapture,
+): NonNullable<GuidanceSession["lastVerification"]> {
+  const checkedAt = new Date().toISOString();
+
+  if (session.lastScreenshot == null) {
+    return {
+      status: "changed",
+      checkedAt,
+      message: "No previous session screenshot was available, so the next step can proceed.",
+    };
+  }
+
+  const previousSignature = getScreenshotSignature(session.lastScreenshot);
+  const nextSignature = getScreenshotSignature(screenshot);
+
+  if (previousSignature === nextSignature) {
+    return {
+      status: "unchanged",
+      checkedAt,
+      message: "The screen does not appear to have changed after the last target.",
+    };
+  }
+
+  return {
+    status: "changed",
+    checkedAt,
+    message: "The screen changed after the last target.",
+  };
+}
 
 const MAX_PROVIDER_SCREENSHOT_EDGE = 1024;
 const PROVIDER_SCREENSHOT_JPEG_QUALITY = 0.76;
@@ -1534,6 +1590,73 @@ function OverlayWindowApp() {
     }
   }
 
+  async function continueGuidanceSession() {
+    if (guidanceSession == null) {
+      setGuidanceProviderError("No active guidance session is available.");
+      return;
+    }
+
+    if (guidanceSession.status !== "waiting_for_user") {
+      setGuidanceProviderError(
+        `Guidance session is ${guidanceSession.status}; it is not waiting for a click.`,
+      );
+      return;
+    }
+
+    setIsRefreshingCapture(true);
+    setCaptureError(null);
+    setGuidanceProviderError(null);
+
+    try {
+      const [metadata, screenshot] = await Promise.all([
+        invoke<CaptureMetadata>("capture_metadata"),
+        invoke<ScreenshotCapture>("capture_screenshot"),
+      ]);
+      const verification = verifySessionScreenChange(guidanceSession, screenshot);
+
+      setCaptureMetadata(metadata);
+      setScreenshotCapture(screenshot);
+
+      if (verification.status !== "changed") {
+        setGuidanceSession({
+          ...guidanceSession,
+          status: "blocked",
+          lastVerification: verification,
+          updatedAt: verification.checkedAt ?? new Date().toISOString(),
+        });
+        setGuidanceProviderError(verification.message ?? "Screen change was not verified.");
+        setOverlayState("idle");
+        return;
+      }
+
+      setGuidanceSession({
+        ...guidanceSession,
+        status: "active",
+        lastVerification: verification,
+        updatedAt: verification.checkedAt ?? new Date().toISOString(),
+      });
+    } catch (error) {
+      const message = formatCaptureError(error);
+      setCaptureError(message);
+      setGuidanceSession({
+        ...guidanceSession,
+        status: "error",
+        lastVerification: {
+          status: "blocked",
+          checkedAt: new Date().toISOString(),
+          message,
+        },
+        updatedAt: new Date().toISOString(),
+      });
+      setOverlayState("error");
+      return;
+    } finally {
+      setIsRefreshingCapture(false);
+    }
+
+    await refreshCaptureMetadata(guidanceSession.originalGoal, "real");
+  }
+
   function cancelVoiceRuntime() {
     voiceSessionRef.current?.abort();
     voiceSessionRef.current = null;
@@ -1677,6 +1800,11 @@ function OverlayWindowApp() {
 
       if (event.payload.type === "clear-workflow") {
         setWorkflowRuntime(createEmptyWorkflowRuntimeState());
+        return;
+      }
+
+      if (event.payload.type === "continue-guidance-session") {
+        await continueGuidanceSession();
         return;
       }
 
@@ -3569,6 +3697,18 @@ function DebugWindowApp() {
               >
                 Real smoke
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "continue-guidance-session" });
+                }}
+                disabled={
+                  snapshot.isRefreshingCapture ||
+                  snapshot.guidanceSession?.status !== "waiting_for_user"
+                }
+              >
+                Continue
+              </button>
             </div>
             <dl>
               <div>
@@ -3606,6 +3746,10 @@ function DebugWindowApp() {
                     ? `${snapshot.guidanceSession.currentStepIndex + 1}`
                     : "None"}
                 </dd>
+              </div>
+              <div>
+                <dt>Session check</dt>
+                <dd>{snapshot.guidanceSession?.lastVerification?.status ?? "None"}</dd>
               </div>
               <div>
                 <dt>Risk</dt>
