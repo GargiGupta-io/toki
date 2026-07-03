@@ -98,12 +98,20 @@ const baseCandidates = Array.isArray(payload.candidates) ? payload.candidates : 
 const plan = createMockWorkflowPlan("Create a project", {
   createdAt: "2026-07-03T00:00:00.000Z",
 });
+const deletePlan = createMockWorkflowPlan("Delete project", {
+  createdAt: "2026-07-03T00:00:00.000Z",
+});
 
 console.log("Toki workflow known-screen QA");
 console.log(`Payload: ${fixturePath}`);
 
 if (plan == null) {
   fail("create-project workflow plan is missing");
+  process.exit();
+}
+
+if (deletePlan == null) {
+  fail("delete-project workflow plan is missing");
   process.exit();
 }
 
@@ -167,6 +175,24 @@ if (currentStepIndex === plan.steps.length) {
   pass("workflow can reach completed state");
 } else {
   fail(`workflow should be complete, got step index ${currentStepIndex}`);
+}
+
+const riskyStep = deletePlan.steps[0];
+
+if (!riskyStep.requiresConfirmation) {
+  fail("delete-project workflow step should require confirmation");
+} else {
+  pass("delete-project workflow step requires confirmation");
+}
+
+if (riskyStep.risk !== "delete") {
+  fail(`delete-project workflow risk should be delete, got ${riskyStep.risk}`);
+} else {
+  pass("delete-project workflow carries delete risk");
+}
+
+if (riskyStep.requiresConfirmation) {
+  pass("risky workflow step is blocked from normal Next until confirmation exists");
 }
 
 if (process.exitCode == null || process.exitCode === 0) {
