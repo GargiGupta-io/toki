@@ -142,6 +142,90 @@ export type GuidanceProviderResponse = {
   providerName?: string;
 };
 
+export type WorkflowStepKind =
+  | "click"
+  | "type"
+  | "select"
+  | "wait"
+  | "confirm"
+  | "verify";
+
+export type WorkflowStepStatus =
+  | "pending"
+  | "active"
+  | "waiting_for_user"
+  | "verifying"
+  | "completed"
+  | "blocked"
+  | "skipped";
+
+export type WorkflowStatus =
+  | "idle"
+  | "planning"
+  | "active"
+  | "paused"
+  | "blocked"
+  | "completed"
+  | "cancelled"
+  | "error";
+
+export type WorkflowVerificationExpectation =
+  | {
+      type: "candidate_visible";
+      label: string;
+      role?: string;
+    }
+  | {
+      type: "candidate_absent";
+      label: string;
+      role?: string;
+    }
+  | {
+      type: "screen_changed";
+      description: string;
+    }
+  | {
+      type: "manual";
+      description: string;
+    };
+
+export type WorkflowStep = {
+  id: string;
+  index: number;
+  title: string;
+  instruction: string;
+  kind: WorkflowStepKind;
+  status: WorkflowStepStatus;
+  target?: TargetBox;
+  expected?: WorkflowVerificationExpectation[];
+  risk: RiskClass;
+  requiresConfirmation: boolean;
+};
+
+export type WorkflowPlan = {
+  id: string;
+  goal: string;
+  title: string;
+  createdAt: string;
+  steps: WorkflowStep[];
+};
+
+export type WorkflowVerificationResult = {
+  status: "untested" | "passed" | "failed" | "blocked";
+  checkedAt?: string;
+  message?: string;
+  matchedCandidateIds?: string[];
+};
+
+export type WorkflowRuntimeState = {
+  status: WorkflowStatus;
+  plan: WorkflowPlan | null;
+  currentStepIndex: number;
+  currentStepId?: string;
+  lastVerification?: WorkflowVerificationResult;
+  blockedReason?: string;
+};
+
 export type SafetyPolicyAction = "allow" | "confirm" | "clarify" | "block";
 
 export type SafetyPolicyReason =
