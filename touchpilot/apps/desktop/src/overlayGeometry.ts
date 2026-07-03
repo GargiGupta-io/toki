@@ -20,11 +20,11 @@ export type PuckTargetVector = {
 export const pointerShadowGeometry = {
   offsetX: 3,
   offsetY: 4,
-  edgeOffsetX: -28,
-  edgeOffsetY: -34,
+  edgeOffsetX: -60,
+  edgeOffsetY: -66,
   margin: 6,
-  width: 24,
-  height: 30,
+  width: 58,
+  height: 62,
 } as const;
 
 export const targetDropletAnchor = {

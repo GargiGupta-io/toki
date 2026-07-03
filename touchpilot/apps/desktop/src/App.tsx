@@ -73,6 +73,7 @@ import { startVoiceRecognition } from "./voiceRecognition";
 import type { VoiceRecognitionSession } from "./voiceRecognition";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState, PuckMotionModel } from "./puckMotion";
+import { BlobPuck } from "./BlobPuck";
 import "./App.css";
 
 declare global {
@@ -377,16 +378,23 @@ function AssistantPuck({
       style={puckStyle}
       aria-label={`Toki is ${meta.label.toLowerCase()}`}
     >
-      <span className="puck-orbit" aria-hidden="true" />
-      <span className="puck-droplets" aria-hidden="true">
-        <span className="puck-droplet puck-droplet-a" />
-        <span className="puck-droplet puck-droplet-b" />
-        <span className="puck-droplet puck-droplet-c" />
-        <span className="puck-droplet puck-droplet-d" />
-      </span>
-      <span className="puck-core" aria-hidden="true">
-        <span className="puck-shadow-form" />
-        <span className="puck-shadow-tail" />
+      <BlobPuck
+        motion={motion}
+        pointerShadow={pointerShadow}
+        targetVector={targetVector}
+      />
+      <span className="puck-css-fallback" aria-hidden="true">
+        <span className="puck-orbit" />
+        <span className="puck-droplets">
+          <span className="puck-droplet puck-droplet-a" />
+          <span className="puck-droplet puck-droplet-b" />
+          <span className="puck-droplet puck-droplet-c" />
+          <span className="puck-droplet puck-droplet-d" />
+        </span>
+        <span className="puck-core">
+          <span className="puck-shadow-form" />
+          <span className="puck-shadow-tail" />
+        </span>
       </span>
     </div>
   );
