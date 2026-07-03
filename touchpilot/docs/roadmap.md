@@ -283,6 +283,7 @@ Status: Closed as a quality gate.
 - Step 1 result: added `docs/phase-13-multi-step-workflows.md`, defining the workflow contract, product rule, plan shape, step list, acceptance criteria, non-goals, and tradeoffs. Phase 13 starts with manual guidance only: Toki can plan, point, verify, and advance, but it still does not click or type for the user.
 - Step 2 result: added shared workflow types in `@toki/shared` for plans, steps, statuses, verification expectations, verification results, and runtime state.
 - Step 3 result: added `createMockWorkflowPlan()` in `@toki/ai` with deterministic plans for create project, open settings, and export/download report. Unknown goals return `null`.
+- Step 4 result: wired `WorkflowRuntimeState` into the desktop overlay runtime and Debug snapshot. Debug can now start or clear a deterministic mock workflow, while the user overlay remains unchanged until overlay step controls are added.
 
 ## Phase 14: Visual Polish
 

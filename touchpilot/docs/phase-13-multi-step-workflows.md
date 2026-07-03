@@ -110,6 +110,8 @@ Result: `@toki/ai` now exports `createMockWorkflowPlan()`. It returns determinis
 
 Store the active workflow, current step index, previous step result, and blocked/completed state in the desktop runtime.
 
+Result: completed. The desktop overlay runtime now owns a `WorkflowRuntimeState`, publishes it to Debug snapshots, and accepts debug-only commands to start or clear a deterministic mock workflow. This proves the runtime can hold an active plan without adding workflow controls to the user overlay yet.
+
 ### Step 13.5: Overlay Step Controls
 
 Show minimal current-step UI near the cursor and add next/back/stop controls without turning the overlay into a dashboard.
