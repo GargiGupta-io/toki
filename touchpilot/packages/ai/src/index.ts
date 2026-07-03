@@ -686,6 +686,8 @@ function createWorkflowStep(input: {
   expectedLabel?: string;
   expectedRole?: string;
 }): WorkflowStep {
+  const risk = input.risk ?? "safe_navigation";
+
   return {
     id: input.id,
     index: input.index,
@@ -693,8 +695,9 @@ function createWorkflowStep(input: {
     instruction: input.instruction,
     kind: input.kind,
     status: input.index === 0 ? "active" : "pending",
-    risk: input.risk ?? "safe_navigation",
-    requiresConfirmation: input.requiresConfirmation ?? false,
+    risk,
+    requiresConfirmation:
+      input.requiresConfirmation ?? confirmationRequiredRisks.includes(risk),
     expected: input.expectedLabel
       ? [
           {
@@ -782,6 +785,34 @@ export function createMockWorkflowPlan(
           instruction: "Click Open settings.",
           kind: "click",
           expectedLabel: "Settings",
+        },
+      ],
+    });
+  }
+
+  if (normalizedGoal.includes("delete") && normalizedGoal.includes("project")) {
+    return createWorkflowPlan({
+      id: "workflow-delete-project",
+      goal,
+      title: "Delete project",
+      createdAt: options.createdAt,
+      steps: [
+        {
+          id: "delete-project-open",
+          title: "Open delete action",
+          instruction: "Click Delete project.",
+          kind: "click",
+          risk: "delete",
+          expectedLabel: "Delete project",
+          expectedRole: "dom_button",
+        },
+        {
+          id: "delete-project-confirm",
+          title: "Confirm deletion",
+          instruction: "Confirm the delete action only if you are sure.",
+          kind: "confirm",
+          risk: "delete",
+          expectedLabel: "Project deleted",
         },
       ],
     });

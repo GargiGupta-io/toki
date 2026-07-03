@@ -683,6 +683,17 @@ test("createMockWorkflowPlan supports small controlled workflows", () => {
   assert.equal(exportPlan.steps.length, 2);
 });
 
+test("createMockWorkflowPlan requires confirmation for risky workflows", () => {
+  const deletePlan = createMockWorkflowPlan("Delete project");
+
+  assert.equal(deletePlan?.id, "workflow-delete-project");
+  assert.equal(deletePlan.steps.length, 2);
+  assert.equal(deletePlan.steps[0].risk, "delete");
+  assert.equal(deletePlan.steps[0].requiresConfirmation, true);
+  assert.equal(deletePlan.steps[1].kind, "confirm");
+  assert.equal(deletePlan.steps[1].requiresConfirmation, true);
+});
+
 test("createMockWorkflowPlan returns null for unknown goals", () => {
   assert.equal(createMockWorkflowPlan("Do something vague"), null);
 });
