@@ -1,5 +1,18 @@
 export { knownScreenEvalDataset } from "./fixtures";
 export type {
+  ProviderComparisonCaseResult,
+  ProviderComparisonInput,
+  ProviderComparisonMode,
+  ProviderComparisonReport,
+  ProviderComparisonStatus,
+  ProviderComparisonSummary,
+} from "./providerComparison";
+export {
+  compareProviderCase,
+  compareProviderRuns,
+  summarizeProviderComparison,
+} from "./providerComparison";
+export type {
   CandidateRankingScoreResult,
   CandidateSourceBreakdown,
   RankedCandidate,
