@@ -293,10 +293,11 @@ Status: Closed as a quality gate.
 
 ## Phase 14: Visual Polish
 
+- Step 1 result: added `docs/phase-14-visual-polish.md` as the Phase 14 plan. The phase is scoped to cursor-first polish: puck proximity and edge behavior, compact guidance/workflow cues, subtle target rings, settings/menu popup polish, Debug cleanup, optional WebGL/R3F spike only if CSS is not enough, and manual visual QA.
 - Refined overlay design system.
-- `react-three-fiber` guidance visuals.
-- Selective `liquid-glass-js` surfaces.
-- Brand/onboarding visuals.
+- Optional `react-three-fiber` guidance/puck spike with CSS fallback.
+- Selective liquid/glass surface polish where it improves product feel.
+- Brand/onboarding visuals remain later product work, not the first Phase 14 task.
 
 ## Phase 15: Evals
 
