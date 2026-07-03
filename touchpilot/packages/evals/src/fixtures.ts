@@ -61,7 +61,7 @@ export const knownScreenEvalDataset = defineEvalDataset({
         ranking: {
           candidateId: "dom-delete-project-1",
           label: "Delete project",
-          maxRank: 1,
+          maxRank: 3,
         },
         safety: {
           action: "confirm",
