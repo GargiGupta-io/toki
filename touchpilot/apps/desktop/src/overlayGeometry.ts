@@ -18,11 +18,11 @@ export type PuckTargetVector = {
 };
 
 export const pointerShadowGeometry = {
-  centerOffsetX: 3,
-  centerOffsetY: 5,
-  edgeCenterOffsetX: 8,
-  edgeCenterOffsetY: 10,
-  margin: 4,
+  offsetX: 3,
+  offsetY: 4,
+  edgeOffsetX: -28,
+  edgeOffsetY: -34,
+  margin: 6,
   width: 24,
   height: 30,
 } as const;
@@ -84,31 +84,27 @@ export function getPointerShadowPosition(
     pointerShadowGeometry.height -
     pointerShadowGeometry.margin;
 
-  const preferredCenterX = overlayPointerX + pointerShadowGeometry.centerOffsetX;
-  const preferredCenterY = overlayPointerY + pointerShadowGeometry.centerOffsetY;
-  const halfWidth = pointerShadowGeometry.width / 2;
-  const halfHeight = pointerShadowGeometry.height / 2;
-  const centerOffsetX =
-    preferredCenterX + halfWidth > viewport.width - pointerShadowGeometry.margin
-      ? -pointerShadowGeometry.edgeCenterOffsetX
-      : preferredCenterX - halfWidth < pointerShadowGeometry.margin
-        ? pointerShadowGeometry.edgeCenterOffsetX
-        : pointerShadowGeometry.centerOffsetX;
-  const centerOffsetY =
-    preferredCenterY + halfHeight > viewport.height - pointerShadowGeometry.margin
-      ? -pointerShadowGeometry.edgeCenterOffsetY
-      : preferredCenterY - halfHeight < pointerShadowGeometry.margin
-        ? pointerShadowGeometry.edgeCenterOffsetY
-        : pointerShadowGeometry.centerOffsetY;
+  const wouldOverflowRight =
+    overlayPointerX + pointerShadowGeometry.offsetX + pointerShadowGeometry.width >
+    viewport.width - pointerShadowGeometry.margin;
+  const wouldOverflowBottom =
+    overlayPointerY + pointerShadowGeometry.offsetY + pointerShadowGeometry.height >
+    viewport.height - pointerShadowGeometry.margin;
+  const offsetX = wouldOverflowRight
+    ? pointerShadowGeometry.edgeOffsetX
+    : pointerShadowGeometry.offsetX;
+  const offsetY = wouldOverflowBottom
+    ? pointerShadowGeometry.edgeOffsetY
+    : pointerShadowGeometry.offsetY;
 
   return {
     x: clamp(
-      overlayPointerX + centerOffsetX - halfWidth,
+      overlayPointerX + offsetX,
       pointerShadowGeometry.margin,
       maxX,
     ),
     y: clamp(
-      overlayPointerY + centerOffsetY - halfHeight,
+      overlayPointerY + offsetY,
       pointerShadowGeometry.margin,
       maxY,
     ),
@@ -118,9 +114,16 @@ export function getPointerShadowPosition(
 export function getPuckTargetVector(
   target: TargetBox,
   viewport: ViewportMetrics,
+  pointerShadow: PointerShadowPosition | null = null,
 ): PuckTargetVector {
-  const puckCenterX = viewport.width - targetDropletAnchor.right;
-  const puckCenterY = viewport.height - targetDropletAnchor.bottom;
+  const puckCenterX =
+    pointerShadow?.x == null
+      ? viewport.width - targetDropletAnchor.right
+      : pointerShadow.x + pointerShadowGeometry.width / 2;
+  const puckCenterY =
+    pointerShadow?.y == null
+      ? viewport.height - targetDropletAnchor.bottom
+      : pointerShadow.y + pointerShadowGeometry.height / 2;
   const targetCenterX = target.x + target.width / 2;
   const targetCenterY = target.y + target.height / 2;
 

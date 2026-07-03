@@ -1110,7 +1110,7 @@ function OverlayWindowApp() {
   const puckVectorTarget = acceptedTarget ?? workflowTarget;
   const puckTargetVector =
     puckMotion.canSendTargetDroplets && puckVectorTarget != null
-      ? getPuckTargetVector(puckVectorTarget, viewport)
+      ? getPuckTargetVector(puckVectorTarget, viewport, pointerShadow)
       : null;
   const calibration = useMemo(
     () => getCalibration(captureMetadata, viewport),
