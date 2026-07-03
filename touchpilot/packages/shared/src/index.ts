@@ -89,6 +89,46 @@ export type GuidanceResult = {
   step?: GuidanceStep;
 };
 
+export type GuidanceSessionStatus =
+  | "active"
+  | "waiting_for_user"
+  | "blocked"
+  | "completed"
+  | "error";
+
+export type GuidanceSessionTargetRecord = {
+  stepIndex: number;
+  recordedAt: string;
+  target: TargetBox;
+  instruction?: string;
+  confidence?: number;
+  providerMode?: GuidanceProviderMode;
+};
+
+export type GuidanceSessionContext = {
+  id: string;
+  originalGoal: string;
+  currentStepIndex: number;
+  status: GuidanceSessionStatus;
+  previousTargets: TargetBox[];
+  completedTargets: TargetBox[];
+  failedTargets: TargetBox[];
+};
+
+export type GuidanceSession = {
+  id: string;
+  originalGoal: string;
+  currentStepIndex: number;
+  steps: GuidanceStep[];
+  lastScreenshot?: ScreenshotMetadata | null;
+  previousTargets: GuidanceSessionTargetRecord[];
+  completedTargets: GuidanceSessionTargetRecord[];
+  failedTargets: GuidanceSessionTargetRecord[];
+  status: GuidanceSessionStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type GuidanceScreenContext = {
   display: DisplayContext;
   capture?: CaptureMetadata;
@@ -118,6 +158,7 @@ export type GuidanceRequest = {
   goal: string;
   screen: GuidanceScreenContext;
   previousStep?: GuidanceStep | null;
+  session?: GuidanceSessionContext;
 };
 
 export type GuidanceValidationIssue = {
