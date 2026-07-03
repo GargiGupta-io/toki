@@ -298,6 +298,7 @@ Status: Closed as a quality gate.
 - Step 3 result: polished the overlay workflow cue into a smaller cursor-adjacent instruction surface with flatter controls, a compact step meta line, two-line instruction clamping, and a restrained confirmation-required visual state.
 - Step 4 result: tightened puck geometry so it sits close to the cursor, flips left/up near screen edges instead of getting lost, and sends target droplet vectors from the actual cursor-following puck position.
 - Step 5 result: polished the target marker into a softer corner-ring highlight, removed the old coordinate shift, reduced center-dot/glow weight, and slowed the pulse so guidance looks less mock-like.
+- Step 6 result: tightened the settings/menu panel so it feels more like a compact utility popup: smaller inner surface, shorter push-to-talk copy, clearer voice status, and lighter footer actions.
 - Refined overlay design system.
 - Optional `react-three-fiber` guidance/puck spike with CSS fallback.
 - Selective liquid/glass surface polish where it improves product feel.

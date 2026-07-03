@@ -106,6 +106,8 @@ Keep the settings popup compact and understandable:
 - clear camera/gesture state
 - no unnecessary decorative boxes
 
+Result: completed. The settings popup is now tighter and more menu-like: the inner surface no longer fills the whole settings window, copy is shorter, push-to-talk is clearer, and footer actions are lighter. Camera/gesture-specific changes remain out of this visual step.
+
 ### Step 14.7: Debug Visual Cleanup
 
 Make Debug easier to inspect:
