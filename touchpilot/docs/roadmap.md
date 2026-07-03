@@ -287,6 +287,7 @@ Status: Closed as a quality gate.
 - Step 5 result: added a compact overlay workflow cue with current step number, title, instruction, and Back/Next/Stop controls. Workflow targets can now drive the ring and puck target vector.
 - Step 6 result: added a dedicated Debug Workflow tab with mock workflow starters, current-step navigation, plan summary, blocked reason, verification status, and active-step highlighting.
 - Step 7 result: added a first workflow verification stub. Workflow Next now captures the screen, checks expected labels/roles against Phase 12 candidates, and blocks instead of advancing when verification fails.
+- Step 8 result: added `npm run qa:workflow:known-screen` and `docs/phase-13-workflow-qa.md`. Controlled workflow QA passes for next, back, blocked, and completed behavior, and the browser fixture role mismatch for `Environment selector` was corrected.
 
 ## Phase 14: Visual Polish
 

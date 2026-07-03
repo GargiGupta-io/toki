@@ -134,6 +134,8 @@ Result: completed. Workflow Next now captures the screen, collects Phase 12 cand
 
 Run a controlled workflow against a known browser fixture or known app screen and record whether next/back/blocked/completion behavior works.
 
+Result: completed. Added `npm run qa:workflow:known-screen` and recorded the result in `docs/phase-13-workflow-qa.md`. The controlled create-project workflow now verifies step 1, moves next, moves back, verifies step 2, blocks when the completion candidate is missing, and reaches completed state when a post-action candidate is supplied. Existing browser and OCR/AX fallback known-screen QA also passed.
+
 ### Step 13.9: Safety Integration
 
 Make workflow steps respect Phase 11 safety: risky steps must require confirmation and invalid/unavailable guidance must block the workflow.
