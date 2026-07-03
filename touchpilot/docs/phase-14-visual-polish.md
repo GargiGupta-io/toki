@@ -94,6 +94,8 @@ Make target guidance feel less mock-like:
 - avoid blocking the target
 - handle small targets and edge targets
 
+Result: completed. The target marker now uses the actual target box coordinates without the old half-size shift, a softer border, corner emphasis, smaller center focus point, lower glow, and a slower quieter pulse. This makes it read more like a guidance highlight and less like a debug/mock badge.
+
 ### Step 14.6: Settings/Menu Panel Polish
 
 Keep the settings popup compact and understandable:
