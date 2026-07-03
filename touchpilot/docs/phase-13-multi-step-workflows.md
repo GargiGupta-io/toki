@@ -140,6 +140,8 @@ Result: completed. Added `npm run qa:workflow:known-screen` and recorded the res
 
 Make workflow steps respect Phase 11 safety: risky steps must require confirmation and invalid/unavailable guidance must block the workflow.
 
+Result: completed. Workflow planning now auto-marks risky workflow steps as confirmation-required, and the controlled delete-project workflow proves `delete` steps carry that safety flag. Runtime workflow Next now blocks confirmation-required steps instead of advancing normally, while the overlay cue shows a compact "Confirm required" marker.
+
 ### Step 13.10: Phase Closure
 
 Close Phase 13 if a controlled multi-step workflow works end to end, or escalate if verification/candidate accuracy blocks useful workflow behavior.
