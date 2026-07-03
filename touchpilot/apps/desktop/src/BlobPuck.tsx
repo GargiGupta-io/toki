@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef } from "react";
 import gsap from "gsap";
 import type { PuckMotionModel } from "./puckMotion";
-import type { PointerShadowPosition, PuckTargetVector } from "./overlayGeometry";
+import {
+  pointerShadowGeometry,
+  type PointerShadowPosition,
+  type PuckTargetVector,
+} from "./overlayGeometry";
 
 type BlobNode = HTMLDivElement | null;
 
-const blobAnchor = { x: 66, y: 68 } as const;
 const blobConfig = {
   blobType: "circle",
   fillColor: "#5227FF",
@@ -89,6 +92,13 @@ export function BlobPuck({
 
     const pull = motion.canSendTargetDroplets ? getTargetPull(targetVector) : { x: 0, y: 0 };
     const scale = getMotionScale(motion);
+    const anchor =
+      pointerShadow == null
+        ? null
+        : {
+            x: pointerShadow.x + pointerShadowGeometry.width / 2,
+            y: pointerShadow.y + pointerShadowGeometry.height / 2,
+          };
 
     blobsRef.current.forEach((blob, index) => {
       if (blob == null) {
@@ -97,8 +107,8 @@ export function BlobPuck({
 
       const isLead = index === 0;
       const isTail = index === 2 && motion.canSendTargetDroplets;
-      const x = blobAnchor.x + (isTail ? pull.x : 0);
-      const y = blobAnchor.y + (isTail ? pull.y : 0);
+      const x = (anchor?.x ?? 0) + (isTail ? pull.x : 0);
+      const y = (anchor?.y ?? 0) + (isTail ? pull.y : 0);
 
       gsap.to(blob, {
         x,
@@ -107,7 +117,7 @@ export function BlobPuck({
         yPercent: -50,
         scale: isLead ? scale : scale * (isTail ? 0.96 : 1),
         opacity:
-          pointerShadow == null
+          anchor == null
             ? 0
             : motion.state === "shadow"
               ? blobConfig.opacities[index] * 0.9

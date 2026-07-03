@@ -378,11 +378,6 @@ function AssistantPuck({
       style={puckStyle}
       aria-label={`Toki is ${meta.label.toLowerCase()}`}
     >
-      <BlobPuck
-        motion={motion}
-        pointerShadow={pointerShadow}
-        targetVector={targetVector}
-      />
       <span className="puck-css-fallback" aria-hidden="true">
         <span className="puck-orbit" />
         <span className="puck-droplets">
@@ -2443,6 +2438,11 @@ function OverlayWindowApp() {
           )}
         </>
       )}
+      <BlobPuck
+        motion={puckMotion}
+        pointerShadow={pointerShadow}
+        targetVector={puckTargetVector}
+      />
       <AssistantPuck
         state={overlayState}
         motion={puckMotion}
