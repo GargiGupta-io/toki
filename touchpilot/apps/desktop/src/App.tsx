@@ -568,8 +568,8 @@ function SettingsPopup({
       : voiceRuntime.status === "command_ready" && voiceRuntime.transcript
         ? `Heard: ${voiceRuntime.transcript.text}`
       : voiceListening
-        ? "Listening for your command."
-        : "Waiting for voice, prompt, or gesture.";
+        ? "Listening."
+        : "Ready for a command.";
 
   return (
     <section className="settings-popup" aria-label="Toki settings">
@@ -620,7 +620,7 @@ function SettingsPopup({
 
       <div className="settings-separator" />
 
-      <p className="settings-instruction">Hold Space or press below to talk. Release to guide.</p>
+      <p className="settings-instruction">Hold Space to talk.</p>
 
       <button
         className="settings-talk-button"
@@ -655,8 +655,12 @@ function SettingsPopup({
           }
         }}
       >
-        <span>{voiceListening ? "Listening" : "Hold to talk"}</span>
-        <small>{voiceStatusDetails.visible ? voiceStatusDetails.message : "Ask what to do on this screen"}</small>
+        <span>{voiceListening ? "Listening" : "Push to talk"}</span>
+        <small>
+          {voiceStatusDetails.visible
+            ? voiceStatusDetails.message
+            : "Ask what to click next, then release."}
+        </small>
       </button>
 
       <p className="settings-footnote">{settingsStatusText}</p>
@@ -668,14 +672,14 @@ function SettingsPopup({
           onClick={onRefreshCapture}
           disabled={isRefreshingCapture}
         >
-          {isRefreshingCapture ? "Refreshing screen" : "Refresh screen"}
+          {isRefreshingCapture ? "Updating" : "Update screen"}
         </button>
         <button
           className="settings-footer-button"
           type="button"
           onClick={onPauseToggle}
         >
-          {isPaused ? "Resume assistant" : "Pause assistant"}
+          {isPaused ? "Resume" : "Pause"}
         </button>
       </div>
     </section>
