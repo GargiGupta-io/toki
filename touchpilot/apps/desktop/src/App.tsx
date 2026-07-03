@@ -112,7 +112,11 @@ type DebugSnapshot = OverlaySnapshot & {
 };
 
 type OverlayCommand =
-  | { type: "refresh-capture" }
+  | {
+      type: "refresh-capture";
+      goal?: string;
+      providerMode?: GuidanceProviderMode;
+    }
   | { type: "run-real-guidance-smoke" }
   | { type: "toggle-pause" }
   | { type: "request-state" }
@@ -1036,7 +1040,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     isRefreshingCapture: false,
     gestureRuntime: createDefaultGestureRuntimeState(),
     voiceRuntime: createDefaultVoiceRuntimeState(),
-    guidanceProviderMode: "mock",
+    guidanceProviderMode: "unavailable",
     guidanceFixture: "safe",
     workflowRuntime: createEmptyWorkflowRuntimeState(),
     captureMetadata: null,
@@ -1058,7 +1062,7 @@ function OverlayWindowApp() {
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
   const [guidanceProviderMode, setGuidanceProviderMode] =
-    useState<GuidanceProviderMode>("mock");
+    useState<GuidanceProviderMode>("unavailable");
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
@@ -1184,7 +1188,7 @@ function OverlayWindowApp() {
 
   async function refreshCaptureMetadata(
     goal = "Show me what to click next.",
-    providerMode: GuidanceProviderMode = "mock",
+    providerMode: GuidanceProviderMode = "unavailable",
   ) {
     setIsRefreshingCapture(true);
     setCaptureError(null);
@@ -1263,6 +1267,18 @@ function OverlayWindowApp() {
           setGuidanceProviderError(nextSafetyDecision.message);
           setOverlayState(nextSafetyDecision.action === "clarify" ? "idle" : "error");
         }
+        return;
+      }
+
+      if (providerMode === "unavailable") {
+        setGuidanceProviderMode("unavailable");
+        setGuidanceProviderError(
+          "No guidance provider is active. Configure a real provider or run a debug fixture.",
+        );
+        setGuidanceIssues([]);
+        setSafetyDecision(null);
+        setGuidanceResult(null);
+        setOverlayState("idle");
         return;
       }
 
@@ -1476,7 +1492,10 @@ function OverlayWindowApp() {
 
     listen<OverlayCommand>("toki://overlay-command", async (event) => {
       if (event.payload.type === "refresh-capture") {
-        await refreshCaptureMetadata();
+        await refreshCaptureMetadata(
+          event.payload.goal,
+          event.payload.providerMode ?? "unavailable",
+        );
         return;
       }
 
@@ -1938,7 +1957,12 @@ function OverlayWindowApp() {
       ...currentState,
       status: "transcribing",
     }));
-    void refreshCaptureMetadata(command.text).finally(() => {
+    const providerMode: GuidanceProviderMode = import.meta.env
+      .VITE_TOKI_GUIDANCE_ENDPOINT
+      ? "real"
+      : "unavailable";
+
+    void refreshCaptureMetadata(command.text, providerMode).finally(() => {
       setVoiceRuntime((currentState) =>
         currentState.pendingCommand?.createdAt === command.createdAt
           ? {
@@ -2251,7 +2275,7 @@ function DebugWindowApp() {
       type: "set-guidance-fixture",
       fixture: "safe",
     });
-    sendOverlayCommand({ type: "refresh-capture" });
+    sendOverlayCommand({ type: "refresh-capture", providerMode: "mock" });
   }
 
   function testRealGuidanceSmoke() {
