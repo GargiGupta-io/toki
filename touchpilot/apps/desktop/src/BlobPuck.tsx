@@ -5,11 +5,7 @@ import type { PointerShadowPosition, PuckTargetVector } from "./overlayGeometry"
 
 type BlobNode = HTMLSpanElement | null;
 
-const blobBasePositions = [
-  { x: 26, y: 31 },
-  { x: 34, y: 26 },
-  { x: 42, y: 18 },
-] as const;
+const blobAnchor = { x: 66, y: 68 } as const;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -26,7 +22,7 @@ function getTargetPull(targetVector: PuckTargetVector | null) {
     return { x: 0, y: 0 };
   }
 
-  const pull = clamp(distance / 32, 4, 22);
+  const pull = clamp(distance / 40, 0, 18);
 
   return {
     x: (targetVector.x / distance) * pull,
@@ -40,7 +36,7 @@ function getMotionScale(motion: PuckMotionModel) {
   }
 
   if (motion.state === "paused" || motion.state === "shadow") {
-    return 0.9;
+    return 0.92;
   }
 
   if (motion.state === "thinking" || motion.state === "guiding") {
@@ -78,28 +74,24 @@ export function BlobPuck({
         return;
       }
 
-      const base = blobBasePositions[index] ?? blobBasePositions[0];
       const isLead = index === 0;
-      const isTargetDrop = index === 2 && motion.canSendTargetDroplets;
-      const idleSpread = motion.state === "thinking" ? 3 : 0;
-      const x = base.x + (isTargetDrop ? pull.x : index * idleSpread);
-      const y = base.y + (isTargetDrop ? pull.y : -index * idleSpread);
+      const isTail = index === 2 && motion.canSendTargetDroplets;
+      const x = blobAnchor.x + (isTail ? pull.x : 0);
+      const y = blobAnchor.y + (isTail ? pull.y : 0);
 
       gsap.to(blob, {
         x,
+        xPercent: -50,
         y,
-        scale: isLead ? scale : scale * (isTargetDrop ? 0.9 : 1),
+        yPercent: -50,
+        scale: isLead ? scale : scale * (isTail ? 0.96 : 1),
         opacity:
           pointerShadow == null
             ? 0
             : motion.state === "shadow"
-              ? index === 0
-                ? 0.92
-                : 0.72
-              : isTargetDrop
-                ? 0.82
-                : 0.86,
-        duration: prefersReducedMotion ? 0 : isLead ? 0.08 : 0.28 + index * 0.08,
+              ? 0.6
+              : 0.62,
+        duration: prefersReducedMotion ? 0 : isLead ? 0.1 : 0.5,
         ease: isLead ? "power3.out" : "power1.out",
         overwrite: true,
       });
@@ -115,10 +107,10 @@ export function BlobPuck({
     >
       <svg className="blob-puck-filter" focusable="false">
         <filter id="toki-blob-puck">
-          <feGaussianBlur in="SourceGraphic" result="blur" stdDeviation="11" />
+          <feGaussianBlur in="SourceGraphic" result="blur" stdDeviation="30" />
           <feColorMatrix
             in="blur"
-            values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 32 -10"
+            values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 35 -10"
           />
         </filter>
       </svg>
