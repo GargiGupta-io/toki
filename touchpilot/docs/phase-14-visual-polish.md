@@ -58,6 +58,8 @@ Refresh the visual acceptance checklist for the current Toki name and Mac-first 
 - target ring is subtle but visible
 - workflow cue is compact and readable
 
+Result: completed. `docs/visual-acceptance.md` now acts as the current visual gate for Phase 14 and later overlay work. It adds the close-puck reference, detachment/edge-loss fail rules, compact workflow/safety cue requirements, target-ring polish expectations, and updated runtime checklist items for workflow and confirmation states.
+
 ### Step 14.3: Overlay Cue Polish
 
 Tighten the workflow/guidance cue:
