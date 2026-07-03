@@ -18,6 +18,8 @@ import type {
   CameraPermissionState,
   CameraStreamStatus,
   CaptureMetadata,
+  ClickAwareNativeClick,
+  ClickAwareRuntimeState,
   CoordinateCalibration,
   GuidanceRequest,
   GuidanceProviderMode,
@@ -100,6 +102,7 @@ type DebugSnapshot = OverlaySnapshot & {
   guidanceProviderMode: GuidanceProviderMode;
   guidanceFixture: GuidanceFixture;
   workflowRuntime: WorkflowRuntimeState;
+  clickAwareRuntime: ClickAwareRuntimeState;
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
   guidanceRequest: GuidanceRequest | null;
@@ -143,6 +146,12 @@ type OverlayCommand =
   | { type: "submit-voice-listening" }
   | { type: "stop-voice-listening" };
 
+type NativeClickMonitorStatus = {
+  armed: boolean;
+  supported: boolean;
+  source: ClickAwareNativeClick["source"];
+};
+
 const overlayWindow = getCurrentWindow();
 const currentWindowLabel = overlayWindow.label;
 
@@ -154,6 +163,8 @@ const testTarget = {
   height: 48,
   instruction: "Click Export to continue this workflow.",
 };
+
+const clickAwareHitPadding = 18;
 
 type RenderedGuidanceTarget = TargetBox & {
   instruction: string;
@@ -1028,6 +1039,42 @@ function createEmptyWorkflowRuntimeState(): WorkflowRuntimeState {
   };
 }
 
+function createDefaultClickAwareRuntimeState(): ClickAwareRuntimeState {
+  return {
+    enabled: true,
+    armed: false,
+    permission: "unknown",
+    status: "idle",
+    hitPadding: clickAwareHitPadding,
+    message: "Click-aware advancement is waiting for an active workflow target.",
+  };
+}
+
+function getTargetCenter(target: TargetBox) {
+  return {
+    x: target.x + target.width / 2,
+    y: target.y + target.height / 2,
+  };
+}
+
+function getClickTargetDistance(click: ClickAwareNativeClick, target: TargetBox) {
+  const center = getTargetCenter(target);
+  return Math.hypot(click.x - center.x, click.y - center.y);
+}
+
+function isClickInsideTarget(
+  click: ClickAwareNativeClick,
+  target: TargetBox,
+  padding: number,
+) {
+  return (
+    click.x >= target.x - padding &&
+    click.x <= target.x + target.width + padding &&
+    click.y >= target.y - padding &&
+    click.y <= target.y + target.height + padding
+  );
+}
+
 function setWorkflowActiveStep(
   runtime: WorkflowRuntimeState,
   nextStepIndex: number,
@@ -1170,6 +1217,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     guidanceProviderMode: "unavailable",
     guidanceFixture: "safe",
     workflowRuntime: createEmptyWorkflowRuntimeState(),
+    clickAwareRuntime: createDefaultClickAwareRuntimeState(),
     captureMetadata: null,
     screenshotCapture: null,
     guidanceRequest: null,
@@ -1212,10 +1260,13 @@ function OverlayWindowApp() {
   const [workflowRuntime, setWorkflowRuntime] = useState<WorkflowRuntimeState>(() =>
     createEmptyWorkflowRuntimeState(),
   );
+  const [clickAwareRuntime, setClickAwareRuntime] =
+    useState<ClickAwareRuntimeState>(() => createDefaultClickAwareRuntimeState());
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
   const voiceSessionRef = useRef<VoiceRecognitionSession | null>(null);
   const routedVoiceCommandRef = useRef<string | null>(null);
+  const clickAwareAdvanceInFlightRef = useRef(false);
 
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep = activeStep?.target != null ? activeStep : null;
@@ -1223,6 +1274,18 @@ function OverlayWindowApp() {
   const currentWorkflowStep =
     workflowRuntime.plan?.steps[workflowRuntime.currentStepIndex] ?? null;
   const workflowTarget = currentWorkflowStep?.target ?? null;
+  const clickAwareTarget =
+    workflowRuntime.status === "active" &&
+    currentWorkflowStep?.kind === "click" &&
+    !currentWorkflowStep.requiresConfirmation &&
+    workflowTarget != null
+      ? workflowTarget
+      : null;
+  const isClickAwareArmed =
+    clickAwareRuntime.enabled &&
+    clickAwareTarget != null &&
+    !isRefreshingCapture &&
+    overlayState !== "paused";
   const hasAcceptedGuidance = acceptedTarget != null || workflowTarget != null;
   const activeTarget: RenderedGuidanceTarget =
     acceptedTarget != null && acceptedStep != null
@@ -1277,6 +1340,7 @@ function OverlayWindowApp() {
       guidanceProviderMode,
       guidanceFixture,
       workflowRuntime,
+      clickAwareRuntime,
       captureMetadata,
       screenshotCapture,
       guidanceRequest,
@@ -1294,6 +1358,7 @@ function OverlayWindowApp() {
       guidanceProviderMode,
       guidanceFixture,
       workflowRuntime,
+      clickAwareRuntime,
       captureMetadata,
       screenshotCapture,
       guidanceRequest,
@@ -1657,6 +1722,46 @@ function OverlayWindowApp() {
     await refreshCaptureMetadata(guidanceSession.originalGoal, "real");
   }
 
+  async function advanceActiveWorkflowStep() {
+    const verification = await verifyActiveWorkflowStep(workflowRuntime);
+
+    setWorkflowRuntime((currentState) => {
+      if (currentState.plan == null) {
+        return currentState;
+      }
+
+      if (verification.status !== "passed") {
+        return {
+          ...currentState,
+          status: "blocked",
+          lastVerification: verification,
+          blockedReason:
+            verification.message ?? "Workflow step verification did not pass.",
+        };
+      }
+
+      const isLastStep =
+        currentState.currentStepIndex >= currentState.plan.steps.length - 1;
+
+      if (isLastStep) {
+        setOverlayState("idle");
+        return {
+          ...setWorkflowActiveStep(currentState, currentState.currentStepIndex),
+          status: "completed",
+          currentStepId: undefined,
+          lastVerification: verification,
+          blockedReason: undefined,
+        };
+      }
+
+      setOverlayState("guiding");
+      return {
+        ...setWorkflowActiveStep(currentState, currentState.currentStepIndex + 1),
+        lastVerification: verification,
+      };
+    });
+  }
+
   function cancelVoiceRuntime() {
     voiceSessionRef.current?.abort();
     voiceSessionRef.current = null;
@@ -1709,6 +1814,135 @@ function OverlayWindowApp() {
       window.clearInterval(timer);
     };
   }, [viewport]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    invoke<NativeClickMonitorStatus>("native_click_monitor_set_armed", {
+      request: { armed: isClickAwareArmed },
+    })
+      .then((status) => {
+        if (disposed) {
+          return;
+        }
+
+        setClickAwareRuntime((currentState) => ({
+          ...currentState,
+          armed: status.armed,
+          permission: status.supported ? "ready" : "unsupported",
+          status: status.armed ? "armed" : "idle",
+          targetId: status.armed ? currentWorkflowStep?.id : undefined,
+          targetLabel: status.armed ? clickAwareTarget?.label : undefined,
+          message: status.armed
+            ? "Click-aware advancement is watching the current target."
+            : status.supported
+              ? "Click-aware advancement is waiting for an active workflow target."
+              : "Native click observation is not supported on this platform yet.",
+        }));
+      })
+      .catch((error) => {
+        if (disposed) {
+          return;
+        }
+
+        setClickAwareRuntime((currentState) => ({
+          ...currentState,
+          armed: false,
+          permission: "error",
+          status: "error",
+          message: formatCaptureError(error),
+        }));
+      });
+
+    return () => {
+      disposed = true;
+
+      if (isClickAwareArmed) {
+        invoke("native_click_monitor_set_armed", {
+          request: { armed: false },
+        }).catch(() => undefined);
+      }
+    };
+  }, [clickAwareTarget?.label, currentWorkflowStep?.id, isClickAwareArmed]);
+
+  useEffect(() => {
+    let unlistenNativeClick: (() => void) | undefined;
+
+    listen<ClickAwareNativeClick>("toki://native-click", async (event) => {
+      const click = event.payload;
+      const target = clickAwareTarget;
+      const activeStepId = currentWorkflowStep?.id;
+
+      if (clickAwareAdvanceInFlightRef.current) {
+        return;
+      }
+
+      if (!isClickAwareArmed || target == null || activeStepId == null) {
+        setClickAwareRuntime((currentState) => ({
+          ...currentState,
+          lastClick: click,
+          status: "disabled",
+          message: "Native click ignored because no workflow target is armed.",
+        }));
+        return;
+      }
+
+      const distanceFromCenter = getClickTargetDistance(click, target);
+      const hit = isClickInsideTarget(click, target, clickAwareHitPadding);
+      const checkedAt = new Date().toISOString();
+
+      if (!hit) {
+        setClickAwareRuntime((currentState) => ({
+          ...currentState,
+          lastClick: click,
+          lastHit: {
+            status: "miss",
+            targetId: activeStepId,
+            targetLabel: target.label,
+            distanceFromCenter,
+            checkedAt,
+          },
+          status: "miss",
+          message: "Click missed the active target, so Toki did not advance.",
+        }));
+        return;
+      }
+
+      clickAwareAdvanceInFlightRef.current = true;
+      setClickAwareRuntime((currentState) => ({
+        ...currentState,
+        lastClick: click,
+        lastHit: {
+          status: "hit",
+          targetId: activeStepId,
+          targetLabel: target.label,
+          distanceFromCenter,
+          checkedAt,
+        },
+        status: "advancing",
+        message: "Click matched the active target. Recapturing before advancing.",
+      }));
+
+      try {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 300);
+        });
+        await advanceActiveWorkflowStep();
+      } finally {
+        clickAwareAdvanceInFlightRef.current = false;
+      }
+    })
+      .then((cleanup) => {
+        unlistenNativeClick = cleanup;
+      })
+      .catch(() => {
+        unlistenNativeClick = undefined;
+      });
+
+    return () => {
+      unlistenNativeClick?.();
+    };
+  }, [clickAwareTarget, currentWorkflowStep?.id, isClickAwareArmed, workflowRuntime]);
 
   useEffect(() => {
     void publishRuntimeSnapshots();
@@ -1809,43 +2043,7 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "advance-workflow-step") {
-        const verification = await verifyActiveWorkflowStep(workflowRuntime);
-
-        setWorkflowRuntime((currentState) => {
-          if (currentState.plan == null) {
-            return currentState;
-          }
-
-          if (verification.status !== "passed") {
-            return {
-              ...currentState,
-              status: "blocked",
-              lastVerification: verification,
-              blockedReason:
-                verification.message ?? "Workflow step verification did not pass.",
-            };
-          }
-
-          const isLastStep =
-            currentState.currentStepIndex >= currentState.plan.steps.length - 1;
-
-          if (isLastStep) {
-            setOverlayState("idle");
-            return {
-              ...setWorkflowActiveStep(currentState, currentState.currentStepIndex),
-              status: "completed",
-              currentStepId: undefined,
-              lastVerification: verification,
-              blockedReason: undefined,
-            };
-          }
-
-          setOverlayState("guiding");
-          return {
-            ...setWorkflowActiveStep(currentState, currentState.currentStepIndex + 1),
-            lastVerification: verification,
-          };
-        });
+        await advanceActiveWorkflowStep();
         return;
       }
 
@@ -3031,6 +3229,18 @@ function DebugWindowApp() {
                 <dd>{snapshot.workflowRuntime.blockedReason ?? "None"}</dd>
               </div>
               <div>
+                <dt>Click aware</dt>
+                <dd>
+                  {snapshot.clickAwareRuntime.armed
+                    ? "Armed"
+                    : snapshot.clickAwareRuntime.status}
+                </dd>
+              </div>
+              <div>
+                <dt>Click target</dt>
+                <dd>{snapshot.clickAwareRuntime.targetLabel ?? "None"}</dd>
+              </div>
+              <div>
                 <dt>Created</dt>
                 <dd>{snapshot.workflowRuntime.plan?.createdAt ?? "None"}</dd>
               </div>
@@ -3103,10 +3313,30 @@ function DebugWindowApp() {
                 <dt>Instruction</dt>
                 <dd>{currentWorkflowStep?.instruction ?? "None"}</dd>
               </div>
+              <div>
+                <dt>Last click</dt>
+                <dd>
+                  {snapshot.clickAwareRuntime.lastClick
+                    ? `${Math.round(snapshot.clickAwareRuntime.lastClick.x)}, ${Math.round(
+                        snapshot.clickAwareRuntime.lastClick.y,
+                      )}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Last hit</dt>
+                <dd>
+                  {snapshot.clickAwareRuntime.lastHit
+                    ? `${snapshot.clickAwareRuntime.lastHit.status} (${Math.round(
+                        snapshot.clickAwareRuntime.lastHit.distanceFromCenter,
+                      )}px)`
+                    : "None"}
+                </dd>
+              </div>
             </dl>
             <p className="debug-muted">
-              Verification is still manual state only. Step 13.7 connects this
-              to candidate checks on the next capture.
+              {snapshot.clickAwareRuntime.message ??
+                "Click-aware advancement only watches while a workflow target is armed."}
             </p>
           </section>
 
