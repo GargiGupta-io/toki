@@ -5,6 +5,7 @@ import {
   createInvalidMockGuidance,
   createLowConfidenceMockGuidance,
   createMockGuidance,
+  createMockWorkflowPlan,
   createRiskyMockGuidance,
   evaluateSafetyPolicy,
   fuseScreenCandidates,
@@ -649,4 +650,39 @@ test("evaluateSafetyPolicy blocks missing guide steps but clarifies clarify resu
 
   assert.equal(clarify.action, "clarify");
   assert.equal(clarify.reason, "missing_step");
+});
+
+test("createMockWorkflowPlan creates a create-project workflow", () => {
+  const plan = createMockWorkflowPlan("Create a project", {
+    createdAt: "2026-07-03T00:00:00.000Z",
+  });
+
+  assert.equal(plan?.id, "workflow-create-project");
+  assert.equal(plan.title, "Create project");
+  assert.equal(plan.createdAt, "2026-07-03T00:00:00.000Z");
+  assert.equal(plan.steps.length, 3);
+  assert.equal(plan.steps[0].status, "active");
+  assert.equal(plan.steps[1].status, "pending");
+  assert.equal(plan.steps[1].risk, "form_entry");
+  assert.deepEqual(plan.steps[0].expected, [
+    {
+      type: "candidate_visible",
+      label: "Project name",
+      role: "dom_textbox",
+    },
+  ]);
+});
+
+test("createMockWorkflowPlan supports small controlled workflows", () => {
+  const settingsPlan = createMockWorkflowPlan("Open settings");
+  const exportPlan = createMockWorkflowPlan("Download the report");
+
+  assert.equal(settingsPlan?.id, "workflow-open-settings");
+  assert.equal(settingsPlan.steps[0].instruction, "Click Open settings.");
+  assert.equal(exportPlan?.id, "workflow-export-report");
+  assert.equal(exportPlan.steps.length, 2);
+});
+
+test("createMockWorkflowPlan returns null for unknown goals", () => {
+  assert.equal(createMockWorkflowPlan("Do something vague"), null);
 });

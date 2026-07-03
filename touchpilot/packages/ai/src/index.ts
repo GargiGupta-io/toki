@@ -14,6 +14,9 @@ import type {
   UiElementProvenance,
   UiElementRole,
   UiElementSource,
+  WorkflowPlan,
+  WorkflowStep,
+  WorkflowStepKind,
 } from "@toki/shared";
 
 const validRiskClasses: RiskClass[] = [
@@ -670,4 +673,144 @@ function isValidTargetBox(target: TargetBox): boolean {
     target.width > 0 &&
     target.height > 0
   );
+}
+
+function createWorkflowStep(input: {
+  id: string;
+  index: number;
+  title: string;
+  instruction: string;
+  kind: WorkflowStepKind;
+  risk?: RiskClass;
+  requiresConfirmation?: boolean;
+  expectedLabel?: string;
+  expectedRole?: string;
+}): WorkflowStep {
+  return {
+    id: input.id,
+    index: input.index,
+    title: input.title,
+    instruction: input.instruction,
+    kind: input.kind,
+    status: input.index === 0 ? "active" : "pending",
+    risk: input.risk ?? "safe_navigation",
+    requiresConfirmation: input.requiresConfirmation ?? false,
+    expected: input.expectedLabel
+      ? [
+          {
+            type: "candidate_visible",
+            label: input.expectedLabel,
+            role: input.expectedRole,
+          },
+        ]
+      : undefined,
+  };
+}
+
+function createWorkflowPlan(input: {
+  id: string;
+  goal: string;
+  title: string;
+  steps: Omit<Parameters<typeof createWorkflowStep>[0], "index">[];
+  createdAt?: string;
+}): WorkflowPlan {
+  return {
+    id: input.id,
+    goal: input.goal,
+    title: input.title,
+    createdAt: input.createdAt ?? new Date(0).toISOString(),
+    steps: input.steps.map((step, index) =>
+      createWorkflowStep({
+        ...step,
+        index,
+      }),
+    ),
+  };
+}
+
+export function createMockWorkflowPlan(
+  goal: string,
+  options: { createdAt?: string } = {},
+): WorkflowPlan | null {
+  const normalizedGoal = normalizeText(goal);
+
+  if (normalizedGoal.includes("create") && normalizedGoal.includes("project")) {
+    return createWorkflowPlan({
+      id: "workflow-create-project",
+      goal,
+      title: "Create project",
+      createdAt: options.createdAt,
+      steps: [
+        {
+          id: "create-project-open",
+          title: "Open project dialog",
+          instruction: "Click Create project.",
+          kind: "click",
+          expectedLabel: "Project name",
+          expectedRole: "dom_textbox",
+        },
+        {
+          id: "create-project-name",
+          title: "Enter project name",
+          instruction: "Enter the project name.",
+          kind: "type",
+          risk: "form_entry",
+          expectedLabel: "Environment selector",
+          expectedRole: "dom_select",
+        },
+        {
+          id: "create-project-save",
+          title: "Save project",
+          instruction: "Click Save project.",
+          kind: "click",
+          expectedLabel: "Project created",
+        },
+      ],
+    });
+  }
+
+  if (normalizedGoal.includes("open") && normalizedGoal.includes("settings")) {
+    return createWorkflowPlan({
+      id: "workflow-open-settings",
+      goal,
+      title: "Open settings",
+      createdAt: options.createdAt,
+      steps: [
+        {
+          id: "open-settings",
+          title: "Open settings",
+          instruction: "Click Open settings.",
+          kind: "click",
+          expectedLabel: "Settings",
+        },
+      ],
+    });
+  }
+
+  if (normalizedGoal.includes("export") || normalizedGoal.includes("download")) {
+    return createWorkflowPlan({
+      id: "workflow-export-report",
+      goal,
+      title: "Export report",
+      createdAt: options.createdAt,
+      steps: [
+        {
+          id: "export-open-menu",
+          title: "Open export menu",
+          instruction: "Click Export.",
+          kind: "click",
+          expectedLabel: "Download",
+        },
+        {
+          id: "export-download",
+          title: "Download report",
+          instruction: "Click Download.",
+          kind: "click",
+          expectedLabel: "Download complete",
+        },
+      ],
+    });
+  }
+
+  return null;
 }
