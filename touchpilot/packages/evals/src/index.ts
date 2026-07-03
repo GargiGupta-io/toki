@@ -1,5 +1,16 @@
 export { knownScreenEvalDataset } from "./fixtures";
 export type {
+  CandidateRankingScoreResult,
+  CandidateSourceBreakdown,
+  RankedCandidate,
+} from "./rankingScoring";
+export {
+  findRankedCandidate,
+  getCandidateSourceBreakdown,
+  getRankedCandidates,
+  scoreCandidateRanking,
+} from "./rankingScoring";
+export type {
   Point,
   TargetScoreMetrics,
   TargetScoreResult,
