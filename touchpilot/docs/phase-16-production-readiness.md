@@ -76,6 +76,8 @@ Acceptance:
 - learning docs can preserve historical names, but product docs should use Toki
 - bundle metadata is ready for signing/notarization work
 
+Result: completed. `docs/phase-16-app-identity.md` records the current Toki product identity, window-title rules, bundle metadata, Rust package metadata, and stale artifact warning. Tauri bundle metadata now includes publisher, category, descriptions, and copyright, and the Rust desktop crate no longer uses the placeholder `authors = ["you"]`.
+
 ### Step 16.4: Signing And Notarization Plan
 
 Document and wire the Mac signing path.
