@@ -156,6 +156,8 @@ Reuse Phase 13 workflow fixtures to score:
 - completed
 - confirmation-required
 
+Result: completed. `@toki/evals` now exports workflow scoring helpers for verification status/matched candidates and basic workflow transitions: next, back, blocked, completed, and confirmation-required.
+
 ### Step 15.8: Provider Comparison Harness
 
 Optional provider runs:

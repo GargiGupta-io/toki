@@ -317,6 +317,7 @@ Status: Closed as a quality gate.
 - Step 4 result: added candidate ranking helpers in `@toki/evals` for expected-candidate lookup, top-1/top-3/max-rank scoring, source breakdown, label mismatch reporting, and missing-candidate failures.
 - Step 5 result: added safety scoring helpers in `@toki/evals` that run the real `evaluateSafetyPolicy()` gate and compare actual policy action/risk against expected eval annotations.
 - Step 6 result: added `npm run qa:eval:known-screen`, a deterministic eval CLI that loads the known browser fixture, normalizes older candidate roles, scores target/ranking/safety expectations, and reports pass/fail without launching the desktop app.
+- Step 7 result: added workflow scoring helpers in `@toki/evals` for verification status, matched candidates, next/back movement, blocked/completed status, and confirmation-required workflow behavior.
 - Screenshot dataset.
 - Target annotations.
 - Coordinate scoring.
