@@ -286,6 +286,7 @@ Status: Closed as a quality gate.
 - Step 4 result: wired `WorkflowRuntimeState` into the desktop overlay runtime and Debug snapshot. Debug can now start or clear a deterministic mock workflow, while the user overlay remains unchanged until overlay step controls are added.
 - Step 5 result: added a compact overlay workflow cue with current step number, title, instruction, and Back/Next/Stop controls. Workflow targets can now drive the ring and puck target vector.
 - Step 6 result: added a dedicated Debug Workflow tab with mock workflow starters, current-step navigation, plan summary, blocked reason, verification status, and active-step highlighting.
+- Step 7 result: added a first workflow verification stub. Workflow Next now captures the screen, checks expected labels/roles against Phase 12 candidates, and blocks instead of advancing when verification fails.
 
 ## Phase 14: Visual Polish
 

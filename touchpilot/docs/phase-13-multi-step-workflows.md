@@ -128,6 +128,8 @@ Result: completed. Debug now has a dedicated Workflow tab with mock workflow sta
 
 Add a first verification path that checks expected labels/candidates on the next capture, using the Phase 12 screen-intelligence candidate map.
 
+Result: completed. Workflow Next now captures the screen, collects Phase 12 candidates, checks the active step's expected labels/roles, and advances only when verification passes. Failed, blocked, manual, or unsupported verification updates workflow blocked state instead of pretending the step succeeded.
+
 ### Step 13.8: Manual Workflow QA
 
 Run a controlled workflow against a known browser fixture or known app screen and record whether next/back/blocked/completion behavior works.
