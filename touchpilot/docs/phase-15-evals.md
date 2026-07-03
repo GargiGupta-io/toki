@@ -125,6 +125,8 @@ Score ranked candidates against expected annotations:
 - source breakdown
 - missing candidate report
 
+Result: completed. `@toki/evals` now exports candidate ranking helpers that find expected candidates, calculate top-1/top-3/max-rank status, report label mismatch, preserve rank positions, and summarize candidate sources.
+
 ### Step 15.5: Safety Policy Eval
 
 Run risk fixtures through `evaluateSafetyPolicy()` and report:
