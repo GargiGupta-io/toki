@@ -285,6 +285,7 @@ Status: Closed as a quality gate.
 - Step 3 result: added `createMockWorkflowPlan()` in `@toki/ai` with deterministic plans for create project, open settings, and export/download report. Unknown goals return `null`.
 - Step 4 result: wired `WorkflowRuntimeState` into the desktop overlay runtime and Debug snapshot. Debug can now start or clear a deterministic mock workflow, while the user overlay remains unchanged until overlay step controls are added.
 - Step 5 result: added a compact overlay workflow cue with current step number, title, instruction, and Back/Next/Stop controls. Workflow targets can now drive the ring and puck target vector.
+- Step 6 result: added a dedicated Debug Workflow tab with mock workflow starters, current-step navigation, plan summary, blocked reason, verification status, and active-step highlighting.
 
 ## Phase 14: Visual Polish
 

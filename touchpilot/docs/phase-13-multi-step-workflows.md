@@ -122,6 +122,8 @@ Result: completed. The overlay can now show a compact workflow step cue with the
 
 Add a Debug tab or section that shows the full workflow plan, current step, verification result, and blocked reason.
 
+Result: completed. Debug now has a dedicated Workflow tab with mock workflow starters, current-step navigation, full plan summary, blocked reason, verification status, and a step-by-step plan list with active-step highlighting.
+
 ### Step 13.7: Step Verification Stub
 
 Add a first verification path that checks expected labels/candidates on the next capture, using the Phase 12 screen-intelligence candidate map.
