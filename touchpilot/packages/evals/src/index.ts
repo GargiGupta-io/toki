@@ -10,6 +10,11 @@ export {
   getRankedCandidates,
   scoreCandidateRanking,
 } from "./rankingScoring";
+export type { SafetyScoreResult } from "./safetyScoring";
+export {
+  scoreSafetyPolicy,
+  scoreSafetyPolicyDecision,
+} from "./safetyScoring";
 export type {
   Point,
   TargetScoreMetrics,
