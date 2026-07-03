@@ -13,6 +13,17 @@ export {
   summarizeProviderComparison,
 } from "./providerComparison";
 export type {
+  EvalReport,
+  EvalReportCase,
+  EvalReportStatus,
+  EvalReportSummary,
+} from "./reporting";
+export {
+  createEvalReport,
+  formatEvalReport,
+  summarizeEvalReportCases,
+} from "./reporting";
+export type {
   CandidateRankingScoreResult,
   CandidateSourceBreakdown,
   RankedCandidate,
