@@ -115,6 +115,12 @@ export type GuidanceSessionContext = {
   failedTargets: TargetBox[];
 };
 
+export type GuidanceSessionVerification = {
+  status: "untested" | "changed" | "unchanged" | "blocked";
+  checkedAt?: string;
+  message?: string;
+};
+
 export type GuidanceSession = {
   id: string;
   originalGoal: string;
@@ -125,6 +131,7 @@ export type GuidanceSession = {
   completedTargets: GuidanceSessionTargetRecord[];
   failedTargets: GuidanceSessionTargetRecord[];
   status: GuidanceSessionStatus;
+  lastVerification?: GuidanceSessionVerification;
   createdAt: string;
   updatedAt: string;
 };
