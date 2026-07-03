@@ -169,6 +169,8 @@ Optional provider runs:
 
 Provider evals should be skippable when local servers or credentials are missing.
 
+Result: completed. `@toki/evals` now exports provider comparison helpers for mock, local Ollama, FreeLLMAPI dev, and unavailable modes. Provider results can be marked `passed`, `failed`, or `skipped`, so missing local servers or credentials do not break deterministic eval runs.
+
 ### Step 15.9: Regression Report
 
 Create a report format that is easy to read:
