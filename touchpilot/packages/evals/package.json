@@ -6,5 +6,9 @@
   "description": "Evaluation harness for screen-target accuracy and risk classification.",
   "scripts": {
     "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@toki/ai": "0.1.0",
+    "@toki/shared": "0.1.0"
   }
 }
