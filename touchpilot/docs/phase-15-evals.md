@@ -187,6 +187,8 @@ Result: completed. `@toki/evals` now exports regression report helpers that buil
 
 Close Phase 15 when Toki has a deterministic eval baseline for target accuracy, ranking, safety, and workflow verification.
 
+Result: completed. Phase 15 is closed as the deterministic eval foundation. Toki now has typed eval datasets, target scoring, ranking scoring, safety scoring, workflow scoring, known-screen CLI coverage, provider comparison helpers, and regression report formatting. Closure checks passed for eval package typecheck and known-screen eval.
+
 ## Non-Goals
 
 - Perfect live dashboard accuracy.

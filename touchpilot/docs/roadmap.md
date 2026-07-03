@@ -320,6 +320,7 @@ Status: Closed as a quality gate.
 - Step 7 result: added workflow scoring helpers in `@toki/evals` for verification status, matched candidates, next/back movement, blocked/completed status, and confirmation-required workflow behavior.
 - Step 8 result: added provider comparison helpers in `@toki/evals` for mock, local Ollama, FreeLLMAPI dev, and unavailable modes, including pass/fail/skipped results so missing local providers do not break deterministic eval runs.
 - Step 9 result: added eval report helpers in `@toki/evals` for summary counts, case-level status, target/ranking/safety/workflow/provider columns, and failure detail formatting.
+- Step 10 result: Phase 15 is closed as the deterministic eval foundation. Eval package typecheck and known-screen eval pass, covering the baseline for target accuracy, ranking, safety, workflow, optional provider comparison, and readable regression reporting.
 - Screenshot dataset.
 - Target annotations.
 - Coordinate scoring.
