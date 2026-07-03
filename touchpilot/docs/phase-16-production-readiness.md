@@ -56,6 +56,8 @@ Acceptance:
 - one clear command exists for full package/release output
 - known slow or flaky build paths are documented
 
+Result: completed. `docs/phase-16-release-build-inventory.md` records the current dev, web-build, check, Mac release, full Tauri package, and Windows release commands. The preferred Mac release-test command is `npm run desktop:release:mac`; full package checkpoints use `npm run desktop:build`. Stale Windows `TouchPilot` artifacts were found and recorded as a Step 16.3 identity cleanup risk.
+
 ### Step 16.3: App Identity And Bundle Metadata
 
 Make sure the product identity is consistent:

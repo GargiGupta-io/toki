@@ -331,6 +331,7 @@ Status: Closed as a quality gate.
 
 - Active plan: `docs/phase-16-production-readiness.md`.
 - Step 1 result: added `docs/phase-16-production-readiness.md` with the production-readiness goal, product rules, release risks, step plan, acceptance criteria, and non-goals. Phase 16 starts from a Mac-first beta-readiness target while keeping the Tauri/Rust/React core cross-platform.
+- Step 2 result: added `docs/phase-16-release-build-inventory.md` with the current dev, web build, check, Mac release, full Tauri package, and Windows release commands. Preferred Mac release testing uses `npm run desktop:release:mac`; stale Windows `TouchPilot` artifacts are recorded as a Step 16.3 identity risk.
 - Auto-update.
 - Signing.
 - Crash reporting.
