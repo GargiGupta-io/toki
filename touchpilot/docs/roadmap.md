@@ -300,6 +300,7 @@ Status: Closed as a quality gate.
 - Step 5 result: polished the target marker into a softer corner-ring highlight, removed the old coordinate shift, reduced center-dot/glow weight, and slowed the pulse so guidance looks less mock-like.
 - Step 6 result: tightened the settings/menu panel so it feels more like a compact utility popup: smaller inner surface, shorter push-to-talk copy, clearer voice status, and lighter footer actions.
 - Step 7 result: cleaned up Debug visually without removing information: denser layout, wider content area, lower-contrast cards, tighter data rows, compact workflow/candidate lists, and sticky tabs for long sections.
+- Step 8 result: documented the optional WebGL/R3F spike decision in `docs/phase-14-webgl-r3f-spike.md`. CSS remains the active renderer for now; Three/R3F should only be added if manual visual QA proves CSS cannot deliver the puck/target feel.
 - Refined overlay design system.
 - Optional `react-three-fiber` guidance/puck spike with CSS fallback.
 - Selective liquid/glass surface polish where it improves product feel.

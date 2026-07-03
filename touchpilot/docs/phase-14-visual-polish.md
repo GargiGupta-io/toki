@@ -129,6 +129,8 @@ Only if CSS cannot reach the desired puck/target feel:
 - measure bundle/performance impact
 - do not move all overlay UI into WebGL
 
+Result: completed as a documented deferral in `docs/phase-14-webgl-r3f-spike.md`. CSS is currently good enough for the Phase 14 baseline, so we did not add Three.js/R3F dependencies. The doc records the trigger conditions, adapter shape, dependency boundary, and acceptance criteria for a future spike.
+
 ### Step 14.9: Performance And Reduced Motion QA
 
 Check that visual polish does not make the app feel heavy:
