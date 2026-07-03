@@ -113,6 +113,8 @@ Add pure scoring helpers:
 - label/candidate match
 - pass/fail thresholds
 
+Result: completed. `@toki/evals` now exports pure target scoring helpers for center distance, center hit, IoU, normalized label match, candidate id match, and threshold-based pass/fail failure messages.
+
 ### Step 15.4: Candidate Ranking Eval
 
 Score ranked candidates against expected annotations:

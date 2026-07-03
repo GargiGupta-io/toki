@@ -313,6 +313,7 @@ Status: Closed as a quality gate.
 
 - Step 1 result: added `docs/phase-15-evals.md` as the Phase 15 plan. The phase will create deterministic measurement for target accuracy, candidate ranking, safety classification, workflow verification, optional provider comparison, and regression reporting.
 - Step 2 result: added typed eval dataset contracts in `@toki/evals` plus a known-screen baseline dataset covering target, ranking, and safety annotations for safe and risky browser fixture cases.
+- Step 3 result: added target scoring helpers in `@toki/evals` for center distance, center hit, IoU, normalized label matching, candidate id matching, and threshold-based pass/fail output.
 - Screenshot dataset.
 - Target annotations.
 - Coordinate scoring.
