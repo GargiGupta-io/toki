@@ -154,17 +154,19 @@ export default function BlobCursor({
               boxShadow: `${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px 0 ${shadowColor}`,
             }}
           >
-            <div
-              className="inner-dot"
-              style={{
-                width: innerSizes[i],
-                height: innerSizes[i],
-                top: ((sizes[i] ?? 0) - (innerSizes[i] ?? 0)) / 2,
-                left: ((sizes[i] ?? 0) - (innerSizes[i] ?? 0)) / 2,
-                backgroundColor: innerColor,
-                borderRadius: blobType === "circle" ? "50%" : "0%",
-              }}
-            />
+            {(innerSizes[i] ?? 0) > 0 ? (
+              <div
+                className="inner-dot"
+                style={{
+                  width: innerSizes[i],
+                  height: innerSizes[i],
+                  top: ((sizes[i] ?? 0) - (innerSizes[i] ?? 0)) / 2,
+                  left: ((sizes[i] ?? 0) - (innerSizes[i] ?? 0)) / 2,
+                  backgroundColor: innerColor,
+                  borderRadius: blobType === "circle" ? "50%" : "0%",
+                }}
+              />
+            ) : null}
           </div>
         ))}
       </div>
