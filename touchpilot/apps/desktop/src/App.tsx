@@ -483,6 +483,9 @@ function WorkflowStepCue({
         {step.index + 1}/{runtime.plan.steps.length}
       </span>
       <span className="workflow-step-title">{step.title}</span>
+      {step.requiresConfirmation ? (
+        <span className="workflow-step-risk">Confirm required</span>
+      ) : null}
       <span className="workflow-step-instruction">{step.instruction}</span>
       <span className="workflow-step-actions">
         <button type="button" onClick={onPrevious} disabled={isFirstStep}>
@@ -1327,6 +1330,14 @@ function OverlayWindowApp() {
         status: "blocked",
         checkedAt: new Date().toISOString(),
         message: "No active workflow step is available.",
+      };
+    }
+
+    if (activeStep.requiresConfirmation) {
+      return {
+        status: "blocked",
+        checkedAt: new Date().toISOString(),
+        message: `Confirmation required before continuing risky step "${activeStep.title}".`,
       };
     }
 

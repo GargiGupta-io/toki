@@ -896,6 +896,21 @@ h1 {
   line-height: 1.08;
 }
 
+.workflow-step-risk {
+  grid-column: 1 / -1;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.075);
+  font-size: 0.58rem;
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .workflow-step-instruction {
   grid-column: 1 / -1;
   color: rgba(255, 255, 255, 0.62);
