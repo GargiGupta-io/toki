@@ -153,6 +153,8 @@ Run manual checks on realistic screens:
 - workflow guidance active
 - confirmation-required guidance
 
+Result: completed. Added `docs/phase-14-manual-visual-qa.md` and `npm run qa:visual:manual`, which prints the Mac manual visual checklist for default runtime, settings/menu panel, target ring, workflow cue, Debug, and reduced-motion review.
+
 ### Step 14.11: Phase Closure
 
 Close Phase 14 only when the visual layer is clearly better without weakening the core product contract: Toki is a small cursor companion, not a dashboard.

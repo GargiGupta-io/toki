@@ -302,6 +302,7 @@ Status: Closed as a quality gate.
 - Step 7 result: cleaned up Debug visually without removing information: denser layout, wider content area, lower-contrast cards, tighter data rows, compact workflow/candidate lists, and sticky tabs for long sections.
 - Step 8 result: documented the optional WebGL/R3F spike decision in `docs/phase-14-webgl-r3f-spike.md`. CSS remains the active renderer for now; Three/R3F should only be added if manual visual QA proves CSS cannot deliver the puck/target feel.
 - Step 9 result: added `npm run qa:visual:motion` to guard reduced-motion coverage, decorative animation disabling, cursor polling responsiveness, pointer pulse fallback, and compositor-friendly puck motion properties.
+- Step 10 result: added `docs/phase-14-manual-visual-qa.md` and `npm run qa:visual:manual` as the human product-feel gate for default runtime, settings/menu panel, target ring, workflow cue, Debug, and reduced-motion review.
 - Refined overlay design system.
 - Optional `react-three-fiber` guidance/puck spike with CSS fallback.
 - Selective liquid/glass surface polish where it improves product feel.
