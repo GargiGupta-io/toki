@@ -118,6 +118,8 @@ Make Debug easier to inspect:
 - separate user-facing state from provider internals
 - keep debug clearly internal
 
+Result: completed. Debug keeps its tabs and full internal information, but the surface is denser and easier to scan: smaller shell padding, wider content area, lower-contrast cards, tighter data grids, compact workflow/candidate rows, and sticky tabs for long sections.
+
 ### Step 14.8: Optional WebGL/R3F Spike
 
 Only if CSS cannot reach the desired puck/target feel:
