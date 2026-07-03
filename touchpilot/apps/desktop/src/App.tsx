@@ -225,10 +225,17 @@ type VoiceStatusDetails = {
   visible: boolean;
 };
 
-type DebugTab = "runtime" | "voice" | "gesture" | "capture" | "guidance";
+type DebugTab =
+  | "runtime"
+  | "workflow"
+  | "voice"
+  | "gesture"
+  | "capture"
+  | "guidance";
 
 const debugTabs: Array<{ id: DebugTab; label: string }> = [
   { id: "runtime", label: "Runtime" },
+  { id: "workflow", label: "Workflow" },
   { id: "voice", label: "Voice" },
   { id: "gesture", label: "Gesture" },
   { id: "capture", label: "Capture" },
@@ -2039,6 +2046,7 @@ function DebugWindowApp() {
   const currentWorkflowStep =
     snapshot.workflowRuntime.plan?.steps[snapshot.workflowRuntime.currentStepIndex] ??
     null;
+  const workflowSteps = snapshot.workflowRuntime.plan?.steps ?? [];
 
   function sendOverlayCommand(command: OverlayCommand) {
     emitTo("overlay", "toki://overlay-command", command).catch(() => undefined);
@@ -2491,10 +2499,6 @@ function DebugWindowApp() {
                 </dd>
               </div>
               <div>
-                <dt>Instruction</dt>
-                <dd>{currentWorkflowStep?.instruction ?? "None"}</dd>
-              </div>
-              <div>
                 <dt>Verification</dt>
                 <dd>{snapshot.workflowRuntime.lastVerification?.status ?? "None"}</dd>
               </div>
@@ -2507,6 +2511,173 @@ function DebugWindowApp() {
               This only stores workflow state. Step verification and next/back
               controls are added in later Phase 13 steps.
             </p>
+          </section>
+            </>
+          ) : null}
+
+          {activeDebugTab === "workflow" ? (
+            <>
+          <section className="debug-section debug-section-wide">
+            <h2>Workflow Plan</h2>
+            <div className="debug-section-header-row">
+              <span>{snapshot.workflowRuntime.status}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  startMockWorkflow("Create a new project");
+                }}
+              >
+                Start create project
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  startMockWorkflow("Open settings");
+                }}
+              >
+                Start settings
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  startMockWorkflow("Export report");
+                }}
+              >
+                Start export
+              </button>
+            </div>
+            <dl>
+              <div>
+                <dt>Plan</dt>
+                <dd>{snapshot.workflowRuntime.plan?.title ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Goal</dt>
+                <dd>{snapshot.workflowRuntime.plan?.goal ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Current step</dt>
+                <dd>
+                  {currentWorkflowStep != null
+                    ? `${currentWorkflowStep.index + 1} / ${workflowSteps.length}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Verification</dt>
+                <dd>{snapshot.workflowRuntime.lastVerification?.status ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Blocked reason</dt>
+                <dd>{snapshot.workflowRuntime.blockedReason ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>{snapshot.workflowRuntime.plan?.createdAt ?? "None"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="debug-section">
+            <h2>Current Step</h2>
+            <div className="debug-section-header-row">
+              <span>{currentWorkflowStep?.status ?? "none"}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "retreat-workflow-step" });
+                }}
+                disabled={snapshot.workflowRuntime.currentStepIndex <= 0}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "advance-workflow-step" });
+                }}
+                disabled={snapshot.workflowRuntime.plan == null}
+              >
+                Next
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "stop-workflow" });
+                }}
+                disabled={snapshot.workflowRuntime.plan == null}
+              >
+                Stop
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "clear-workflow" });
+                }}
+                disabled={snapshot.workflowRuntime.status === "idle"}
+              >
+                Clear
+              </button>
+            </div>
+            <dl>
+              <div>
+                <dt>Title</dt>
+                <dd>{currentWorkflowStep?.title ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Kind</dt>
+                <dd>{currentWorkflowStep?.kind ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Risk</dt>
+                <dd>{currentWorkflowStep?.risk ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Confirm</dt>
+                <dd>{currentWorkflowStep?.requiresConfirmation ? "Required" : "No"}</dd>
+              </div>
+              <div>
+                <dt>Target</dt>
+                <dd>{currentWorkflowStep?.target?.label ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Instruction</dt>
+                <dd>{currentWorkflowStep?.instruction ?? "None"}</dd>
+              </div>
+            </dl>
+            <p className="debug-muted">
+              Verification is still manual state only. Step 13.7 connects this
+              to candidate checks on the next capture.
+            </p>
+          </section>
+
+          <section className="debug-section debug-section-wide">
+            <h2>Plan Steps</h2>
+            {workflowSteps.length > 0 ? (
+              <ol className="debug-workflow-steps">
+                {workflowSteps.map((step) => (
+                  <li
+                    key={step.id}
+                    data-active={step.id === snapshot.workflowRuntime.currentStepId}
+                  >
+                    <span className="debug-workflow-step-index">
+                      {step.index + 1}
+                    </span>
+                    <span>
+                      <strong>{step.title}</strong>
+                      <small>{step.instruction}</small>
+                    </span>
+                    <span className="debug-workflow-step-status">
+                      {step.status}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="debug-muted">
+                Start a mock workflow to inspect the full plan.
+              </p>
+            )}
           </section>
             </>
           ) : null}
