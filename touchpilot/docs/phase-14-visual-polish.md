@@ -140,6 +140,8 @@ Check that visual polish does not make the app feel heavy:
 - reduced-motion disables decorative loops
 - overlay remains click-through
 
+Result: completed. Added `npm run qa:visual:motion`, which checks reduced-motion coverage for puck/target animations, verifies decorative animations are disabled under reduced motion, checks the pointer pulse fallback, confirms the cursor polling interval remains responsive, and verifies compositor-friendly puck motion properties.
+
 ### Step 14.10: Manual Visual QA
 
 Run manual checks on realistic screens:
