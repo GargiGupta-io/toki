@@ -289,6 +289,7 @@ Status: Closed as a quality gate.
 - Step 7 result: added a first workflow verification stub. Workflow Next now captures the screen, checks expected labels/roles against Phase 12 candidates, and blocks instead of advancing when verification fails.
 - Step 8 result: added `npm run qa:workflow:known-screen` and `docs/phase-13-workflow-qa.md`. Controlled workflow QA passes for next, back, blocked, and completed behavior, and the browser fixture role mismatch for `Environment selector` was corrected.
 - Step 9 result: workflow steps now inherit Phase 11 safety rules. Risky workflow steps require confirmation, the controlled delete-project workflow proves delete-risk metadata, runtime Next blocks confirmation-required steps, and the overlay cue shows a compact confirmation marker.
+- Step 10 result: Phase 13 is closed as the controlled multi-step workflow foundation. Schema, mock planning, runtime state, Debug inspection, overlay step cues, next/back/stop, candidate verification, workflow QA, and safety gating are in place. Live arbitrary dashboard accuracy remains a future browser/provider QA problem, not a Phase 13 claim.
 
 ## Phase 14: Visual Polish
 

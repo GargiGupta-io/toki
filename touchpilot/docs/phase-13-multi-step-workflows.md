@@ -146,6 +146,10 @@ Result: completed. Workflow planning now auto-marks risky workflow steps as conf
 
 Close Phase 13 if a controlled multi-step workflow works end to end, or escalate if verification/candidate accuracy blocks useful workflow behavior.
 
+Result: completed. Phase 13 is closed as the controlled multi-step workflow foundation. Toki now has workflow schema, deterministic workflow planning, desktop runtime state, Debug workflow inspection, overlay step cues, next/back/stop behavior, candidate-based verification, controlled workflow QA, and safety gating for risky workflow steps.
+
+Closure scope: this proves controlled workflow behavior against known candidate fixtures. It does not claim arbitrary live dashboard workflow accuracy. Live product QA still needs real browser-extension payloads, provider-backed target selection, and manual overlay/product-feel testing on active apps.
+
 ## Acceptance Criteria
 
 Phase 13 is complete when:
