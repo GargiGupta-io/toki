@@ -271,6 +271,7 @@ Status: Closed as a quality gate.
 - Step 10: record accuracy notes.
 - Step 10 result: recorded the current accuracy state. Browser DOM fixture QA and OCR/AX fallback QA pass, candidate-id prompting is safer than raw coordinate guessing, and Debug can explain ranking. Real product accuracy is still not proven until live browser-extension payloads are tested on real dashboards with a provider.
 - Step 11: close Phase 12 or escalate to browser-extension-first screen understanding.
+- Step 11 result: Phase 12 is closed as the screen-intelligence foundation. Product-grade target accuracy is explicitly escalated to future browser-extension-first live dashboard QA/provider evaluation, not claimed as solved here.
 
 ## Phase 13: Multi-Step Workflows
 

@@ -130,6 +130,8 @@ Result: accuracy notes are recorded below. The current Phase 12 work proves that
 
 Close Phase 12 if target accuracy is usable on known screens, or escalate to browser-extension-first screen understanding.
 
+Result: Phase 12 is closed as the screen-intelligence foundation. The completed work gives Toki a shared element schema, candidate fusion, improved ranking, deterministic browser QA, deterministic OCR/AX fallback QA, candidate-id provider prompting, and Debug visibility into ranked candidates. Product-grade target accuracy is not claimed yet; it is escalated as future browser-extension-first live dashboard QA and provider evaluation.
+
 ## Current Candidate Source Inventory
 
 This is the state at the start of Phase 12.
@@ -174,7 +176,30 @@ Known misses and risks:
 
 Decision:
 
-Phase 12 can move to closure only if we accept this as a screen-intelligence foundation. If we require product-grade target accuracy before moving on, the next escalation should be browser-extension-first screen understanding with live dashboard test cases and candidate fusion exposed directly in Debug.
+Phase 12 is closed as a foundation, not as final product accuracy. The next target-accuracy escalation should be browser-extension-first live dashboard testing with candidate fusion exposed directly in Debug.
+
+## Closure
+
+Phase 12 is complete because:
+
+- Toki has a richer shared element shape through `UiElement`.
+- Existing `ScreenCandidate` evidence can be fused into explainable elements.
+- Browser DOM, OCR, Accessibility, and manual candidates can be compared.
+- Ranking now prefers trusted, clickable, goal-matching targets over broad regions.
+- Browser known-screen QA passes without provider dependency.
+- OCR/AX fallback QA passes without browser DOM dependency.
+- Provider prompts now prefer candidate IDs over invented coordinates.
+- Debug can show selected target IDs, ranked candidates, scores, and reasons.
+
+What remains after Phase 12:
+
+- live dashboard target-accuracy testing with real extension payloads,
+- provider comparison on real screens,
+- richer runtime fusion inside the desktop app,
+- browser-extension packaging and permissions,
+- accuracy scoring over multiple known pages.
+
+These are follow-up accuracy/productization tracks, not blockers for closing the Phase 12 foundation.
 
 ## Current Shared Shape
 
