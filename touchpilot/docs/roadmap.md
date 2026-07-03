@@ -311,6 +311,7 @@ Status: Closed as a quality gate.
 
 ## Phase 15: Evals
 
+- Step 1 result: added `docs/phase-15-evals.md` as the Phase 15 plan. The phase will create deterministic measurement for target accuracy, candidate ranking, safety classification, workflow verification, optional provider comparison, and regression reporting.
 - Screenshot dataset.
 - Target annotations.
 - Coordinate scoring.
