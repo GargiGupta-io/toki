@@ -74,7 +74,7 @@
     {
       "id": "dom-environment-selector-1",
       "label": "Environment selector",
-      "role": "dom_combobox",
+      "role": "dom_select",
       "source": "dom",
       "x": 100,
       "y": 285,
