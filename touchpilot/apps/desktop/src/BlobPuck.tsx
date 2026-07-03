@@ -7,19 +7,19 @@ type BlobNode = HTMLDivElement | null;
 
 const blobConfig = {
   blobType: "circle",
-  fillColor: "#5227FF",
+  fillColor: "rgba(82, 39, 255, 0.5)",
   trailCount: 3,
-  sizes: [36, 75, 45],
-  innerSizes: [12, 21, 15],
-  innerColor: "rgba(255,255,255,0.8)",
-  opacities: [0.6, 0.6, 0.6],
-  shadowColor: "rgba(0,0,0,0.75)",
-  shadowBlur: 3,
-  shadowOffsetX: 6,
-  shadowOffsetY: 6,
+  sizes: [28, 58, 36],
+  innerSizes: [0, 0, 0],
+  innerColor: "rgba(255,255,255,0)",
+  opacities: [0.42, 0.28, 0.34],
+  shadowColor: "rgba(0,0,0,0.38)",
+  shadowBlur: 8,
+  shadowOffsetX: 4,
+  shadowOffsetY: 7,
   filterId: "toki-blob-puck",
-  filterStdDeviation: 18,
-  filterColorMatrixValues: "1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 35 -10",
+  filterStdDeviation: 22,
+  filterColorMatrixValues: "1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 22 -8",
   fastDuration: 0.1,
   slowDuration: 0.5,
   fastEase: "power3.out",
@@ -51,6 +51,8 @@ export function BlobPuck({
   pointerShadow: PointerShadowPosition | null;
 }) {
   const blobsRef = useRef<BlobNode[]>([]);
+  const lastAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const trailVectorRef = useRef({ x: -1, y: 0.25 });
   const prefersReducedMotion = useMemo(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     [],
@@ -69,6 +71,31 @@ export function BlobPuck({
             x: pointerShadow.x + pointerShadowGeometry.width / 2,
             y: pointerShadow.y + pointerShadowGeometry.height / 2,
           };
+    if (anchor != null) {
+      const previousAnchor = lastAnchorRef.current;
+
+      if (previousAnchor != null) {
+        const deltaX = anchor.x - previousAnchor.x;
+        const deltaY = anchor.y - previousAnchor.y;
+        const distance = Math.hypot(deltaX, deltaY);
+
+        if (distance > 0.75) {
+          trailVectorRef.current = {
+            x: -deltaX / distance,
+            y: -deltaY / distance,
+          };
+        }
+      }
+
+      lastAnchorRef.current = anchor;
+    }
+
+    const trailVector = trailVectorRef.current;
+    const offsets = [
+      { x: 0, y: 0 },
+      { x: trailVector.x * 7, y: trailVector.y * 7 },
+      { x: trailVector.x * 12, y: trailVector.y * 12 },
+    ];
 
     blobsRef.current.forEach((blob, index) => {
       if (blob == null) {
@@ -76,8 +103,9 @@ export function BlobPuck({
       }
 
       const isLead = index === 0;
-      const x = anchor?.x ?? 0;
-      const y = anchor?.y ?? 0;
+      const offset = offsets[index] ?? offsets[0];
+      const x = anchor == null ? 0 : anchor.x + offset.x;
+      const y = anchor == null ? 0 : anchor.y + offset.y;
 
       gsap.to(blob, {
         x,
@@ -140,17 +168,19 @@ export function BlobPuck({
                   boxShadow: `${blobConfig.shadowOffsetX}px ${blobConfig.shadowOffsetY}px ${blobConfig.shadowBlur}px 0 ${blobConfig.shadowColor}`,
                 }}
               >
-                <div
-                  className="inner-dot"
-                  style={{
-                    width: innerSize,
-                    height: innerSize,
-                    top: (size - innerSize) / 2,
-                    left: (size - innerSize) / 2,
-                    backgroundColor: blobConfig.innerColor,
-                    borderRadius: blobConfig.blobType === "circle" ? "50%" : "0%",
-                  }}
-                />
+                {innerSize > 0 ? (
+                  <div
+                    className="inner-dot"
+                    style={{
+                      width: innerSize,
+                      height: innerSize,
+                      top: (size - innerSize) / 2,
+                      left: (size - innerSize) / 2,
+                      backgroundColor: blobConfig.innerColor,
+                      borderRadius: blobConfig.blobType === "circle" ? "50%" : "0%",
+                    }}
+                  />
+                ) : null}
               </div>
             );
           })}
