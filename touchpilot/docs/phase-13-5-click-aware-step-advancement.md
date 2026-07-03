@@ -223,6 +223,8 @@ Add shared types for click-aware events:
 - source platform,
 - permission state.
 
+Result: completed. `@toki/shared` now defines `ClickAwareNativeClick`, `ClickAwareRuntimeState`, click-aware permission states, and hit statuses. The desktop runtime and Debug can describe whether native click observation is idle, armed, hit, missed, advancing, unsupported, or errored.
+
 ### Step 13.5.3: Runtime Armed State
 
 Teach the desktop runtime when click-aware advancement is armed:
@@ -232,11 +234,15 @@ Teach the desktop runtime when click-aware advancement is armed:
 - session is waiting for user action,
 - safety policy allows the step to render.
 
+Result: completed. The overlay arms click-aware mode only for active workflow click steps with a valid target, no confirmation-required risk, no pause state, and no capture refresh in progress.
+
 ### Step 13.5.4: macOS Native Click Listener
 
 Add a Mac-first native listener that emits click coordinates while armed.
 
 The listener must not block the click or consume it.
+
+Result: completed. The Rust layer starts a Mac-first CoreGraphics polling loop. It emits one left-click event on a button-down transition only while React has armed the monitor. It does not consume or block the click.
 
 ### Step 13.5.5: Target Hit Testing
 
@@ -244,9 +250,13 @@ Check whether the native click landed inside the active target box plus safe pad
 
 Misses should be ignored or reported in Debug, not treated as failure.
 
+Result: completed. The overlay checks native click coordinates against the current target box plus bounded padding. Misses are recorded in Debug and do not advance the workflow.
+
 ### Step 13.5.6: Auto-Continue On Verified Hit
 
 If the click hits the target, wait briefly, recapture the screen, run the existing verification path, and then advance or block.
+
+Result: completed. A target hit waits briefly, reuses the same workflow verification path as manual Next, and advances only if verification passes. If verification fails, the workflow blocks instead of pretending progress happened.
 
 ### Step 13.5.7: Debug And Settings Visibility
 
@@ -260,6 +270,8 @@ Show click-aware status:
 
 Settings should keep this simple. Debug can show the detailed state.
 
+Result: completed for Debug. The Workflow tab now shows click-aware armed state, current target, last click coordinates, last hit/miss result, distance from target center, and the current click-aware message. Settings remains unchanged because this is an internal QA surface for now.
+
 ### Step 13.5.8: Manual QA
 
 Run a known-screen workflow:
@@ -272,6 +284,8 @@ Run a known-screen workflow:
 6. revoke or deny permission if practical,
 7. confirm manual Continue fallback still works.
 
+Result: pending manual runtime QA. Code checks can prove the wiring compiles, but click-aware advancement must be verified by launching Toki, starting a mock workflow, clicking the highlighted target, and confirming Debug shows a hit and workflow advancement.
+
 ### Step 13.5.9: Learning And Closure
 
 Update learning docs with:
@@ -281,6 +295,8 @@ Update learning docs with:
 - permission implications,
 - false-trigger mitigations,
 - cross-platform adapter plan.
+
+Result: completed for documentation updates. The learning repo records why the click-through overlay cannot receive desktop clicks directly, why native observation is needed, and why manual Continue remains the fallback.
 
 ## Acceptance Criteria
 
@@ -304,4 +320,3 @@ Phase 13.5 is complete when:
 - no Windows/Linux listener yet,
 - no Accessibility action tracking yet,
 - no raw click history logging.
-

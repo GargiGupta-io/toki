@@ -296,6 +296,13 @@ Status: Closed as a quality gate.
 - Goal: let Toki notice when the user clicks the highlighted target and continue the workflow after screen verification, without ever clicking for the user.
 - Active plan: `docs/phase-13-5-click-aware-step-advancement.md`.
 - Step 1 result: added `docs/phase-13-5-click-aware-step-advancement.md` with the product rule, selected Mac-first native listener approach, privacy/false-trigger/missed-click/permission mitigations, alternatives, step list, acceptance criteria, and non-goals. Phase 13.5 starts from the rule that click-aware advancement observes the user's own click and then verifies the screen; it does not add autonomous clicking.
+- Step 2 result: added shared click-aware event/runtime types in `@toki/shared`, covering native click coordinates, permission state, armed state, hit/miss/advancing states, hit padding, and last-click debug metadata.
+- Step 3 result: the desktop overlay now derives an armed state only for active workflow click steps with a valid target, no confirmation-required risk, no pause state, and no capture refresh in progress.
+- Step 4 result: added a Mac-first native CoreGraphics click monitor. It polls left mouse button transitions while armed, emits native click coordinates to the overlay, and does not block or consume the user's click.
+- Step 5 result: added target hit testing in the overlay. Native clicks must land inside the active target box plus bounded padding before Toki attempts to continue; misses are recorded for Debug and ignored.
+- Step 6 result: target hits now reuse the existing workflow verification path after a short delay. Toki advances only when recapture/candidate verification passes; otherwise the workflow blocks.
+- Step 7 result: Debug Workflow now exposes click-aware status, armed target, last click coordinates, last hit/miss, distance from target center, and the current message.
+- Step 8 result: manual runtime QA is still required. The code path is in place, but product acceptance needs a launch test with a mock workflow and real clicks on the highlighted target.
 
 ## Phase 14: Visual Polish
 
