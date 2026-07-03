@@ -98,6 +98,8 @@ Result: this document defines the Phase 13 workflow contract. The phase starts f
 
 Add shared types for workflow plans, workflow steps, step status, verification expectations, and workflow runtime state.
 
+Result: `@toki/shared` now defines the Phase 13 workflow contract: `WorkflowPlan`, `WorkflowStep`, `WorkflowStepStatus`, `WorkflowStatus`, `WorkflowVerificationExpectation`, `WorkflowVerificationResult`, and `WorkflowRuntimeState`. These types let the desktop runtime, Debug, provider/planner code, and future QA scripts talk about workflows in the same shape.
+
 ### Step 13.3: Mock Workflow Planner
 
 Create a deterministic mock planner for controlled tasks such as `create project`, `open settings`, and `export report`.
