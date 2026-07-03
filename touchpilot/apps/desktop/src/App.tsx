@@ -31,6 +31,7 @@ import type {
   HandLandmarkFrame,
   ScreenshotCapture,
   ScreenshotMetadata,
+  ScreenCandidate,
   SafetyPolicyDecision,
   TargetBox,
   VoiceActivationSource,
@@ -39,6 +40,7 @@ import type {
   VoiceTranscript,
   WorkflowRuntimeState,
   WorkflowStep,
+  WorkflowVerificationResult,
 } from "@toki/shared";
 import { probeCameraDevices } from "./cameraDevices";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
@@ -917,6 +919,97 @@ function setWorkflowActiveStep(
   };
 }
 
+function normalizeWorkflowText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function candidateMatchesWorkflowExpectation(
+  candidate: ScreenCandidate,
+  expectation: NonNullable<WorkflowStep["expected"]>[number],
+): boolean {
+  if (
+    expectation.type !== "candidate_visible" &&
+    expectation.type !== "candidate_absent"
+  ) {
+    return false;
+  }
+
+  if (expectation.role != null && candidate.role !== expectation.role) {
+    return false;
+  }
+
+  const expectedLabel = normalizeWorkflowText(expectation.label);
+  const candidateLabel = normalizeWorkflowText(candidate.label);
+
+  return (
+    candidateLabel === expectedLabel ||
+    candidateLabel.includes(expectedLabel) ||
+    expectedLabel.includes(candidateLabel)
+  );
+}
+
+function verifyWorkflowStepExpectations(
+  step: WorkflowStep,
+  candidates: ScreenCandidate[],
+): WorkflowVerificationResult {
+  const expectations = step.expected ?? [];
+
+  if (expectations.length === 0) {
+    return {
+      status: "passed",
+      checkedAt: new Date().toISOString(),
+      message: "No explicit expectations were defined for this step.",
+    };
+  }
+
+  const matchedCandidateIds: string[] = [];
+
+  for (const expectation of expectations) {
+    if (expectation.type === "manual" || expectation.type === "screen_changed") {
+      return {
+        status: "blocked",
+        checkedAt: new Date().toISOString(),
+        message: `${expectation.type} verification is not wired yet.`,
+        matchedCandidateIds,
+      };
+    }
+
+    const match = candidates.find((candidate) =>
+      candidateMatchesWorkflowExpectation(candidate, expectation),
+    );
+
+    if (expectation.type === "candidate_visible") {
+      if (match == null) {
+        return {
+          status: "failed",
+          checkedAt: new Date().toISOString(),
+          message: `Expected candidate "${expectation.label}" was not visible.`,
+          matchedCandidateIds,
+        };
+      }
+
+      matchedCandidateIds.push(match.id);
+    }
+
+    if (expectation.type === "candidate_absent" && match != null) {
+      matchedCandidateIds.push(match.id);
+      return {
+        status: "failed",
+        checkedAt: new Date().toISOString(),
+        message: `Candidate "${expectation.label}" is still visible.`,
+        matchedCandidateIds,
+      };
+    }
+  }
+
+  return {
+    status: "passed",
+    checkedAt: new Date().toISOString(),
+    message: "All candidate expectations passed.",
+    matchedCandidateIds,
+  };
+}
+
 function createInactiveGestureClassification(): GestureClassification {
   return createDefaultGestureRuntimeState().currentGesture;
 }
@@ -1224,6 +1317,72 @@ function OverlayWindowApp() {
     }
   }
 
+  async function verifyActiveWorkflowStep(
+    runtime: WorkflowRuntimeState,
+  ): Promise<WorkflowVerificationResult> {
+    const activeStep = runtime.plan?.steps[runtime.currentStepIndex];
+
+    if (activeStep == null) {
+      return {
+        status: "blocked",
+        checkedAt: new Date().toISOString(),
+        message: "No active workflow step is available.",
+      };
+    }
+
+    setIsRefreshingCapture(true);
+    setCaptureError(null);
+
+    try {
+      const [metadata, screenshot] = await Promise.all([
+        invoke<CaptureMetadata>("capture_metadata"),
+        invoke<ScreenshotCapture>("capture_screenshot"),
+      ]);
+
+      setCaptureMetadata(metadata);
+      setScreenshotCapture(screenshot);
+
+      const screenshotMetadata = getScreenshotMetadata(screenshot);
+      const screenshotPayload = getScreenshotPayload(screenshot);
+      const requestCalibration = getCalibration(metadata, viewport, screenshotMetadata);
+      const candidateContext = await collectScreenCandidatesForGuidance(
+        screenshot,
+        metadata.display,
+        activeStep.instruction,
+      );
+      const verificationRequest: GuidanceRequest = {
+        goal: activeStep.instruction,
+        screen: {
+          display: metadata.display,
+          capture: metadata,
+          screenshot: screenshotMetadata,
+          screenshotPayload,
+          calibration: requestCalibration,
+          ...candidateContext,
+        },
+        previousStep: guidanceResult?.step ?? null,
+      };
+
+      setGuidanceRequest(verificationRequest);
+
+      return verifyWorkflowStepExpectations(
+        activeStep,
+        candidateContext.candidates ?? [],
+      );
+    } catch (error) {
+      const message = formatCaptureError(error);
+      setCaptureError(message);
+
+      return {
+        status: "blocked",
+        checkedAt: new Date().toISOString(),
+        message,
+      };
+    } finally {
+      setIsRefreshingCapture(false);
+    }
+  }
+
   function cancelVoiceRuntime() {
     voiceSessionRef.current?.abort();
     voiceSessionRef.current = null;
@@ -1368,9 +1527,21 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "advance-workflow-step") {
+        const verification = await verifyActiveWorkflowStep(workflowRuntime);
+
         setWorkflowRuntime((currentState) => {
           if (currentState.plan == null) {
             return currentState;
+          }
+
+          if (verification.status !== "passed") {
+            return {
+              ...currentState,
+              status: "blocked",
+              lastVerification: verification,
+              blockedReason:
+                verification.message ?? "Workflow step verification did not pass.",
+            };
           }
 
           const isLastStep =
@@ -1382,15 +1553,16 @@ function OverlayWindowApp() {
               ...setWorkflowActiveStep(currentState, currentState.currentStepIndex),
               status: "completed",
               currentStepId: undefined,
-              lastVerification: {
-                status: "untested",
-                message: "Workflow marked complete manually.",
-              },
+              lastVerification: verification,
+              blockedReason: undefined,
             };
           }
 
           setOverlayState("guiding");
-          return setWorkflowActiveStep(currentState, currentState.currentStepIndex + 1);
+          return {
+            ...setWorkflowActiveStep(currentState, currentState.currentStepIndex + 1),
+            lastVerification: verification,
+          };
         });
         return;
       }
@@ -1638,7 +1810,7 @@ function OverlayWindowApp() {
     return () => {
       unlistenCommand?.();
     };
-  }, [overlaySnapshot, debugSnapshot, viewport, guidanceResult]);
+  }, [overlaySnapshot, debugSnapshot, viewport, guidanceResult, workflowRuntime]);
 
   useEffect(() => {
     if (!voiceRuntime.enabled || voiceRuntime.activationSource !== "debug") {
