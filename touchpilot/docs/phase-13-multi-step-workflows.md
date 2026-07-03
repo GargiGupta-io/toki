@@ -104,6 +104,8 @@ Result: `@toki/shared` now defines the Phase 13 workflow contract: `WorkflowPlan
 
 Create a deterministic mock planner for controlled tasks such as `create project`, `open settings`, and `export report`.
 
+Result: `@toki/ai` now exports `createMockWorkflowPlan()`. It returns deterministic shared `WorkflowPlan` objects for controlled goals: create project, open settings, and export/download report. Unknown vague goals return `null` instead of pretending Toki has a real planner.
+
 ### Step 13.4: Runtime Workflow State
 
 Store the active workflow, current step index, previous step result, and blocked/completed state in the desktop runtime.
