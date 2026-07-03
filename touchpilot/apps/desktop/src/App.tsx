@@ -7,6 +7,7 @@ import {
   createInvalidMockGuidance,
   createLowConfidenceMockGuidance,
   createMockGuidance,
+  createMockWorkflowPlan,
   createRiskyMockGuidance,
   evaluateSafetyPolicy,
   requestRealGuidance,
@@ -36,6 +37,7 @@ import type {
   VoiceCommandRequest,
   VoiceRuntimeState,
   VoiceTranscript,
+  WorkflowRuntimeState,
 } from "@toki/shared";
 import { probeCameraDevices } from "./cameraDevices";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
@@ -93,6 +95,7 @@ type OverlaySnapshot = {
 type DebugSnapshot = OverlaySnapshot & {
   guidanceProviderMode: GuidanceProviderMode;
   guidanceFixture: GuidanceFixture;
+  workflowRuntime: WorkflowRuntimeState;
   captureMetadata: CaptureMetadata | null;
   screenshotCapture: ScreenshotCapture | null;
   guidanceRequest: GuidanceRequest | null;
@@ -112,6 +115,8 @@ type OverlayCommand =
   | { type: "request-state" }
   | { type: "set-state"; state: OverlayState }
   | { type: "set-guidance-fixture"; fixture: GuidanceFixture }
+  | { type: "start-mock-workflow"; goal: string }
+  | { type: "clear-workflow" }
   | { type: "set-camera-enabled"; enabled: boolean }
   | {
       type: "set-camera-preview-status";
@@ -804,6 +809,17 @@ function createDefaultVoiceRuntimeState(): VoiceRuntimeState {
   };
 }
 
+function createEmptyWorkflowRuntimeState(): WorkflowRuntimeState {
+  return {
+    status: "idle",
+    plan: null,
+    currentStepIndex: -1,
+    lastVerification: {
+      status: "untested",
+    },
+  };
+}
+
 function createInactiveGestureClassification(): GestureClassification {
   return createDefaultGestureRuntimeState().currentGesture;
 }
@@ -819,6 +835,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     voiceRuntime: createDefaultVoiceRuntimeState(),
     guidanceProviderMode: "mock",
     guidanceFixture: "safe",
+    workflowRuntime: createEmptyWorkflowRuntimeState(),
     captureMetadata: null,
     screenshotCapture: null,
     guidanceRequest: null,
@@ -855,6 +872,9 @@ function OverlayWindowApp() {
   );
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
+  );
+  const [workflowRuntime, setWorkflowRuntime] = useState<WorkflowRuntimeState>(() =>
+    createEmptyWorkflowRuntimeState(),
   );
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
@@ -911,6 +931,7 @@ function OverlayWindowApp() {
       ...overlaySnapshot,
       guidanceProviderMode,
       guidanceFixture,
+      workflowRuntime,
       captureMetadata,
       screenshotCapture,
       guidanceRequest,
@@ -926,6 +947,7 @@ function OverlayWindowApp() {
       overlaySnapshot,
       guidanceProviderMode,
       guidanceFixture,
+      workflowRuntime,
       captureMetadata,
       screenshotCapture,
       guidanceRequest,
@@ -1196,6 +1218,42 @@ function OverlayWindowApp() {
 
       if (event.payload.type === "set-guidance-fixture") {
         setGuidanceFixture(event.payload.fixture);
+        return;
+      }
+
+      if (event.payload.type === "start-mock-workflow") {
+        const plan = createMockWorkflowPlan(event.payload.goal);
+
+        if (plan == null) {
+          setWorkflowRuntime({
+            status: "blocked",
+            plan: null,
+            currentStepIndex: -1,
+            lastVerification: {
+              status: "blocked",
+              checkedAt: new Date().toISOString(),
+              message: "No mock workflow exists for this goal.",
+            },
+            blockedReason: "No mock workflow exists for this goal.",
+          });
+          return;
+        }
+
+        const firstStep = plan.steps[0];
+        setWorkflowRuntime({
+          status: firstStep != null ? "active" : "completed",
+          plan,
+          currentStepIndex: firstStep?.index ?? -1,
+          currentStepId: firstStep?.id,
+          lastVerification: {
+            status: "untested",
+          },
+        });
+        return;
+      }
+
+      if (event.payload.type === "clear-workflow") {
+        setWorkflowRuntime(createEmptyWorkflowRuntimeState());
         return;
       }
 
@@ -1800,6 +1858,9 @@ function DebugWindowApp() {
       : "Ready for smoke test"
     : "Capture required";
   const debugVoiceStatusDetails = getVoiceStatusDetails(snapshot.voiceRuntime);
+  const currentWorkflowStep =
+    snapshot.workflowRuntime.plan?.steps[snapshot.workflowRuntime.currentStepIndex] ??
+    null;
 
   function sendOverlayCommand(command: OverlayCommand) {
     emitTo("overlay", "toki://overlay-command", command).catch(() => undefined);
@@ -1817,6 +1878,13 @@ function DebugWindowApp() {
   function testRealGuidanceSmoke() {
     setGuidanceTesterVerdict("untested");
     sendOverlayCommand({ type: "run-real-guidance-smoke" });
+  }
+
+  function startMockWorkflow(goal: string) {
+    sendOverlayCommand({
+      type: "start-mock-workflow",
+      goal,
+    });
   }
 
   function refreshVoiceCapabilities(requestMicrophone = false) {
@@ -2206,6 +2274,60 @@ function DebugWindowApp() {
             <p className="debug-muted">
               Pinch recognizes when thumb and index distance drops below the
               threshold, then the smoothed gesture reaches recognized.
+            </p>
+          </section>
+
+          <section className="debug-section">
+            <h2>Workflow Runtime</h2>
+            <div className="debug-section-header-row">
+              <span>{snapshot.workflowRuntime.status}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  startMockWorkflow("Create a new project");
+                }}
+              >
+                Start mock
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "clear-workflow" });
+                }}
+                disabled={snapshot.workflowRuntime.status === "idle"}
+              >
+                Clear
+              </button>
+            </div>
+            <dl>
+              <div>
+                <dt>Plan</dt>
+                <dd>{snapshot.workflowRuntime.plan?.title ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Step</dt>
+                <dd>
+                  {currentWorkflowStep != null
+                    ? `${currentWorkflowStep.index + 1}. ${currentWorkflowStep.title}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Instruction</dt>
+                <dd>{currentWorkflowStep?.instruction ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Verification</dt>
+                <dd>{snapshot.workflowRuntime.lastVerification?.status ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Blocked</dt>
+                <dd>{snapshot.workflowRuntime.blockedReason ?? "No"}</dd>
+              </div>
+            </dl>
+            <p className="debug-muted">
+              This only stores workflow state. Step verification and next/back
+              controls are added in later Phase 13 steps.
             </p>
           </section>
             </>
