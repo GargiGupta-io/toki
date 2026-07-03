@@ -329,6 +329,8 @@ Status: Closed as a quality gate.
 
 ## Phase 16: Production Readiness
 
+- Active plan: `docs/phase-16-production-readiness.md`.
+- Step 1 result: added `docs/phase-16-production-readiness.md` with the production-readiness goal, product rules, release risks, step plan, acceptance criteria, and non-goals. Phase 16 starts from a Mac-first beta-readiness target while keeping the Tauri/Rust/React core cross-platform.
 - Auto-update.
 - Signing.
 - Crash reporting.
