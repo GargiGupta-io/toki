@@ -319,6 +319,7 @@ Status: Closed as a quality gate.
 - Step 6 result: added `npm run qa:eval:known-screen`, a deterministic eval CLI that loads the known browser fixture, normalizes older candidate roles, scores target/ranking/safety expectations, and reports pass/fail without launching the desktop app.
 - Step 7 result: added workflow scoring helpers in `@toki/evals` for verification status, matched candidates, next/back movement, blocked/completed status, and confirmation-required workflow behavior.
 - Step 8 result: added provider comparison helpers in `@toki/evals` for mock, local Ollama, FreeLLMAPI dev, and unavailable modes, including pass/fail/skipped results so missing local providers do not break deterministic eval runs.
+- Step 9 result: added eval report helpers in `@toki/evals` for summary counts, case-level status, target/ranking/safety/workflow/provider columns, and failure detail formatting.
 - Screenshot dataset.
 - Target annotations.
 - Coordinate scoring.

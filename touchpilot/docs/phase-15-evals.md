@@ -181,6 +181,8 @@ Create a report format that is easy to read:
 - candidate rank changes
 - safety mismatches
 
+Result: completed. `@toki/evals` now exports regression report helpers that build markdown-style summaries with total/pass/fail/skipped counts, per-case target/ranking/safety/workflow/provider columns, and deduplicated failure details.
+
 ### Step 15.10: Phase Closure
 
 Close Phase 15 when Toki has a deterministic eval baseline for target accuracy, ranking, safety, and workflow verification.
