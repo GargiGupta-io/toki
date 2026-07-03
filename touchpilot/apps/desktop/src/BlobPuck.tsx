@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import gsap from "gsap";
 import type { PuckMotionModel } from "./puckMotion";
-import {
-  pointerShadowGeometry,
-  type PointerShadowPosition,
-  type PuckTargetVector,
-} from "./overlayGeometry";
+import { pointerShadowGeometry, type PointerShadowPosition } from "./overlayGeometry";
 
 type BlobNode = HTMLDivElement | null;
 
@@ -13,16 +9,16 @@ const blobConfig = {
   blobType: "circle",
   fillColor: "#5227FF",
   trailCount: 3,
-  sizes: [60, 125, 75],
-  innerSizes: [20, 35, 25],
+  sizes: [36, 75, 45],
+  innerSizes: [12, 21, 15],
   innerColor: "rgba(255,255,255,0.8)",
   opacities: [0.6, 0.6, 0.6],
   shadowColor: "rgba(0,0,0,0.75)",
-  shadowBlur: 5,
-  shadowOffsetX: 10,
-  shadowOffsetY: 10,
+  shadowBlur: 3,
+  shadowOffsetX: 6,
+  shadowOffsetY: 6,
   filterId: "toki-blob-puck",
-  filterStdDeviation: 30,
+  filterStdDeviation: 18,
   filterColorMatrixValues: "1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 35 -10",
   fastDuration: 0.1,
   slowDuration: 0.5,
@@ -30,29 +26,6 @@ const blobConfig = {
   slowEase: "power1.out",
   zIndex: 100,
 } as const;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function getTargetPull(targetVector: PuckTargetVector | null) {
-  if (targetVector == null) {
-    return { x: 0, y: 0 };
-  }
-
-  const distance = Math.hypot(targetVector.x, targetVector.y);
-
-  if (distance < 1) {
-    return { x: 0, y: 0 };
-  }
-
-  const pull = clamp(distance / 40, 0, 18);
-
-  return {
-    x: (targetVector.x / distance) * pull,
-    y: (targetVector.y / distance) * pull,
-  };
-}
 
 function getMotionScale(motion: PuckMotionModel) {
   if (motion.state === "error") {
@@ -73,11 +46,9 @@ function getMotionScale(motion: PuckMotionModel) {
 export function BlobPuck({
   motion,
   pointerShadow,
-  targetVector,
 }: {
   motion: PuckMotionModel;
   pointerShadow: PointerShadowPosition | null;
-  targetVector: PuckTargetVector | null;
 }) {
   const blobsRef = useRef<BlobNode[]>([]);
   const prefersReducedMotion = useMemo(
@@ -90,7 +61,6 @@ export function BlobPuck({
       return;
     }
 
-    const pull = motion.canSendTargetDroplets ? getTargetPull(targetVector) : { x: 0, y: 0 };
     const scale = getMotionScale(motion);
     const anchor =
       pointerShadow == null
@@ -106,16 +76,13 @@ export function BlobPuck({
       }
 
       const isLead = index === 0;
-      const isTail = index === 2 && motion.canSendTargetDroplets;
-      const x = (anchor?.x ?? 0) + (isTail ? pull.x : 0);
-      const y = (anchor?.y ?? 0) + (isTail ? pull.y : 0);
+      const x = anchor?.x ?? 0;
+      const y = anchor?.y ?? 0;
 
       gsap.to(blob, {
         x,
-        xPercent: -50,
         y,
-        yPercent: -50,
-        scale: isLead ? scale : scale * (isTail ? 0.96 : 1),
+        scale,
         opacity:
           anchor == null
             ? 0
@@ -131,7 +98,7 @@ export function BlobPuck({
         overwrite: true,
       });
     });
-  }, [motion, pointerShadow, prefersReducedMotion, targetVector]);
+  }, [motion, pointerShadow, prefersReducedMotion]);
 
   return (
     <span

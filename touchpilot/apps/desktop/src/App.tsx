@@ -56,13 +56,9 @@ import {
   startNativeVoiceCapture,
   stopNativeVoiceCapture,
 } from "./nativeVoiceCapture";
-import {
-  getPointerShadowPosition,
-  getPuckTargetVector,
-} from "./overlayGeometry";
+import { getPointerShadowPosition } from "./overlayGeometry";
 import type {
   PointerShadowPosition,
-  PuckTargetVector,
   ViewportMetrics,
 } from "./overlayGeometry";
 import { getPuckMotionModel } from "./puckMotion";
@@ -72,7 +68,7 @@ import type { VoiceCapabilityProbe } from "./voiceCapabilities";
 import { startVoiceRecognition } from "./voiceRecognition";
 import type { VoiceRecognitionSession } from "./voiceRecognition";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
-import type { OverlayState, PuckMotionModel } from "./puckMotion";
+import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
 import "./App.css";
 
@@ -340,59 +336,6 @@ function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDeta
     message: "Idle",
     visible: false,
   };
-}
-
-function AssistantPuck({
-  state,
-  motion,
-  pointerShadow,
-  targetVector,
-}: {
-  state: OverlayState;
-  motion: PuckMotionModel;
-  pointerShadow: PointerShadowPosition | null;
-  targetVector: PuckTargetVector | null;
-}) {
-  const meta = stateMeta[state];
-  const puckStyle = {
-    ...(pointerShadow == null
-      ? {}
-      : {
-          "--puck-shadow-x": `${pointerShadow.x}px`,
-          "--puck-shadow-y": `${pointerShadow.y}px`,
-        }),
-    ...(targetVector == null
-      ? {}
-      : {
-          "--puck-target-x": `${targetVector.x}px`,
-          "--puck-target-y": `${targetVector.y}px`,
-        }),
-  } as CSSProperties;
-
-  return (
-    <div
-      className={`assistant-puck is-${meta.tone}`}
-      data-motion={motion.state}
-      data-pointer-shadow={pointerShadow ? "active" : "idle"}
-      data-target-droplets={motion.canSendTargetDroplets ? "enabled" : "disabled"}
-      style={puckStyle}
-      aria-label={`Toki is ${meta.label.toLowerCase()}`}
-    >
-      <span className="puck-css-fallback" aria-hidden="true">
-        <span className="puck-orbit" />
-        <span className="puck-droplets">
-          <span className="puck-droplet puck-droplet-a" />
-          <span className="puck-droplet puck-droplet-b" />
-          <span className="puck-droplet puck-droplet-c" />
-          <span className="puck-droplet puck-droplet-d" />
-        </span>
-        <span className="puck-core">
-          <span className="puck-shadow-form" />
-          <span className="puck-shadow-tail" />
-        </span>
-      </span>
-    </div>
-  );
 }
 
 function VoiceStatusCue({
@@ -1310,11 +1253,6 @@ function OverlayWindowApp() {
     hasCaptureError: captureError != null,
     guidanceIssueCount: guidanceIssues.length,
   });
-  const puckVectorTarget = acceptedTarget ?? workflowTarget;
-  const puckTargetVector =
-    puckMotion.canSendTargetDroplets && puckVectorTarget != null
-      ? getPuckTargetVector(puckVectorTarget, viewport, pointerShadow)
-      : null;
   const calibration = useMemo(
     () => getCalibration(captureMetadata, viewport),
     [captureMetadata, viewport],
@@ -2441,13 +2379,6 @@ function OverlayWindowApp() {
       <BlobPuck
         motion={puckMotion}
         pointerShadow={pointerShadow}
-        targetVector={puckTargetVector}
-      />
-      <AssistantPuck
-        state={overlayState}
-        motion={puckMotion}
-        pointerShadow={pointerShadow}
-        targetVector={puckTargetVector}
       />
       {workflowRuntime.status === "active" ? (
         <WorkflowStepCue
