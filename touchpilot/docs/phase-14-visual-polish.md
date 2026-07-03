@@ -70,6 +70,8 @@ Tighten the workflow/guidance cue:
 - keep Back/Next/Stop compact
 - ensure confirmation state is obvious without looking dangerous by default
 
+Result: completed. The workflow cue is now a lighter cursor-adjacent instruction surface instead of a small dashboard card. It uses a compact step meta line, two-line clamped instruction text, flatter Back/Next/Stop controls, and a distinct but restrained confirmation-required state.
+
 ### Step 14.4: Puck Motion And Edge Behavior
 
 Improve the cursor companion:

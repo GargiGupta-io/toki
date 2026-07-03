@@ -295,6 +295,7 @@ Status: Closed as a quality gate.
 
 - Step 1 result: added `docs/phase-14-visual-polish.md` as the Phase 14 plan. The phase is scoped to cursor-first polish: puck proximity and edge behavior, compact guidance/workflow cues, subtle target rings, settings/menu popup polish, Debug cleanup, optional WebGL/R3F spike only if CSS is not enough, and manual visual QA.
 - Step 2 result: refreshed `docs/visual-acceptance.md` for the current Mac-first Toki runtime. The gate now explicitly fails detached puck behavior, edge loss, dashboard-like workflow cues, and unclear safety states, while adding checks for close cursor attachment, target-ring subtlety, workflow cues, and confirmation-required guidance.
+- Step 3 result: polished the overlay workflow cue into a smaller cursor-adjacent instruction surface with flatter controls, a compact step meta line, two-line instruction clamping, and a restrained confirmation-required visual state.
 - Refined overlay design system.
 - Optional `react-three-fiber` guidance/puck spike with CSS fallback.
 - Selective liquid/glass surface polish where it improves product feel.
