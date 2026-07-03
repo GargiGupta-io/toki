@@ -473,28 +473,34 @@ function WorkflowStepCue({
   return (
     <aside
       className="workflow-step-cue"
+      data-confirmation-required={step.requiresConfirmation ? "true" : "false"}
       style={{
-        left: pointerShadow.x + 30,
-        top: pointerShadow.y + 52,
+        left: pointerShadow.x + 22,
+        top: pointerShadow.y + 42,
       }}
       aria-label={`Workflow step ${step.index + 1} of ${runtime.plan.steps.length}`}
     >
-      <span className="workflow-step-count">
-        {step.index + 1}/{runtime.plan.steps.length}
+      <span className="workflow-step-meta">
+        Step {step.index + 1}/{runtime.plan.steps.length}
+        {step.requiresConfirmation ? (
+          <span className="workflow-step-risk">Confirm first</span>
+        ) : null}
       </span>
       <span className="workflow-step-title">{step.title}</span>
-      {step.requiresConfirmation ? (
-        <span className="workflow-step-risk">Confirm required</span>
-      ) : null}
       <span className="workflow-step-instruction">{step.instruction}</span>
-      <span className="workflow-step-actions">
-        <button type="button" onClick={onPrevious} disabled={isFirstStep}>
+      <span className="workflow-step-actions" aria-label="Workflow controls">
+        <button
+          type="button"
+          onClick={onPrevious}
+          disabled={isFirstStep}
+          aria-label="Go to previous workflow step"
+        >
           Back
         </button>
-        <button type="button" onClick={onNext}>
+        <button type="button" onClick={onNext} aria-label="Continue workflow">
           {isLastStep ? "Done" : "Next"}
         </button>
-        <button type="button" onClick={onStop}>
+        <button type="button" onClick={onStop} aria-label="Stop workflow">
           Stop
         </button>
       </span>

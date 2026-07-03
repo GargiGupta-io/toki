@@ -852,33 +852,40 @@ h1 {
 
 .workflow-step-cue {
   position: absolute;
-  width: min(260px, calc(100vw - 56px));
+  width: min(236px, calc(100vw - 44px));
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 5px 8px;
-  padding: 9px 10px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
+  gap: 4px;
+  padding: 8px 9px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.105);
+  border-radius: 12px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.025)),
-    rgba(10, 11, 13, 0.66);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.018)),
+    rgba(8, 9, 11, 0.55);
   box-shadow:
-    0 18px 42px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(20px);
+    0 14px 34px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.105);
+  backdrop-filter: blur(18px);
   pointer-events: auto;
   transform: translateY(-2px);
 }
 
-.workflow-step-count {
-  align-self: start;
-  padding: 2px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.58rem;
+.workflow-step-cue[data-confirmation-required="true"] {
+  border-color: rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.02)),
+    rgba(16, 14, 10, 0.62);
+}
+
+.workflow-step-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.56rem;
   font-weight: 850;
-  line-height: 1.1;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .workflow-step-title,
@@ -891,56 +898,58 @@ h1 {
 
 .workflow-step-title {
   color: rgba(255, 255, 255, 0.94);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 850;
   line-height: 1.08;
 }
 
 .workflow-step-risk {
-  grid-column: 1 / -1;
   width: max-content;
   max-width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  padding: 3px 7px;
-  color: rgba(255, 255, 255, 0.78);
-  background: rgba(255, 255, 255, 0.075);
-  font-size: 0.58rem;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 0.56rem;
   font-weight: 850;
   line-height: 1;
-  text-transform: uppercase;
 }
 
 .workflow-step-instruction {
-  grid-column: 1 / -1;
-  color: rgba(255, 255, 255, 0.62);
+  display: -webkit-box;
+  color: rgba(255, 255, 255, 0.64);
   font-size: 0.66rem;
   font-weight: 650;
   line-height: 1.18;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
 }
 
 .workflow-step-actions {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding-top: 2px;
 }
 
 .workflow-step-actions button {
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 9px;
-  padding: 5px 6px;
-  color: rgba(255, 255, 255, 0.74);
-  background: rgba(255, 255, 255, 0.055);
+  border: 0;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: 0.61rem;
   font-weight: 800;
   line-height: 1;
 }
 
+.workflow-step-actions button:hover:not(:disabled),
+.workflow-step-actions button:focus-visible:not(:disabled) {
+  color: rgba(255, 255, 255, 0.92);
+}
+
 .workflow-step-actions button:disabled {
-  opacity: 0.36;
+  opacity: 0.26;
 }
 
 .voice-status-cue {
