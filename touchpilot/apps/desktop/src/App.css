@@ -382,6 +382,7 @@ html {
 }
 
 .debug-section-wide {
+  grid-column: 1 / -1;
   margin-top: 12px;
 }
 
@@ -482,6 +483,71 @@ html {
 
 .debug-muted {
   color: rgba(255, 255, 255, 0.52);
+}
+
+.debug-workflow-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.debug-workflow-steps li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.debug-workflow-steps li[data-active="true"] {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.debug-workflow-step-index,
+.debug-workflow-step-status {
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 0.62rem;
+  font-weight: 850;
+}
+
+.debug-workflow-step-index {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+}
+
+.debug-workflow-step-status {
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.debug-workflow-steps strong,
+.debug-workflow-steps small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-workflow-steps strong {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.76rem;
+}
+
+.debug-workflow-steps small {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.68rem;
 }
 
 .debug-result-review {
