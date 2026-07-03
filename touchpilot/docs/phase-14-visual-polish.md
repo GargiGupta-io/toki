@@ -159,6 +159,30 @@ Result: completed. Added `docs/phase-14-manual-visual-qa.md` and `npm run qa:vis
 
 Close Phase 14 only when the visual layer is clearly better without weakening the core product contract: Toki is a small cursor companion, not a dashboard.
 
+Result: completed. Phase 14 is closed for implementation and QA guardrails. The visual layer now has a refreshed acceptance gate, tighter workflow cue, closer edge-aware puck geometry, softer target ring, more compact settings popup, denser Debug surface, a documented WebGL/R3F deferral, reduced-motion QA, and a manual visual QA checklist.
+
+Closure verification:
+
+- `npm run qa:visual:motion`
+- `npm run qa:visual:manual`
+- `npm --workspace @toki/desktop run typecheck`
+
+Manual product-feel review still requires launching Toki on a real screen and walking through `docs/phase-14-manual-visual-qa.md`. That is the final taste check, not an automated claim.
+
+## Closure Summary
+
+Phase 14 improved the product surface without changing Toki's architecture:
+
+- overlay remains cursor-first
+- CSS remains the active renderer
+- WebGL/R3F is deferred until proven necessary
+- settings stays a compact utility popup
+- Debug stays internal
+- target and workflow cues are lighter
+- puck geometry is closer to the cursor and edge-aware
+
+The next phase can move into evals/measurement work without reopening visual polish unless manual visual QA finds a specific regression.
+
 ## Non-Goals
 
 - Full brand/onboarding site.
