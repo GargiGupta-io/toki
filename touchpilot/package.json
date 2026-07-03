@@ -20,6 +20,7 @@
     "qa:fallback:known-screen": "node scripts/fallback-known-screen-qa.mjs",
     "qa:workflow:known-screen": "node --import tsx scripts/workflow-known-screen-qa.mjs",
     "qa:visual:motion": "node scripts/visual-motion-qa.mjs",
+    "qa:visual:manual": "bash scripts/macos-visual-manual-qa.sh",
     "rust:check": "cargo check --workspace",
     "rust:fmt": "cargo fmt --all",
     "guidance:smoke:dev": "node scripts/guidance-smoke-server.mjs",
