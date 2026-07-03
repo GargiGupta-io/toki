@@ -280,6 +280,7 @@ Status: Closed as a quality gate.
 - Next/back controls.
 - Screen change detection.
 - Completion detection.
+- Step 1 result: added `docs/phase-13-multi-step-workflows.md`, defining the workflow contract, product rule, plan shape, step list, acceptance criteria, non-goals, and tradeoffs. Phase 13 starts with manual guidance only: Toki can plan, point, verify, and advance, but it still does not click or type for the user.
 
 ## Phase 14: Visual Polish
 
