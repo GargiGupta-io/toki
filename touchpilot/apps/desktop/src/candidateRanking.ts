@@ -15,15 +15,51 @@ const RISK_WORDS = new Set([
   "billing",
 ]);
 const CLICKABLE_ROLE_RE =
-  /(button|link|menu item|checkbox|radio|textbox|text field|tab|cell|row)/i;
+  /(button|link|menu item|menuitem|checkbox|radio|textbox|text field|tab|cell|row|accessibility_element)/i;
 const WEAK_REGION_ROLE_RE = /(window|application|group|toolbar|menubar|region)/i;
 const SOURCE_TRUST = new Map<string, number>([
   ["dom", 14],
   ["browser-extension", 14],
   ["manual", 12],
-  ["accessibility", 8],
+  ["accessibility", 18],
   ["ocr", 4],
 ]);
+const ACTION_SYNONYMS: Array<{
+  goal: string[];
+  label: string[];
+  reason: string;
+}> = [
+  {
+    goal: ["new", "make", "create", "add"],
+    label: ["new", "make", "create", "add", "plus", "button"],
+    reason: "create-action",
+  },
+  {
+    goal: ["new", "make", "create", "add", "playlist", "list"],
+    label: ["playlist", "library", "collection", "folder", "queue"],
+    reason: "playlist-context",
+  },
+  {
+    goal: ["open", "view", "show"],
+    label: ["open", "view", "show"],
+    reason: "open-action",
+  },
+  {
+    goal: ["download", "save"],
+    label: ["download", "save"],
+    reason: "download-action",
+  },
+  {
+    goal: ["search", "find"],
+    label: ["search", "find"],
+    reason: "search-action",
+  },
+  {
+    goal: ["settings", "permission", "permissions"],
+    label: ["settings", "permission", "permissions", "privacy"],
+    reason: "settings-action",
+  },
+];
 
 type RankedCandidate = ScreenCandidate & {
   rank?: {
@@ -35,7 +71,11 @@ type RankedCandidate = ScreenCandidate & {
 
 function normalizeText(value: unknown): string {
   return typeof value === "string"
-    ? value.trim().toLowerCase().replace(/\s+/g, " ")
+    ? value
+        .trim()
+        .toLowerCase()
+        .replace(/\+/g, " plus ")
+        .replace(/\s+/g, " ")
     : "";
 }
 
@@ -60,6 +100,57 @@ function hasExactLabelMatch(label: string, goal: string): boolean {
 
 function hasRiskWord(label: string): boolean {
   return tokenize(label).some((token) => RISK_WORDS.has(token));
+}
+
+function getActionSynonymScore(
+  labelTokens: string[],
+  goalTokens: string[],
+): { score: number; reasons: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
+
+  for (const synonym of ACTION_SYNONYMS) {
+    const goalMatches = synonym.goal.some((token) => goalTokens.includes(token));
+    const labelMatches = synonym.label.some((token) => labelTokens.includes(token));
+
+    if (goalMatches && labelMatches) {
+      score += 10;
+      reasons.push(synonym.reason);
+    }
+  }
+
+  return { score, reasons };
+}
+
+function getIconActionScore(
+  labelTokens: string[],
+  goalTokens: string[],
+  role: string,
+): { score: number; reasons: string[] } {
+  const reasons: string[] = [];
+  let score = 0;
+  const wantsCreate = ["new", "make", "create", "add"].some((token) =>
+    goalTokens.includes(token),
+  );
+  const wantsCollection = ["playlist", "list", "collection", "library"].some(
+    (token) => goalTokens.includes(token),
+  );
+  const looksLikeCreateControl = ["add", "create", "new", "plus"].some((token) =>
+    labelTokens.includes(token),
+  );
+  const isButtonLike = CLICKABLE_ROLE_RE.test(role);
+
+  if (wantsCreate && looksLikeCreateControl && isButtonLike) {
+    score += 16;
+    reasons.push("icon-create-control");
+  }
+
+  if (wantsCreate && wantsCollection && looksLikeCreateControl && isButtonLike) {
+    score += 12;
+    reasons.push("collection-create-target");
+  }
+
+  return { score, reasons };
 }
 
 function sourceTrust(candidate: ScreenCandidate): number {
@@ -108,6 +199,7 @@ export function rankScreenCandidates(
   return candidates
     .map((candidate, index) => {
       const matchCount = countMatchingTokens(candidate.label, goalTokens);
+      const labelTokens = tokenize(candidate.label);
       const role = normalizeText(candidate.role);
       const area = candidate.width * candidate.height;
       const duplicateCount = labelCounts.get(normalizeText(candidate.label)) ?? 1;
@@ -128,6 +220,20 @@ export function rankScreenCandidates(
       if (matchCount > 0) {
         score += matchCount * 12;
         reasons.push(`goal-text:${matchCount}`);
+      }
+
+      const synonymScore = getActionSynonymScore(labelTokens, goalTokens);
+
+      if (synonymScore.score > 0) {
+        score += synonymScore.score;
+        reasons.push(...synonymScore.reasons);
+      }
+
+      const iconActionScore = getIconActionScore(labelTokens, goalTokens, role);
+
+      if (iconActionScore.score > 0) {
+        score += iconActionScore.score;
+        reasons.push(...iconActionScore.reasons);
       }
 
       if (CLICKABLE_ROLE_RE.test(role)) {
@@ -168,7 +274,7 @@ export function rankScreenCandidates(
         reasons.push("disabled");
       }
 
-      if (duplicateCount > 1) {
+      if (duplicateCount > 1 && candidate.source !== "accessibility") {
         score -= Math.min(10, duplicateCount * 2);
         reasons.push(`duplicate:${duplicateCount}`);
       }

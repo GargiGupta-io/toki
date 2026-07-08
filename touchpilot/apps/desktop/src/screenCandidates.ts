@@ -17,6 +17,7 @@ export async function collectScreenCandidatesForGuidance(
   screenshot: ScreenshotCapture,
   display: DisplayContext,
   goal: string,
+  appName?: string | null,
 ): Promise<ScreenCandidateResult> {
   try {
     const result = await invoke<ScreenCandidateResult>("collect_screen_candidates", {
@@ -27,6 +28,7 @@ export async function collectScreenCandidatesForGuidance(
         displayWidth: display.width,
         displayHeight: display.height,
         scaleFactor: display.scaleFactor,
+        appName: appName ?? screenshot.activeWindow?.appName,
       },
     });
 
