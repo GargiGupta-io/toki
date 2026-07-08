@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Toki uses the microphone only while push-to-talk is held to understand your guidance request.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Toki uses screen recording access to inspect the visible app window and point to the next target you asked for. Toki does not control your computer.</string>
+</dict>
+</plist>
