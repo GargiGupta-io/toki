@@ -3,7 +3,10 @@ use chrono::Utc;
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use screenshots::Screen;
 use serde::Serialize;
-use std::{error::Error, fmt, io::Cursor};
+use std::{error::Error, fmt, fs, io::Cursor};
+
+#[cfg(target_os = "macos")]
+use std::{path::PathBuf, process::Command};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -122,8 +125,48 @@ pub fn module_name() -> &'static str {
 }
 
 pub fn capture_primary_display_metadata() -> Result<CaptureMetadata, CaptureError> {
-    let screens = Screen::all().map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
-    let screen = screens.into_iter().next().ok_or(CaptureError::NoDisplay)?;
+    let screens = match Screen::all() {
+        Ok(screens) => screens,
+        Err(_error) => {
+            #[cfg(target_os = "macos")]
+            {
+                let capture = capture_primary_display_macos_fallback()?;
+                return Ok(CaptureMetadata {
+                    source: capture.source,
+                    display: capture.display,
+                    cursor: capture.cursor,
+                    active_window: capture.active_window,
+                    captured_at: capture.captured_at,
+                });
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(CaptureError::CaptureFailed(_error.to_string()));
+            }
+        }
+    };
+    let screen = match screens.into_iter().next() {
+        Some(screen) => screen,
+        None => {
+            #[cfg(target_os = "macos")]
+            {
+                let capture = capture_primary_display_macos_fallback()?;
+                return Ok(CaptureMetadata {
+                    source: capture.source,
+                    display: capture.display,
+                    cursor: capture.cursor,
+                    active_window: capture.active_window,
+                    captured_at: capture.captured_at,
+                });
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(CaptureError::NoDisplay);
+            }
+        }
+    };
     let display_info = screen.display_info;
 
     Ok(CaptureMetadata {
@@ -141,8 +184,34 @@ pub fn capture_primary_display_metadata() -> Result<CaptureMetadata, CaptureErro
 }
 
 pub fn capture_primary_display() -> Result<ScreenshotCapture, CaptureError> {
-    let screens = Screen::all().map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
-    let screen = screens.into_iter().next().ok_or(CaptureError::NoDisplay)?;
+    let screens = match Screen::all() {
+        Ok(screens) => screens,
+        Err(_error) => {
+            #[cfg(target_os = "macos")]
+            {
+                return capture_primary_display_macos_fallback();
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(CaptureError::CaptureFailed(_error.to_string()));
+            }
+        }
+    };
+    let screen = match screens.into_iter().next() {
+        Some(screen) => screen,
+        None => {
+            #[cfg(target_os = "macos")]
+            {
+                return capture_primary_display_macos_fallback();
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(CaptureError::NoDisplay);
+            }
+        }
+    };
     let image = screen
         .capture()
         .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
@@ -173,6 +242,68 @@ pub fn capture_primary_display() -> Result<ScreenshotCapture, CaptureError> {
         cursor: None,
         active_window: None,
         captured_at: Utc::now().to_rfc3339(),
+        format: ScreenshotFormat::Png,
+        byte_length,
+        image_width: width,
+        image_height: height,
+        image_base64,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn capture_primary_display_macos_fallback() -> Result<ScreenshotCapture, CaptureError> {
+    let captured_at = Utc::now();
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "toki-screencapture-{}-{}.png",
+        std::process::id(),
+        captured_at.timestamp_millis()
+    ));
+
+    let output = Command::new("/usr/sbin/screencapture")
+        .args(["-x", "-t", "png"])
+        .arg(&path)
+        .output()
+        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let _ = fs::remove_file(&path);
+        return Err(CaptureError::CaptureFailed(if message.is_empty() {
+            format!("screencapture exited with status {}", output.status)
+        } else {
+            message
+        }));
+    }
+
+    read_macos_screencapture_file(path, captured_at.to_rfc3339())
+}
+
+#[cfg(target_os = "macos")]
+fn read_macos_screencapture_file(
+    path: PathBuf,
+    captured_at: String,
+) -> Result<ScreenshotCapture, CaptureError> {
+    let png_bytes = fs::read(&path).map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    let _ = fs::remove_file(&path);
+    let image = image::load_from_memory_with_format(&png_bytes, ImageFormat::Png)
+        .map_err(|error| CaptureError::EncodeFailed(error.to_string()))?;
+    let width = image.width();
+    let height = image.height();
+    let byte_length = u32::try_from(png_bytes.len()).map_err(|_| CaptureError::LengthOverflow)?;
+    let image_base64 = general_purpose::STANDARD.encode(&png_bytes);
+
+    Ok(ScreenshotCapture {
+        source: CaptureSource::ActiveDisplay,
+        display: DisplayContext {
+            id: "macos-screencapture".to_string(),
+            width,
+            height,
+            scale_factor: 1.0,
+        },
+        cursor: None,
+        active_window: None,
+        captured_at,
         format: ScreenshotFormat::Png,
         byte_length,
         image_width: width,
