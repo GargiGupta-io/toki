@@ -13,12 +13,15 @@ use tauri::{
     menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, PhysicalPosition, PhysicalSize,
     Position, Size, State,
 };
-use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 use toki_capture::{
     capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
 };
 
 static VOICE_SHORTCUT_HELD: AtomicBool = AtomicBool::new(false);
+static OVERLAY_GUIDANCE_SURFACE: AtomicBool = AtomicBool::new(false);
+const NATIVE_VOICE_KEY_POLL_MS: u64 = 35;
+const NATIVE_CURSOR_POLL_MS: u64 = 50;
+const NATIVE_CLICK_POLL_MS: u64 = 25;
 
 #[derive(Default)]
 struct NativeClickMonitorState {
@@ -47,6 +50,19 @@ struct VoiceCaptureStreamInfo {
     device_name: Option<String>,
 }
 
+fn stop_voice_capture_session(session: VoiceCaptureSession) {
+    let VoiceCaptureSession {
+        stop_sender,
+        mut worker,
+        ..
+    } = session;
+
+    let _ = stop_sender.send(());
+    if let Some(worker) = worker.take() {
+        let _ = worker.join();
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(tag = "type")]
 enum OverlayCommandPayload {
@@ -56,12 +72,29 @@ enum OverlayCommandPayload {
     SubmitVoiceListening,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeCursorPosition {
     x: f64,
     y: f64,
     source: &'static str,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeWindowBounds {
+    app_name: Option<String>,
+    title: Option<String>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlaySurfaceModeRequest {
+    mode: String,
 }
 
 #[derive(Deserialize)]
@@ -161,6 +194,7 @@ struct ScreenCandidateRequest {
     display_width: f64,
     display_height: f64,
     scale_factor: f64,
+    app_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -168,11 +202,14 @@ struct ScreenCandidateRequest {
 struct ScreenCandidate {
     id: String,
     label: String,
-    role: &'static str,
+    role: String,
+    source: &'static str,
     x: i32,
     y: i32,
     width: i32,
     height: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -200,11 +237,56 @@ struct VisionOcrItem {
     height: f64,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccessibilityPayload {
+    candidates: Vec<AccessibilityItem>,
+    errors: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct AccessibilityItem {
+    label: Option<String>,
+    name: Option<String>,
+    description: Option<String>,
+    help: Option<String>,
+    role: Option<String>,
+    value: Option<String>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
 fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::from_millis(0))
         .as_millis()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_accessibility_is_trusted() -> bool {
+    use std::os::raw::c_uchar;
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrusted() -> c_uchar;
+    }
+
+    unsafe { AXIsProcessTrusted() != 0 }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_screen_capture_is_trusted() -> bool {
+    use std::os::raw::c_uchar;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> c_uchar;
+    }
+
+    unsafe { CGPreflightScreenCaptureAccess() != 0 }
 }
 
 #[cfg(target_os = "macos")]
@@ -223,6 +305,8 @@ mod native_cursor {
         fn CGEventCreate(source: *const c_void) -> *mut c_void;
         fn CGEventGetLocation(event: *mut c_void) -> CGPoint;
         fn CGEventSourceButtonState(state_id: i32, button: u32) -> bool;
+        fn CGEventSourceFlagsState(state_id: i32) -> u64;
+        fn CGEventSourceKeyState(state_id: i32, key: u16) -> bool;
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
@@ -255,6 +339,31 @@ mod native_cursor {
                 K_CG_MOUSE_BUTTON_LEFT,
             )
         }
+    }
+
+    pub fn option_down() -> bool {
+        const K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: i32 = 0;
+        const K_VK_LEFT_OPTION: u16 = 0x3A;
+        const K_VK_RIGHT_OPTION: u16 = 0x3D;
+        const K_CG_EVENT_FLAG_MASK_ALTERNATE: u64 = 1 << 19;
+
+        let flags =
+            unsafe { CGEventSourceFlagsState(K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE) };
+        let option_flag_down = flags & K_CG_EVENT_FLAG_MASK_ALTERNATE != 0;
+        let left_option_down = unsafe {
+            CGEventSourceKeyState(
+                K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE,
+                K_VK_LEFT_OPTION,
+            )
+        };
+        let right_option_down = unsafe {
+            CGEventSourceKeyState(
+                K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE,
+                K_VK_RIGHT_OPTION,
+            )
+        };
+
+        option_flag_down || left_option_down || right_option_down
     }
 }
 
@@ -429,12 +538,653 @@ fn normalize_vision_ocr_candidate(
     Some(ScreenCandidate {
         id: slug_candidate_id(&label, index),
         label,
-        role: "ocr_text",
+        role: "ocr_text".to_string(),
+        source: "ocr",
         x: x.round() as i32,
         y: y.round() as i32,
         width: width.round() as i32,
         height: height.round() as i32,
+        metadata: None,
     })
+}
+
+#[cfg(target_os = "macos")]
+fn normalize_accessibility_candidate(
+    item: &AccessibilityItem,
+    index: usize,
+    request: &ScreenCandidateRequest,
+) -> Option<ScreenCandidate> {
+    const MIN_CANDIDATE_SIZE: f64 = 4.0;
+
+    let label = [
+        item.label.as_deref(),
+        item.name.as_deref(),
+        item.description.as_deref(),
+        item.help.as_deref(),
+        item.value.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(normalize_candidate_text)
+    .find(|value| !value.is_empty())?;
+
+    if !item.x.is_finite()
+        || !item.y.is_finite()
+        || !item.width.is_finite()
+        || !item.height.is_finite()
+        || item.width < MIN_CANDIDATE_SIZE
+        || item.height < MIN_CANDIDATE_SIZE
+        || item.x < 0.0
+        || item.y < 0.0
+        || item.x + item.width > request.display_width
+        || item.y + item.height > request.display_height
+    {
+        return None;
+    }
+
+    Some(ScreenCandidate {
+        id: slug_candidate_id(&label, index).replacen("ocr-", "ax-", 1),
+        label,
+        role: item
+            .role
+            .as_deref()
+            .map(normalize_candidate_text)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "accessibility_element".to_string()),
+        source: "accessibility",
+        x: item.x.round() as i32,
+        y: item.y.round() as i32,
+        width: item.width.round() as i32,
+        height: item.height.round() as i32,
+        metadata: Some(serde_json::json!({
+            "nativeRole": item.role,
+            "nativeName": item.name,
+            "nativeDescription": item.description,
+            "nativeHelp": item.help,
+            "nativeValue": item.value,
+        })),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn accessibility_swift_source() -> &'static str {
+    r#"
+import AppKit
+import ApplicationServices
+import Foundation
+
+struct AccessibilityCandidate: Encodable {
+  let label: String?
+  let name: String?
+  let description: String?
+  let help: String?
+  let role: String?
+  let value: String?
+  let x: Double
+  let y: Double
+  let width: Double
+  let height: Double
+}
+
+struct AccessibilityPayload: Encodable {
+  let candidates: [AccessibilityCandidate]
+  let errors: [String]
+}
+
+let preferredAppName: String
+if CommandLine.arguments.count > 1 {
+  preferredAppName = CommandLine.arguments[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+} else {
+  preferredAppName = ""
+}
+
+var errors: [String] = []
+var candidates: [AccessibilityCandidate] = []
+var visitedCount = 0
+let maxCandidates = 120
+let maxVisited = 800
+let maxDepth = 8
+
+func emit() {
+  let payload = AccessibilityPayload(candidates: candidates, errors: errors)
+  let encoder = JSONEncoder()
+  let data = try! encoder.encode(payload)
+  print(String(data: data, encoding: .utf8)!)
+}
+
+guard AXIsProcessTrusted() else {
+  errors.append("macOS Accessibility is not trusted")
+  emit()
+  exit(0)
+}
+
+func normalized(_ value: String?) -> String? {
+  guard let value else { return nil }
+  let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+  return trimmed.isEmpty ? nil : trimmed
+}
+
+func copyAttribute(_ element: AXUIElement, _ attribute: CFString) -> AnyObject? {
+  var value: CFTypeRef?
+  let error = AXUIElementCopyAttributeValue(element, attribute, &value)
+  if error != .success {
+    return nil
+  }
+  return value as AnyObject?
+}
+
+func stringAttribute(_ element: AXUIElement, _ attribute: CFString) -> String? {
+  guard let value = copyAttribute(element, attribute) else {
+    return nil
+  }
+
+  if let string = value as? String {
+    return normalized(string)
+  }
+
+  if let number = value as? NSNumber {
+    return normalized(number.stringValue)
+  }
+
+  return nil
+}
+
+func pointAttribute(_ element: AXUIElement, _ attribute: CFString) -> CGPoint? {
+  guard let value = copyAttribute(element, attribute) else {
+    return nil
+  }
+
+  let axValue = value as! AXValue
+  guard AXValueGetType(axValue) == .cgPoint else {
+    return nil
+  }
+
+  var point = CGPoint.zero
+  guard AXValueGetValue(axValue, .cgPoint, &point) else {
+    return nil
+  }
+  return point
+}
+
+func sizeAttribute(_ element: AXUIElement, _ attribute: CFString) -> CGSize? {
+  guard let value = copyAttribute(element, attribute) else {
+    return nil
+  }
+
+  let axValue = value as! AXValue
+  guard AXValueGetType(axValue) == .cgSize else {
+    return nil
+  }
+
+  var size = CGSize.zero
+  guard AXValueGetValue(axValue, .cgSize, &size) else {
+    return nil
+  }
+  return size
+}
+
+func elementArrayAttribute(_ element: AXUIElement, _ attribute: CFString) -> [AXUIElement] {
+  guard let values = copyAttribute(element, attribute) as? [AXUIElement] else {
+    return []
+  }
+  return values
+}
+
+func selectApplication() -> NSRunningApplication? {
+  if !preferredAppName.isEmpty {
+    let matches = NSWorkspace.shared.runningApplications.filter { app in
+      let name = (app.localizedName ?? "").lowercased()
+      let bundle = (app.bundleIdentifier ?? "").lowercased()
+      return name == preferredAppName ||
+        name.contains(preferredAppName) ||
+        bundle.contains(preferredAppName)
+    }
+
+    if let active = matches.first(where: { $0.isActive }) {
+      return active
+    }
+
+    if let first = matches.first {
+      return first
+    }
+  }
+
+  return NSWorkspace.shared.frontmostApplication
+}
+
+func candidateLabel(
+  name: String?,
+  description: String?,
+  help: String?,
+  value: String?
+) -> String? {
+  for item in [name, description, help, value] {
+    if let normalized = normalized(item) {
+      return normalized
+    }
+  }
+  return nil
+}
+
+func visit(_ element: AXUIElement, depth: Int) {
+  if candidates.count >= maxCandidates || visitedCount >= maxVisited || depth > maxDepth {
+    return
+  }
+
+  visitedCount += 1
+
+  let role = stringAttribute(element, kAXRoleAttribute as CFString)
+  let subrole = stringAttribute(element, kAXSubroleAttribute as CFString)
+  let name = stringAttribute(element, kAXTitleAttribute as CFString)
+  let description = stringAttribute(element, kAXDescriptionAttribute as CFString)
+  let help = stringAttribute(element, kAXHelpAttribute as CFString)
+  let value = stringAttribute(element, kAXValueAttribute as CFString)
+  let position = pointAttribute(element, kAXPositionAttribute as CFString)
+  let size = sizeAttribute(element, kAXSizeAttribute as CFString)
+  let label = candidateLabel(name: name, description: description, help: help, value: value)
+
+  if
+    let position,
+    let size,
+    let label,
+    size.width >= 4,
+    size.height >= 4,
+    position.x.isFinite,
+    position.y.isFinite,
+    size.width.isFinite,
+    size.height.isFinite
+  {
+    candidates.append(
+      AccessibilityCandidate(
+        label: label,
+        name: name,
+        description: description,
+        help: help,
+        role: [role, subrole].compactMap { normalized($0) }.joined(separator: " "),
+        value: value,
+        x: Double(position.x),
+        y: Double(position.y),
+        width: Double(size.width),
+        height: Double(size.height)
+      )
+    )
+  }
+
+  let children = elementArrayAttribute(element, kAXChildrenAttribute as CFString)
+  for child in children {
+    visit(child, depth: depth + 1)
+  }
+}
+
+guard let app = selectApplication() else {
+  errors.append("no frontmost application was available for native Accessibility")
+  emit()
+  exit(0)
+}
+
+let root = AXUIElementCreateApplication(app.processIdentifier)
+let windows = elementArrayAttribute(root, kAXWindowsAttribute as CFString)
+
+if windows.isEmpty {
+  visit(root, depth: 0)
+} else {
+  for window in windows {
+    visit(window, depth: 0)
+  }
+}
+
+if candidates.isEmpty {
+  errors.append("native Accessibility returned no labelled candidates for \(app.localizedName ?? "frontmost app")")
+}
+
+emit()
+"#
+}
+
+#[cfg(target_os = "macos")]
+fn frontmost_window_bounds_swift_source() -> &'static str {
+    r#"
+import AppKit
+import CoreGraphics
+import Foundation
+
+struct WindowBoundsPayload: Encodable {
+  let appName: String?
+  let title: String?
+  let x: Double
+  let y: Double
+  let width: Double
+  let height: Double
+}
+
+let preferredAppName: String
+if CommandLine.arguments.count > 1 {
+  preferredAppName = CommandLine.arguments[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+} else {
+  preferredAppName = ""
+}
+
+func normalized(_ value: String?) -> String? {
+  guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+    return nil
+  }
+  return value
+}
+
+func doubleValue(_ value: Any?) -> Double? {
+  if let number = value as? NSNumber {
+    return number.doubleValue
+  }
+  if let double = value as? Double {
+    return double
+  }
+  if let int = value as? Int {
+    return Double(int)
+  }
+  return nil
+}
+
+func intValue(_ value: Any?) -> Int? {
+  if let number = value as? NSNumber {
+    return number.intValue
+  }
+  if let int = value as? Int {
+    return int
+  }
+  if let int32 = value as? Int32 {
+    return Int(int32)
+  }
+  return nil
+}
+
+func isIgnoredOwnerName(_ value: String?) -> Bool {
+  guard preferredAppName.isEmpty else {
+    return false
+  }
+
+  let normalized = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+  return normalized == "toki" ||
+    normalized == "touchpilot" ||
+    normalized == "system settings" ||
+    normalized == "system preferences" ||
+    normalized == "control center" ||
+    normalized == "notification center" ||
+    normalized == "dock" ||
+    normalized == "window server"
+}
+
+func selectApplication() -> NSRunningApplication? {
+  if !preferredAppName.isEmpty {
+    let matches = NSWorkspace.shared.runningApplications.filter { app in
+      let name = (app.localizedName ?? "").lowercased()
+      let bundle = (app.bundleIdentifier ?? "").lowercased()
+      return name == preferredAppName ||
+        name.contains(preferredAppName) ||
+        bundle.contains(preferredAppName)
+    }
+
+    if let active = matches.first(where: { $0.isActive }) {
+      return active
+    }
+
+    if let first = matches.first {
+      return first
+    }
+  }
+
+  if let frontmost = NSWorkspace.shared.frontmostApplication,
+     !isIgnoredOwnerName(frontmost.localizedName),
+     !isIgnoredOwnerName(frontmost.bundleIdentifier) {
+    return frontmost
+  }
+
+  return nil
+}
+
+let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+guard let windowInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+  fputs("native macOS window list was unavailable\n", stderr)
+  exit(4)
+}
+
+let selectedApp = selectApplication()
+var fallbackOwnerPid: Int? = nil
+
+if selectedApp == nil {
+  fallbackOwnerPid = windowInfo.compactMap { info -> (pid: Int, area: Double)? in
+    guard
+      let ownerPid = intValue(info[kCGWindowOwnerPID as String]),
+      let ownerName = normalized(info[kCGWindowOwnerName as String] as? String),
+      !isIgnoredOwnerName(ownerName),
+      let layer = intValue(info[kCGWindowLayer as String]),
+      layer == 0,
+      let bounds = info[kCGWindowBounds as String] as? [String: Any],
+      let width = doubleValue(bounds["Width"]),
+      let height = doubleValue(bounds["Height"]),
+      width >= 160,
+      height >= 160
+    else {
+      return nil
+    }
+
+    return (pid: ownerPid, area: width * height)
+  }
+  .max(by: { $0.area < $1.area })?
+  .pid
+}
+
+let targetPid = selectedApp.map { Int($0.processIdentifier) } ?? fallbackOwnerPid
+let targetApp = targetPid.flatMap { pid in
+  NSWorkspace.shared.runningApplications.first { Int($0.processIdentifier) == pid }
+}
+
+func makeWindowPayload(_ info: [String: Any], expectedPid: Int?) -> WindowBoundsPayload? {
+  guard
+    let ownerPid = intValue(info[kCGWindowOwnerPID as String]),
+    expectedPid == nil || ownerPid == expectedPid,
+    let ownerName = normalized(info[kCGWindowOwnerName as String] as? String),
+    !isIgnoredOwnerName(ownerName),
+    let layer = intValue(info[kCGWindowLayer as String]),
+    layer == 0,
+    let bounds = info[kCGWindowBounds as String] as? [String: Any],
+    let x = doubleValue(bounds["X"]),
+    let y = doubleValue(bounds["Y"]),
+    let width = doubleValue(bounds["Width"]),
+    let height = doubleValue(bounds["Height"]),
+    width >= 80,
+    height >= 80
+  else {
+    return nil
+  }
+
+  let title = normalized(info[kCGWindowName as String] as? String)
+
+  // Ignore tiny helper panels and non-content utility windows when a main window exists.
+  guard
+    title != "Item-0",
+    title != "StatusItem",
+    title != "Menubar"
+  else {
+    return nil
+  }
+
+  let app = NSWorkspace.shared.runningApplications.first { Int($0.processIdentifier) == ownerPid }
+
+  return WindowBoundsPayload(
+    appName: app?.localizedName ?? ownerName,
+    title: title,
+    x: x,
+    y: y,
+    width: width,
+    height: height
+  )
+}
+
+let usableWindows = windowInfo.compactMap { info -> WindowBoundsPayload? in
+  guard let targetPid else {
+    return nil
+  }
+
+  return makeWindowPayload(info, expectedPid: targetPid)
+}
+
+let fallbackWindows = windowInfo.compactMap { info -> WindowBoundsPayload? in
+  makeWindowPayload(info, expectedPid: nil)
+}
+
+guard let window = (usableWindows.isEmpty ? fallbackWindows : usableWindows)
+  .max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
+    let appName = targetApp?.localizedName ?? "unknown app"
+    fputs("no usable content window was available; selected application was \(appName)\n", stderr)
+    exit(4)
+  }
+
+let data = try! JSONEncoder().encode(window)
+print(String(data: data, encoding: .utf8)!)
+"#
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn frontmost_window_bounds(app_name: Option<String>) -> Result<NativeWindowBounds, String> {
+    let temp_root = std::env::temp_dir();
+    let stamp = now_ms();
+    let script_path = temp_root.join(format!("toki-window-bounds-{stamp}.swift"));
+
+    let output = fs::write(&script_path, frontmost_window_bounds_swift_source())
+        .map_err(|error| error.to_string())
+        .and_then(|_| {
+            Command::new("/usr/bin/swift")
+                .arg(&script_path)
+                .arg(app_name.as_deref().unwrap_or(""))
+                .output()
+                .map_err(|error| error.to_string())
+        });
+
+    let _ = fs::remove_file(&script_path);
+
+    let output = output.map_err(|_| "could not run native macOS window probe".to_string())?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("native macOS window probe exited with {}", output.status)
+        } else {
+            stderr
+        });
+    }
+
+    serde_json::from_slice::<NativeWindowBounds>(&output.stdout).map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn screen_capture_access_status() -> Result<bool, String> {
+    Ok(macos_screen_capture_is_trusted())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn frontmost_window_bounds(_app_name: Option<String>) -> Result<NativeWindowBounds, String> {
+    Err("active window crop is only implemented on macOS right now".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn screen_capture_access_status() -> Result<bool, String> {
+    Ok(true)
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_accessibility_candidates(
+    request: &ScreenCandidateRequest,
+) -> ScreenCandidateResult {
+    if !macos_accessibility_is_trusted() {
+        return ScreenCandidateResult {
+            candidates: Vec::new(),
+            candidate_source: "macos-accessibility",
+            candidate_error: Some(
+                "macOS Accessibility is not trusted; skipped native UI candidates without opening System Settings."
+                    .to_string(),
+            ),
+        };
+    }
+
+    let temp_root = std::env::temp_dir();
+    let stamp = now_ms();
+    let script_path = temp_root.join(format!("toki-native-ax-{stamp}.swift"));
+
+    let output = fs::write(&script_path, accessibility_swift_source())
+        .map_err(|error| error.to_string())
+        .and_then(|_| {
+            Command::new("/usr/bin/swift")
+                .arg(&script_path)
+                .arg(request.app_name.as_deref().unwrap_or(""))
+                .output()
+                .map_err(|error| error.to_string())
+        });
+
+    let _ = fs::remove_file(&script_path);
+
+    let Ok(output) = output else {
+        return ScreenCandidateResult {
+            candidates: Vec::new(),
+            candidate_source: "macos-accessibility",
+            candidate_error: Some("could not run native macOS Accessibility probe".to_string()),
+        };
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        return ScreenCandidateResult {
+            candidates: Vec::new(),
+            candidate_source: "macos-accessibility",
+            candidate_error: Some(if stderr.is_empty() {
+                format!("native macOS Accessibility probe exited with {}", output.status)
+            } else {
+                stderr
+            }),
+        };
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload = match serde_json::from_str::<AccessibilityPayload>(&stdout) {
+        Ok(payload) => payload,
+        Err(error) => {
+            return ScreenCandidateResult {
+                candidates: Vec::new(),
+                candidate_source: "macos-accessibility",
+                candidate_error: Some(error.to_string()),
+            };
+        }
+    };
+    let candidates = payload
+        .candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| normalize_accessibility_candidate(item, index, request))
+        .collect::<Vec<_>>();
+    let error = payload
+        .errors
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|error| !normalize_candidate_text(error).is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    ScreenCandidateResult {
+        candidate_error: if candidates.is_empty() && !error.is_empty() {
+            Some(error)
+        } else if candidates.is_empty() {
+            Some("macOS Accessibility returned no candidates".to_string())
+        } else {
+            None
+        },
+        candidates,
+        candidate_source: "macos-accessibility",
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -756,6 +1506,70 @@ fn fit_overlay_to_monitor<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     }));
 }
 
+#[cfg(target_os = "macos")]
+fn prepare_macos_overlay_window<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    use std::ffi::{c_char, c_void};
+
+    extern "C" {
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_msgSend();
+    }
+
+    let Ok(ns_window_ptr) = window.ns_window() else {
+        return;
+    };
+
+    if ns_window_ptr.is_null() {
+        return;
+    }
+
+    // Mirror Clicky's overlay contract: a non-activating utility layer that joins
+    // fullscreen Spaces and never catches normal user clicks.
+    unsafe {
+        let set_level: extern "C" fn(*mut c_void, *mut c_void, isize) =
+            std::mem::transmute(objc_msgSend as *const ());
+        let set_collection_behavior: extern "C" fn(*mut c_void, *mut c_void, usize) =
+            std::mem::transmute(objc_msgSend as *const ());
+        let set_bool: extern "C" fn(*mut c_void, *mut c_void, bool) =
+            std::mem::transmute(objc_msgSend as *const ());
+        let send_void: extern "C" fn(*mut c_void, *mut c_void) =
+            std::mem::transmute(objc_msgSend as *const ());
+
+        let set_level_sel = sel_registerName(b"setLevel:\0".as_ptr().cast());
+        let set_collection_behavior_sel =
+            sel_registerName(b"setCollectionBehavior:\0".as_ptr().cast());
+        let set_ignores_mouse_events_sel =
+            sel_registerName(b"setIgnoresMouseEvents:\0".as_ptr().cast());
+        let set_hides_on_deactivate_sel =
+            sel_registerName(b"setHidesOnDeactivate:\0".as_ptr().cast());
+        let set_can_hide_sel = sel_registerName(b"setCanHide:\0".as_ptr().cast());
+        let set_opaque_sel = sel_registerName(b"setOpaque:\0".as_ptr().cast());
+        let set_has_shadow_sel = sel_registerName(b"setHasShadow:\0".as_ptr().cast());
+        let order_front_regardless_sel =
+            sel_registerName(b"orderFrontRegardless\0".as_ptr().cast());
+
+        let can_join_all_spaces = 1_usize << 0;
+        let stationary = 1_usize << 4;
+        let ignores_cycle = 1_usize << 6;
+        let fullscreen_auxiliary = 1_usize << 8;
+        let collection_behavior =
+            can_join_all_spaces | stationary | ignores_cycle | fullscreen_auxiliary;
+
+        set_level(ns_window_ptr, set_level_sel, 1000);
+        set_collection_behavior(
+            ns_window_ptr,
+            set_collection_behavior_sel,
+            collection_behavior,
+        );
+        set_bool(ns_window_ptr, set_ignores_mouse_events_sel, true);
+        set_bool(ns_window_ptr, set_hides_on_deactivate_sel, false);
+        set_bool(ns_window_ptr, set_can_hide_sel, false);
+        set_bool(ns_window_ptr, set_opaque_sel, false);
+        set_bool(ns_window_ptr, set_has_shadow_sel, false);
+        send_void(ns_window_ptr, order_front_regardless_sel);
+    }
+}
+
 fn position_settings_panel<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     let monitor = window
         .current_monitor()
@@ -802,7 +1616,28 @@ fn capture_screenshot() -> Result<ScreenshotCapture, String> {
         eprintln!("toki auto real smoke: capture_screenshot start");
     }
 
-    let result = capture_primary_display().map_err(|error| error.to_string());
+    #[cfg(target_os = "macos")]
+    let preflight_trusted = macos_screen_capture_is_trusted();
+
+    let result = capture_primary_display().map_err(|error| {
+        #[cfg(target_os = "macos")]
+        {
+            if !preflight_trusted {
+                return format!(
+                    "Screen capture failed after macOS preflight reported Screen Recording was not trusted for this Toki build. Grant Screen Recording permission to Toki, quit and relaunch it, then try again. Capture error: {error}"
+                );
+            }
+        }
+
+        error.to_string()
+    });
+
+    #[cfg(target_os = "macos")]
+    if result.is_ok() && !preflight_trusted && auto_smoke_logs_enabled() {
+        eprintln!(
+            "toki auto real smoke: capture_screenshot succeeded even though macOS preflight returned false"
+        );
+    }
 
     if auto_smoke_logs_enabled() {
         eprintln!("toki auto real smoke: capture_screenshot done");
@@ -821,7 +1656,55 @@ fn collect_screen_candidates(
 
     #[cfg(target_os = "macos")]
     {
-        let result = collect_macos_vision_candidates(request);
+        let accessibility_result = collect_macos_accessibility_candidates(&request);
+        let vision_result = collect_macos_vision_candidates(request);
+        let result = if accessibility_result.candidates.is_empty() {
+            if vision_result.candidates.is_empty() {
+                ScreenCandidateResult {
+                    candidates: Vec::new(),
+                    candidate_source: "macos-vision-ocr",
+                    candidate_error: Some(
+                        [
+                            accessibility_result.candidate_error,
+                            vision_result.candidate_error,
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>()
+                        .join(" | "),
+                    ),
+                }
+            } else {
+                let candidate_error = [
+                    accessibility_result.candidate_error,
+                    vision_result.candidate_error,
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" | ");
+
+                ScreenCandidateResult {
+                    candidates: vision_result.candidates,
+                    candidate_source: "macos-vision-ocr",
+                    candidate_error: if candidate_error.is_empty() {
+                        None
+                    } else {
+                        Some(candidate_error)
+                    },
+                }
+            }
+        } else {
+            let mut candidates = accessibility_result.candidates;
+            candidates.extend(vision_result.candidates);
+            candidates.truncate(70);
+
+            ScreenCandidateResult {
+                candidates,
+                candidate_source: "macos-accessibility",
+                candidate_error: vision_result.candidate_error,
+            }
+        };
 
         if auto_smoke_logs_enabled() {
             eprintln!(
@@ -873,27 +1756,38 @@ fn emit_overlay_command(app: &tauri::AppHandle, payload: OverlayCommandPayload) 
     }
 }
 
-fn handle_voice_shortcut(app: &tauri::AppHandle, state: ShortcutState) {
-    match state {
-        ShortcutState::Pressed => {
-            if VOICE_SHORTCUT_HELD.swap(true, Ordering::SeqCst) {
-                return;
+#[cfg(target_os = "macos")]
+fn start_native_voice_key_monitor(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut was_down = false;
+
+        loop {
+            thread::sleep(Duration::from_millis(NATIVE_VOICE_KEY_POLL_MS));
+
+            let is_down = native_cursor::option_down();
+
+            if is_down && !was_down {
+                if !VOICE_SHORTCUT_HELD.swap(true, Ordering::SeqCst) {
+                    emit_overlay_command(
+                        &app,
+                        OverlayCommandPayload::StartVoiceListening { source: "hotkey" },
+                    );
+                }
             }
 
-            emit_overlay_command(
-                app,
-                OverlayCommandPayload::StartVoiceListening { source: "hotkey" },
-            );
-        }
-        ShortcutState::Released => {
-            if !VOICE_SHORTCUT_HELD.swap(false, Ordering::SeqCst) {
-                return;
+            if !is_down && was_down {
+                if VOICE_SHORTCUT_HELD.swap(false, Ordering::SeqCst) {
+                    emit_overlay_command(&app, OverlayCommandPayload::SubmitVoiceListening);
+                }
             }
 
-            emit_overlay_command(app, OverlayCommandPayload::SubmitVoiceListening);
+            was_down = is_down;
         }
-    }
+    });
 }
+
+#[cfg(not(target_os = "macos"))]
+fn start_native_voice_key_monitor(_app: tauri::AppHandle) {}
 
 fn emit_native_click(app: &tauri::AppHandle, payload: NativeClickEvent) {
     if let Err(error) = app.emit_to("overlay", "toki://native-click", payload) {
@@ -901,16 +1795,59 @@ fn emit_native_click(app: &tauri::AppHandle, payload: NativeClickEvent) {
     }
 }
 
+fn emit_native_cursor(app: &tauri::AppHandle, payload: NativeCursorPosition) {
+    if let Err(error) = app.emit_to("overlay", "toki://native-cursor", payload) {
+        eprintln!("failed to emit native cursor: {error}");
+    }
+}
+
 #[cfg(target_os = "macos")]
-fn start_native_click_monitor(
-    app: tauri::AppHandle,
-    monitor_state: Arc<NativeClickMonitorState>,
-) {
+fn start_native_cursor_monitor(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut last_position: Option<(f64, f64)> = None;
+
+        loop {
+            thread::sleep(Duration::from_millis(NATIVE_CURSOR_POLL_MS));
+
+            let Ok((x, y)) = native_cursor::cursor_position() else {
+                continue;
+            };
+
+            let should_emit = match last_position {
+                None => true,
+                Some((last_x, last_y)) => {
+                    (x - last_x).abs() >= 1.5 || (y - last_y).abs() >= 1.5
+                }
+            };
+
+            if !should_emit {
+                continue;
+            }
+
+            last_position = Some((x, y));
+
+            emit_native_cursor(
+                &app,
+                NativeCursorPosition {
+                    x,
+                    y,
+                    source: "native-macos-coregraphics-stream",
+                },
+            );
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn start_native_cursor_monitor(_app: tauri::AppHandle) {}
+
+#[cfg(target_os = "macos")]
+fn start_native_click_monitor(app: tauri::AppHandle, monitor_state: Arc<NativeClickMonitorState>) {
     thread::spawn(move || {
         let mut was_down = false;
 
         loop {
-            thread::sleep(Duration::from_millis(16));
+            thread::sleep(Duration::from_millis(NATIVE_CLICK_POLL_MS));
 
             if !monitor_state.armed.load(Ordering::SeqCst) {
                 was_down = false;
@@ -1013,8 +1950,8 @@ fn native_voice_capture_start(
     let mut store = store
         .lock()
         .map_err(|_| "voice capture state is poisoned".to_string())?;
-    if store.active_session.is_some() {
-        return Err("native voice capture is already active".to_string());
+    if let Some(session) = store.active_session.take() {
+        stop_voice_capture_session(session);
     }
 
     let started_at_ms = now_ms();
@@ -1088,6 +2025,20 @@ fn native_voice_capture_stop(
         format: "audio/wav",
         status: "stopped",
     })
+}
+
+#[tauri::command]
+fn native_voice_capture_reset(store: State<'_, Mutex<VoiceCaptureStore>>) -> Result<(), String> {
+    let mut store = store
+        .lock()
+        .map_err(|_| "voice capture state is poisoned".to_string())?;
+
+    if let Some(session) = store.active_session.take() {
+        stop_voice_capture_session(session);
+    }
+
+    VOICE_SHORTCUT_HELD.store(false, Ordering::SeqCst);
+    Ok(())
 }
 
 fn transcribe_voice_capture_with_openai(
@@ -1319,24 +2270,49 @@ fn native_cursor_position() -> Result<NativeCursorPosition, String> {
     }
 }
 
+#[tauri::command]
+fn set_overlay_surface_mode(
+    app: tauri::AppHandle,
+    request: OverlaySurfaceModeRequest,
+) -> Result<(), String> {
+    let Some(overlay) = app.get_webview_window("overlay") else {
+        return Err("overlay window is not available".to_string());
+    };
+
+    match request.mode.as_str() {
+        "guidance" => {
+            OVERLAY_GUIDANCE_SURFACE.store(true, Ordering::SeqCst);
+            fit_overlay_to_monitor(&overlay);
+            #[cfg(target_os = "macos")]
+            prepare_macos_overlay_window(&overlay);
+            let _ = overlay.show();
+            Ok(())
+        }
+        "puck" => {
+            OVERLAY_GUIDANCE_SURFACE.store(false, Ordering::SeqCst);
+            fit_overlay_to_monitor(&overlay);
+            #[cfg(target_os = "macos")]
+            prepare_macos_overlay_window(&overlay);
+            let _ = overlay.show();
+            Ok(())
+        }
+        other => Err(format!(
+            "unsupported overlay surface mode: {other}. Use puck or guidance."
+        )),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let native_click_monitor_state = Arc::new(NativeClickMonitorState::default());
 
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_shortcut(Shortcut::new(Some(Modifiers::ALT), Code::Space))
-                .expect("failed to configure Toki voice shortcut")
-                .with_handler(|app, _shortcut, event| {
-                    handle_voice_shortcut(app, event.state());
-                })
-                .build(),
-        )
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(VoiceCaptureStore::default()))
         .manage(native_click_monitor_state.clone())
         .setup(|app| {
+            start_native_voice_key_monitor(app.handle().clone());
+            start_native_cursor_monitor(app.handle().clone());
             start_native_click_monitor(app.handle().clone(), native_click_monitor_state);
 
             if let Some(overlay) = app.get_webview_window("overlay") {
@@ -1346,6 +2322,9 @@ pub fn run() {
                 let _ = overlay.set_ignore_cursor_events(true);
                 let _ = overlay.set_focusable(false);
                 let _ = overlay.set_skip_taskbar(true);
+                let _ = overlay.set_visible_on_all_workspaces(true);
+                #[cfg(target_os = "macos")]
+                prepare_macos_overlay_window(&overlay);
                 #[cfg(windows)]
                 prepare_windows_utility_window(&overlay, true);
             }
@@ -1356,6 +2335,7 @@ pub fn run() {
                 let _ = settings.set_decorations(false);
                 let _ = settings.set_focusable(true);
                 let _ = settings.set_skip_taskbar(true);
+                let _ = settings.set_visible_on_all_workspaces(true);
                 #[cfg(windows)]
                 prepare_windows_utility_window(&settings, false);
             }
@@ -1450,12 +2430,16 @@ pub fn run() {
             capture_metadata,
             capture_screenshot,
             collect_screen_candidates,
+            frontmost_window_bounds,
+            screen_capture_access_status,
             hide_settings_window,
             native_click_monitor_set_armed,
             native_cursor_position,
             native_voice_capture_status,
+            native_voice_capture_reset,
             native_voice_capture_start,
             native_voice_capture_stop,
+            set_overlay_surface_mode,
             transcribe_voice_capture
         ])
         .run(tauri::generate_context!())
