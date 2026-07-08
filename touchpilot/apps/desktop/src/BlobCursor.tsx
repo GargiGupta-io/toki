@@ -31,6 +31,8 @@ type BlobCursorProps = {
   slowEase?: string;
   zIndex?: number;
   position?: BlobCursorPosition | null;
+  trailPull?: number;
+  liquidStretch?: number;
 };
 
 export default function BlobCursor({
@@ -55,9 +57,13 @@ export default function BlobCursor({
   slowEase = "power1.out",
   zIndex = 100,
   position = null,
+  trailPull = 0,
+  liquidStretch = 0,
 }: BlobCursorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const blobsRef = useRef<Array<HTMLDivElement | null>>([]);
+  const lastPositionRef = useRef<BlobCursorPosition | null>(null);
+  const trailVectorRef = useRef({ x: -1, y: 0.18 });
 
   const updateOffset = useCallback(() => {
     if (!containerRef.current) {
@@ -73,6 +79,29 @@ export default function BlobCursor({
       const { left, top } = updateOffset();
       const x = clientX - left;
       const y = clientY - top;
+      const previous = lastPositionRef.current;
+
+      if (previous != null) {
+        const deltaX = clientX - previous.clientX;
+        const deltaY = clientY - previous.clientY;
+        const distance = Math.hypot(deltaX, deltaY);
+
+        if (distance < 1.25) {
+          return;
+        }
+
+        if (distance > 1.25) {
+          trailVectorRef.current = {
+            x: -deltaX / distance,
+            y: -deltaY / distance,
+          };
+        }
+      }
+
+      lastPositionRef.current = { clientX, clientY };
+      const trailVector = trailVectorRef.current;
+      const speed = previous == null ? 0 : Math.min(Math.hypot(clientX - previous.clientX, clientY - previous.clientY) / 42, 1);
+      const rotation = Math.atan2(-trailVector.y, -trailVector.x) * (180 / Math.PI);
 
       blobsRef.current.forEach((el, i) => {
         if (!el) {
@@ -80,16 +109,20 @@ export default function BlobCursor({
         }
 
         const isLead = i === 0;
+        const offset = i * trailPull;
         gsap.to(el, {
-          x,
-          y,
+          x: x + trailVector.x * offset,
+          y: y + trailVector.y * offset,
+          scaleX: 1 + speed * liquidStretch * (isLead ? 1 : 0.65),
+          scaleY: 1 - speed * liquidStretch * (isLead ? 0.42 : 0.28),
+          rotate: rotation,
           duration: isLead ? fastDuration : slowDuration,
           ease: isLead ? fastEase : slowEase,
           overwrite: true,
         });
       });
     },
-    [fastDuration, fastEase, slowDuration, slowEase, updateOffset],
+    [fastDuration, fastEase, liquidStretch, slowDuration, slowEase, trailPull, updateOffset],
   );
 
   const handleMove = useCallback(
@@ -109,7 +142,10 @@ export default function BlobCursor({
   useEffect(() => {
     const onResize = () => updateOffset();
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      gsap.killTweensOf(blobsRef.current.filter(Boolean));
+    };
   }, [updateOffset]);
 
   useEffect(() => {
@@ -149,7 +185,7 @@ export default function BlobCursor({
               width: sizes[i],
               height: sizes[i],
               borderRadius: blobType === "circle" ? "50%" : "0%",
-              backgroundColor: fillColor,
+              background: fillColor,
               opacity: opacities[i],
               boxShadow: `${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px 0 ${shadowColor}`,
             }}
