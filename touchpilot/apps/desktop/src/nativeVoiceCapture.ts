@@ -44,3 +44,7 @@ export function startNativeVoiceCapture(): Promise<NativeVoiceCaptureStartResult
 export function stopNativeVoiceCapture(): Promise<NativeVoiceCaptureStopResult> {
   return invoke<NativeVoiceCaptureStopResult>("native_voice_capture_stop");
 }
+
+export function resetNativeVoiceCapture(): Promise<void> {
+  return invoke<void>("native_voice_capture_reset");
+}

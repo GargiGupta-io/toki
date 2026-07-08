@@ -1048,6 +1048,10 @@ h1 {
     rgba(24, 12, 14, 0.64);
 }
 
+.guidance-failure-cue {
+  max-width: min(360px, calc(100vw - 56px));
+}
+
 .blob-puck {
   position: absolute;
   inset: 0;

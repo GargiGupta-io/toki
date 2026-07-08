@@ -25,6 +25,7 @@ import type {
   GuidanceProviderMode,
   GuidanceProviderResponse,
   GuidanceResult,
+  GuidanceScreenContext,
   GuidanceSession,
   GuidanceStep,
   GuidanceValidationIssue,
@@ -40,7 +41,6 @@ import type {
   VoiceActivationSource,
   VoiceCommandRequest,
   VoiceRuntimeState,
-  VoiceTranscript,
   WorkflowRuntimeState,
   WorkflowStep,
   WorkflowVerificationResult,
@@ -53,20 +53,21 @@ import {
 } from "./gestureSmoothing";
 import { detectHandLandmarksForVideo, getHandLandmarker } from "./handLandmarker";
 import {
+  getNativeVoiceCaptureStatus,
+  resetNativeVoiceCapture,
   startNativeVoiceCapture,
   stopNativeVoiceCapture,
 } from "./nativeVoiceCapture";
-import { getPointerShadowPosition } from "./overlayGeometry";
+import { getPointerShadowPosition, pointerShadowGeometry } from "./overlayGeometry";
 import type {
   PointerShadowPosition,
   ViewportMetrics,
 } from "./overlayGeometry";
+import { requestOllamaVisionGuidance } from "./ollamaVisionProvider";
 import { getPuckMotionModel } from "./puckMotion";
 import { collectScreenCandidatesForGuidance } from "./screenCandidates";
 import { probeVoiceCapabilities } from "./voiceCapabilities";
 import type { VoiceCapabilityProbe } from "./voiceCapabilities";
-import { startVoiceRecognition } from "./voiceRecognition";
-import type { VoiceRecognitionSession } from "./voiceRecognition";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
@@ -97,6 +98,7 @@ type OverlaySnapshot = {
 
 type DebugSnapshot = OverlaySnapshot & {
   guidanceProviderMode: GuidanceProviderMode;
+  guidanceProviderName: string | null;
   guidanceFixture: GuidanceFixture;
   workflowRuntime: WorkflowRuntimeState;
   clickAwareRuntime: ClickAwareRuntimeState;
@@ -261,18 +263,31 @@ const debugTabs: Array<{ id: DebugTab; label: string }> = [
 
 function formatCaptureError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  const normalizedMessage = message.toLowerCase();
-  const looksPermissionRelated =
-    normalizedMessage.includes("no display available") ||
-    normalizedMessage.includes("permission") ||
-    normalizedMessage.includes("denied") ||
-    normalizedMessage.includes("not authorized");
+  if (message.includes("On macOS, grant Screen Recording permission")) {
+    return message;
+  }
+
+  const looksPermissionRelated = isCapturePermissionError(message);
 
   if (!looksPermissionRelated) {
     return message;
   }
 
   return `${message}. On macOS, grant Screen Recording permission to Toki or the terminal app, then quit and relaunch it.`;
+}
+
+function isCapturePermissionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalizedMessage = message.toLowerCase();
+
+  return (
+    normalizedMessage.includes("no display available") ||
+    normalizedMessage.includes("screen recording") ||
+    normalizedMessage.includes("screen capture") ||
+    normalizedMessage.includes("capture_screenshot") ||
+    normalizedMessage.includes("not authorized to capture") ||
+    normalizedMessage.includes("record this computer")
+  );
 }
 
 function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDetails {
@@ -367,6 +382,38 @@ function VoiceStatusCue({
     >
       <span>{details.label}</span>
       <small>{details.message}</small>
+    </aside>
+  );
+}
+
+function GuidanceFailureCue({
+  message,
+  pointerShadow,
+}: {
+  message: string | null;
+  pointerShadow: PointerShadowPosition | null;
+}) {
+  const style =
+    pointerShadow == null
+      ? undefined
+      : ({
+          left: pointerShadow.x + 32,
+          top: pointerShadow.y + 64,
+        } as CSSProperties);
+
+  if (message == null || pointerShadow == null) {
+    return null;
+  }
+
+  return (
+    <aside
+      className="voice-status-cue guidance-failure-cue"
+      data-tone="error"
+      style={style}
+      aria-label="Guidance unavailable"
+    >
+      <span>Guidance unavailable</span>
+      <small>{message}</small>
     </aside>
   );
 }
@@ -584,7 +631,7 @@ function SettingsPopup({
 
       <div className="settings-separator" />
 
-      <p className="settings-instruction">Hold Space to talk.</p>
+      <p className="settings-instruction">Hold Option anywhere.</p>
 
       <button
         className="settings-talk-button"
@@ -623,7 +670,7 @@ function SettingsPopup({
         <small>
           {voiceStatusDetails.visible
             ? voiceStatusDetails.message
-            : "Ask what to click next, then release."}
+            : "Or press here as a fallback."}
         </small>
       </button>
 
@@ -664,6 +711,8 @@ type NativeCursorPosition = {
   y: number;
   source: string;
 };
+
+const POINTER_SHADOW_UPDATE_THRESHOLD_PX = 2;
 
 async function getOverlayCursorPosition(): Promise<Pick<NativeCursorPosition, "x" | "y">> {
   try {
@@ -739,7 +788,7 @@ function getScreenshotMetadata(screenshot: ScreenshotCapture): ScreenshotMetadat
   };
 }
 
-function getScreenshotPayload(screenshot: ScreenshotCapture) {
+function getScreenshotPayload(screenshot: ScreenshotCapture): ScreenshotPayload {
   return {
     encoding: "base64" as const,
     format: screenshot.format,
@@ -750,7 +799,37 @@ function getScreenshotPayload(screenshot: ScreenshotCapture) {
   };
 }
 
-type ScreenshotPayload = ReturnType<typeof getScreenshotPayload>;
+type ScreenshotPayload = NonNullable<GuidanceScreenContext["screenshotPayload"]>;
+type ScreenCandidateContext = Pick<
+  GuidanceScreenContext,
+  "candidates" | "candidateSource" | "candidateError"
+>;
+
+type NativeWindowBounds = {
+  appName?: string | null;
+  title?: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+function getPreferredAppNameFromGoal(goal: string) {
+  const normalized = goal.toLowerCase();
+  const knownApps = [
+    "spotify",
+    "edge",
+    "chrome",
+    "safari",
+    "firefox",
+    "finder",
+    "claude",
+    "basecamp",
+    "doppler",
+  ];
+
+  return knownApps.find((appName) => normalized.includes(appName)) ?? null;
+}
 
 function getScreenshotSignature(screenshot: ScreenshotMetadata | ScreenshotCapture | null) {
   if (screenshot == null) {
@@ -810,6 +889,10 @@ function verifySessionScreenChange(
 const MAX_PROVIDER_SCREENSHOT_EDGE = 1024;
 const PROVIDER_SCREENSHOT_JPEG_QUALITY = 0.76;
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function estimateBase64ByteLength(imageBase64: string) {
   const padding = imageBase64.endsWith("==") ? 2 : imageBase64.endsWith("=") ? 1 : 0;
   return Math.max(0, Math.floor((imageBase64.length * 3) / 4) - padding);
@@ -826,8 +909,19 @@ function loadScreenshotImage(dataUrl: string): Promise<HTMLImageElement> {
 
 async function getProviderScreenshotPayload(
   screenshot: ScreenshotCapture,
+  windowBounds?: NativeWindowBounds | null,
 ): Promise<ScreenshotPayload> {
   const originalPayload = getScreenshotPayload(screenshot);
+  const crop = getActiveWindowCrop(screenshot, windowBounds);
+
+  if (crop != null) {
+    const croppedPayload = await getCroppedScreenshotPayload(screenshot, crop);
+
+    if (croppedPayload != null) {
+      return croppedPayload;
+    }
+  }
+
   const longestEdge = Math.max(screenshot.imageWidth, screenshot.imageHeight);
 
   if (longestEdge <= MAX_PROVIDER_SCREENSHOT_EDGE && screenshot.byteLength <= 2_000_000) {
@@ -868,6 +962,154 @@ async function getProviderScreenshotPayload(
     };
   } catch {
     return originalPayload;
+  }
+}
+
+function getActiveWindowCrop(
+  screenshot: ScreenshotCapture,
+  windowBounds?: NativeWindowBounds | null,
+) {
+  if (windowBounds == null) {
+    return null;
+  }
+
+  const scaleX = screenshot.imageWidth / screenshot.display.width;
+  const scaleY = screenshot.imageHeight / screenshot.display.height;
+  const x = Math.round(clampNumber(windowBounds.x * scaleX, 0, screenshot.imageWidth - 1));
+  const y = Math.round(clampNumber(windowBounds.y * scaleY, 0, screenshot.imageHeight - 1));
+  const right = Math.round(
+    clampNumber((windowBounds.x + windowBounds.width) * scaleX, x + 1, screenshot.imageWidth),
+  );
+  const bottom = Math.round(
+    clampNumber((windowBounds.y + windowBounds.height) * scaleY, y + 1, screenshot.imageHeight),
+  );
+  const width = right - x;
+  const height = bottom - y;
+
+  if (width < 120 || height < 120) {
+    return null;
+  }
+
+  return {
+    source: "active_window" as const,
+    appName: windowBounds.appName ?? undefined,
+    title: windowBounds.title ?? undefined,
+    x,
+    y,
+    width,
+    height,
+  };
+}
+
+function candidateIntersectsRegion(
+  candidate: ScreenCandidate,
+  region: { x: number; y: number; width: number; height: number },
+) {
+  const candidateRight = candidate.x + candidate.width;
+  const candidateBottom = candidate.y + candidate.height;
+  const regionRight = region.x + region.width;
+  const regionBottom = region.y + region.height;
+
+  return (
+    candidateRight > region.x &&
+    candidate.x < regionRight &&
+    candidateBottom > region.y &&
+    candidate.y < regionBottom
+  );
+}
+
+function filterCandidateContextForPayload(
+  context: ScreenCandidateContext,
+  payload: ScreenshotPayload,
+  screenshot: ScreenshotCapture,
+): ScreenCandidateContext {
+  const crop = payload.crop;
+
+  if (crop == null || context.candidates == null || context.candidates.length === 0) {
+    return context;
+  }
+
+  const screenshotToDisplayX = screenshot.display.width / screenshot.imageWidth;
+  const screenshotToDisplayY = screenshot.display.height / screenshot.imageHeight;
+  const cropDisplayRegion = {
+    x: crop.x * screenshotToDisplayX,
+    y: crop.y * screenshotToDisplayY,
+    width: crop.width * screenshotToDisplayX,
+    height: crop.height * screenshotToDisplayY,
+  };
+  const filteredCandidates = context.candidates.filter((candidate) =>
+    candidateIntersectsRegion(candidate, cropDisplayRegion),
+  );
+
+  if (filteredCandidates.length === context.candidates.length) {
+    return context;
+  }
+
+  const filteredMessage = `Filtered ${
+    context.candidates.length - filteredCandidates.length
+  } candidate(s) outside the active-window crop.`;
+
+  return {
+    ...context,
+    candidates: filteredCandidates,
+    candidateError: context.candidateError
+      ? `${context.candidateError} | ${filteredMessage}`
+      : filteredCandidates.length === 0
+        ? filteredMessage
+        : context.candidateError,
+  };
+}
+
+async function getCroppedScreenshotPayload(
+  screenshot: ScreenshotCapture,
+  crop: NonNullable<ReturnType<typeof getActiveWindowCrop>>,
+): Promise<ScreenshotPayload | null> {
+  try {
+    const image = await loadScreenshotImage(
+      `data:image/${screenshot.format};base64,${screenshot.imageBase64}`,
+    );
+    const longestEdge = Math.max(crop.width, crop.height);
+    const scale = Math.min(1, MAX_PROVIDER_SCREENSHOT_EDGE / longestEdge);
+    const imageWidth = Math.max(1, Math.round(crop.width * scale));
+    const imageHeight = Math.max(1, Math.round(crop.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = imageWidth;
+    canvas.height = imageHeight;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return null;
+    }
+
+    context.drawImage(
+      image,
+      crop.x,
+      crop.y,
+      crop.width,
+      crop.height,
+      0,
+      0,
+      imageWidth,
+      imageHeight,
+    );
+    const dataUrl = canvas.toDataURL("image/jpeg", PROVIDER_SCREENSHOT_JPEG_QUALITY);
+    const [, imageBase64 = ""] = dataUrl.split(",");
+
+    if (!imageBase64) {
+      return null;
+    }
+
+    return {
+      encoding: "base64",
+      format: "jpeg",
+      byteLength: estimateBase64ByteLength(imageBase64),
+      imageWidth,
+      imageHeight,
+      imageBase64,
+      crop,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -971,6 +1213,114 @@ function recordGuidanceSessionResult({
       targetRecord == null ? session.previousTargets : [...session.previousTargets, targetRecord],
     status: allowed && target != null ? "waiting_for_user" : "blocked",
     updatedAt: now,
+  };
+}
+
+const LOCAL_CANDIDATE_MIN_SCORE = 30;
+const LOCAL_OCR_CANDIDATE_MIN_SCORE = 38;
+
+function inferCandidateRisk(candidate: ScreenCandidate): GuidanceStep["risk"] {
+  const label = candidate.label.toLowerCase();
+
+  if (/\b(delete|remove|trash|revoke)\b/.test(label)) {
+    return "delete";
+  }
+
+  if (/\b(pay|payment|purchase|subscribe|checkout)\b/.test(label)) {
+    return "payment";
+  }
+
+  if (/\b(send|submit|publish|post|share)\b/.test(label)) {
+    return "external_send";
+  }
+
+  if (/\b(password|token|secret|security)\b/.test(label)) {
+    return "security_change";
+  }
+
+  if (/\b(permission|privacy|admin|billing|account)\b/.test(label)) {
+    return "permission_change";
+  }
+
+  return "safe_navigation";
+}
+
+function getCandidateScore(candidate: ScreenCandidate): number {
+  return candidate.rank?.score ?? 0;
+}
+
+function isUsableLocalCandidate(candidate: ScreenCandidate): boolean {
+  const score = getCandidateScore(candidate);
+  const isOcrOnly = candidate.source === "ocr" || candidate.role === "ocr_text";
+  const isNativeCandidate = candidate.source === "accessibility";
+  const minScore = isOcrOnly
+    ? LOCAL_OCR_CANDIDATE_MIN_SCORE
+    : isNativeCandidate
+      ? 26
+      : LOCAL_CANDIDATE_MIN_SCORE;
+
+  return score >= minScore;
+}
+
+function createLocalCandidateGuidance(
+  request: GuidanceRequest,
+): GuidanceProviderResponse {
+  const candidates = request.screen.candidates ?? [];
+  const candidate = candidates.find(isUsableLocalCandidate) ?? null;
+
+  if (candidate == null) {
+    const topCandidate = candidates[0];
+    const detail = topCandidate
+      ? ` Top candidate was "${topCandidate.label}" (${topCandidate.source}/${topCandidate.role}) with score ${getCandidateScore(topCandidate)}. Reasons: ${topCandidate.rank?.reasons.join(", ") || "none"}.`
+      : request.screen.candidateError
+        ? ` Candidate source: ${request.screen.candidateSource ?? "unknown"}. ${request.screen.candidateError}`
+        : ` Candidate source: ${request.screen.candidateSource ?? "unknown"}.`;
+
+    return {
+      mode: "unavailable",
+      error: `No high-confidence local target was found.${detail}`,
+      providerName: "local-candidate-ranking",
+    };
+  }
+
+  const confidence = Math.max(
+    0.55,
+    Math.min(0.92, getCandidateScore(candidate) / 70),
+  );
+  const result: GuidanceResult = {
+    mode: "guide",
+    summary: `Local screen candidate selected for: ${request.goal}`,
+    step: {
+      instruction: `Click ${candidate.label}.`,
+      target: {
+        candidateId: candidate.id,
+        label: candidate.label,
+        x: candidate.x,
+        y: candidate.y,
+        width: candidate.width,
+        height: candidate.height,
+      },
+      confidence,
+      risk: inferCandidateRisk(candidate),
+      requiresConfirmation: false,
+    },
+  };
+  const validation = validateGuidanceResult(result);
+
+  if (!validation.valid) {
+    return {
+      mode: "unavailable",
+      error: "Local candidate produced an invalid guidance target.",
+      validation,
+      providerName: "local-candidate-ranking",
+    };
+  }
+
+  return {
+    mode: "real",
+    result,
+    validation,
+    providerName: "local-candidate-ranking",
   };
 }
 
@@ -1161,6 +1511,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     gestureRuntime: createDefaultGestureRuntimeState(),
     voiceRuntime: createDefaultVoiceRuntimeState(),
     guidanceProviderMode: "unavailable",
+    guidanceProviderName: null,
     guidanceFixture: "safe",
     workflowRuntime: createEmptyWorkflowRuntimeState(),
     clickAwareRuntime: createDefaultClickAwareRuntimeState(),
@@ -1185,6 +1536,7 @@ function OverlayWindowApp() {
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
   const [guidanceProviderMode, setGuidanceProviderMode] =
     useState<GuidanceProviderMode>("unavailable");
+  const [guidanceProviderName, setGuidanceProviderName] = useState<string | null>(null);
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [guidanceSession, setGuidanceSession] = useState<GuidanceSession | null>(null);
@@ -1210,9 +1562,21 @@ function OverlayWindowApp() {
     useState<ClickAwareRuntimeState>(() => createDefaultClickAwareRuntimeState());
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
-  const voiceSessionRef = useRef<VoiceRecognitionSession | null>(null);
+  const voiceRuntimeRef = useRef<VoiceRuntimeState>(voiceRuntime);
+  const voiceCaptureTimeoutRef = useRef<number | null>(null);
+  const voiceSubmitInFlightRef = useRef(false);
   const routedVoiceCommandRef = useRef<string | null>(null);
+  const guidanceRefreshInFlightRef = useRef(false);
   const clickAwareAdvanceInFlightRef = useRef(false);
+  const capturePermissionBlockRef = useRef<{
+    message: string;
+    blockedAt: number;
+  } | null>(null);
+  const captureAccessPreflightRef = useRef<{
+    allowed: boolean;
+    checkedAt: number;
+  } | null>(null);
+  const lastPublishedOverlaySnapshotRef = useRef<string | null>(null);
 
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep = activeStep?.target != null ? activeStep : null;
@@ -1233,6 +1597,10 @@ function OverlayWindowApp() {
     !isRefreshingCapture &&
     overlayState !== "paused";
   const hasAcceptedGuidance = acceptedTarget != null || workflowTarget != null;
+  const visibleGuidanceFailure =
+    !isRefreshingCapture && !hasAcceptedGuidance
+      ? captureError ?? guidanceProviderError
+      : null;
   const activeTarget: RenderedGuidanceTarget =
     acceptedTarget != null && acceptedStep != null
       ? {
@@ -1258,6 +1626,10 @@ function OverlayWindowApp() {
     [captureMetadata, viewport],
   );
 
+  useEffect(() => {
+    voiceRuntimeRef.current = voiceRuntime;
+  }, [voiceRuntime]);
+
   const overlaySnapshot = useMemo<OverlaySnapshot>(
     () => ({
       overlayState,
@@ -1279,6 +1651,7 @@ function OverlayWindowApp() {
     () => ({
       ...overlaySnapshot,
       guidanceProviderMode,
+      guidanceProviderName,
       guidanceFixture,
       workflowRuntime,
       clickAwareRuntime,
@@ -1297,6 +1670,7 @@ function OverlayWindowApp() {
     [
       overlaySnapshot,
       guidanceProviderMode,
+      guidanceProviderName,
       guidanceFixture,
       workflowRuntime,
       clickAwareRuntime,
@@ -1314,7 +1688,20 @@ function OverlayWindowApp() {
     ],
   );
 
-  async function publishRuntimeSnapshots() {
+  async function publishRuntimeSnapshots(options: { includeDebug?: boolean } = {}) {
+    const serializedOverlaySnapshot = JSON.stringify(overlaySnapshot);
+
+    if (serializedOverlaySnapshot !== lastPublishedOverlaySnapshotRef.current) {
+      lastPublishedOverlaySnapshotRef.current = serializedOverlaySnapshot;
+      await emitTo("settings", "toki://overlay-state", overlaySnapshot).catch(
+        () => undefined,
+      );
+    }
+
+    if (!options.includeDebug) {
+      return;
+    }
+
     await emitTo("settings", "toki://overlay-state", overlaySnapshot).catch(
       () => undefined,
     );
@@ -1323,14 +1710,92 @@ function OverlayWindowApp() {
     );
   }
 
+  function getRecentCapturePermissionBlock(): string | null {
+    const block = capturePermissionBlockRef.current;
+    if (block == null) {
+      return null;
+    }
+
+    const permissionRetryCooldownMs = 30_000;
+    if (Date.now() - block.blockedAt < permissionRetryCooldownMs) {
+      return block.message;
+    }
+
+    capturePermissionBlockRef.current = null;
+    return null;
+  }
+
+  async function ensureScreenCaptureAccess() {
+    const recentPermissionBlock = getRecentCapturePermissionBlock();
+    if (recentPermissionBlock != null) {
+      throw new Error(recentPermissionBlock);
+    }
+
+    const cachedPreflight = captureAccessPreflightRef.current;
+    const preflightCacheMs = 5_000;
+    const hasFreshPreflight =
+      cachedPreflight != null && Date.now() - cachedPreflight.checkedAt < preflightCacheMs;
+
+    if (!hasFreshPreflight) {
+      const hasScreenCaptureAccess = await invoke<boolean>(
+        "screen_capture_access_status",
+      ).catch(() => true);
+      captureAccessPreflightRef.current = {
+        allowed: hasScreenCaptureAccess,
+        checkedAt: Date.now(),
+      };
+    }
+  }
+
+  async function invokeCaptureCommand<T>(command: string): Promise<T> {
+    await ensureScreenCaptureAccess();
+
+    try {
+      const result = await invoke<T>(command);
+      capturePermissionBlockRef.current = null;
+      captureAccessPreflightRef.current = {
+        allowed: true,
+        checkedAt: Date.now(),
+      };
+      return result;
+    } catch (error) {
+      if (isCapturePermissionError(error)) {
+        const message = formatCaptureError(error);
+        capturePermissionBlockRef.current = {
+          message,
+          blockedAt: Date.now(),
+        };
+        captureAccessPreflightRef.current = {
+          allowed: false,
+          checkedAt: Date.now(),
+        };
+        setCaptureError(message);
+      }
+
+      throw error;
+    }
+  }
+
   async function refreshCaptureMetadata(
     goal = "Show me what to click next.",
     providerMode: GuidanceProviderMode = "unavailable",
   ) {
+    const isLiveGuidanceProvider =
+      providerMode === "real" || providerMode === "ollama-vision";
+
+    if (guidanceRefreshInFlightRef.current) {
+      setGuidanceProviderError(
+        "Guidance is already analyzing the screen. Wait for the current request to finish.",
+      );
+      return;
+    }
+
+    guidanceRefreshInFlightRef.current = true;
     setIsRefreshingCapture(true);
     setCaptureError(null);
     setGuidanceProviderError(null);
     setGuidanceProviderMode(providerMode);
+    setGuidanceProviderName(null);
     setGuidanceIssues([]);
     setSafetyDecision(null);
     setGuidanceRequest(null);
@@ -1340,15 +1805,27 @@ function OverlayWindowApp() {
     setOverlayState("thinking");
 
     try {
-      const [metadata, screenshot] = await Promise.all([
-        invoke<CaptureMetadata>("capture_metadata"),
-        invoke<ScreenshotCapture>("capture_screenshot"),
-      ]);
+      await ensureScreenCaptureAccess();
+      const preferredAppName = getPreferredAppNameFromGoal(goal);
+      const windowBoundsResult = isLiveGuidanceProvider
+        ? await invoke<NativeWindowBounds>("frontmost_window_bounds", {
+            appName: preferredAppName,
+          })
+            .then((bounds) => ({ bounds, error: null }))
+            .catch((error) => ({
+              bounds: null,
+              error: error instanceof Error ? error.message : String(error),
+            }))
+        : null;
+      const metadata = await invokeCaptureCommand<CaptureMetadata>("capture_metadata");
+      const screenshot = await invokeCaptureCommand<ScreenshotCapture>("capture_screenshot");
+      const windowBounds = windowBoundsResult?.bounds ?? null;
+      const windowBoundsError = windowBoundsResult?.error ?? null;
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
       const screenshotMetadata = getScreenshotMetadata(screenshot);
-      const shouldTrackSession = providerMode === "real";
+      const shouldTrackSession = isLiveGuidanceProvider;
       const nextSession =
         shouldTrackSession && guidanceSession?.originalGoal === goal
           ? {
@@ -1365,17 +1842,36 @@ function OverlayWindowApp() {
       }
 
       const screenshotPayload =
-        providerMode === "real"
-          ? await getProviderScreenshotPayload(screenshot)
+        isLiveGuidanceProvider
+          ? await getProviderScreenshotPayload(screenshot, windowBounds)
           : getScreenshotPayload(screenshot);
+
+      if (isLiveGuidanceProvider && screenshotPayload.crop == null) {
+        const message =
+          windowBoundsError ??
+          "active window crop was unavailable, so Toki refused to run full-display vision against the desktop";
+        throw new Error(
+          `${message}. Live guidance needs a trusted active app window crop to avoid targeting the menu bar, dock, desktop icons, or unrelated windows.`,
+        );
+      }
+
       const requestCalibration = getCalibration(metadata, viewport, screenshotMetadata);
-      const candidateContext =
-        providerMode === "real"
-          ? await collectScreenCandidatesForGuidance(screenshot, metadata.display, goal)
+      const rawCandidateContext =
+        isLiveGuidanceProvider
+          ? await collectScreenCandidatesForGuidance(
+              screenshot,
+              metadata.display,
+              goal,
+              windowBounds?.appName ?? preferredAppName ?? screenshot.activeWindow?.appName,
+            )
           : {
               candidates: [],
               candidateSource: "none" as const,
             };
+      const candidateContext =
+        isLiveGuidanceProvider
+          ? filterCandidateContextForPayload(rawCandidateContext, screenshotPayload, screenshot)
+          : rawCandidateContext;
       const nextGuidanceRequest: GuidanceRequest = {
         goal,
         screen: {
@@ -1391,12 +1887,31 @@ function OverlayWindowApp() {
       };
       setGuidanceRequest(nextGuidanceRequest);
 
-      if (providerMode === "real") {
-        const providerResponse = await requestRealGuidance(nextGuidanceRequest, {
-          endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
-        });
+      if (isLiveGuidanceProvider) {
+        const endpoint = import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT;
+        let providerResponse: GuidanceProviderResponse;
+
+        if (providerMode === "ollama-vision") {
+          providerResponse = await requestOllamaVisionGuidance(nextGuidanceRequest, {
+            endpoint: import.meta.env.VITE_TOKI_OLLAMA_ENDPOINT,
+            model: import.meta.env.VITE_TOKI_OLLAMA_MODEL,
+          });
+        } else {
+          providerResponse = createLocalCandidateGuidance(nextGuidanceRequest);
+        }
+
+        if (
+          providerMode === "real" &&
+          providerResponse.mode === "unavailable" &&
+          endpoint
+        ) {
+          providerResponse = await requestRealGuidance(nextGuidanceRequest, {
+            endpoint,
+          });
+        }
 
         setGuidanceProviderMode(providerResponse.mode);
+        setGuidanceProviderName(providerResponse.providerName ?? null);
         setGuidanceProviderError(providerResponse.error ?? null);
         setGuidanceIssues(providerResponse.validation?.issues ?? []);
         const nextSafetyDecision = evaluateSafetyPolicy({
@@ -1439,6 +1954,7 @@ function OverlayWindowApp() {
 
       if (providerMode === "unavailable") {
         setGuidanceProviderMode("unavailable");
+        setGuidanceProviderName("none");
         setGuidanceProviderError(
           "No guidance provider is active. Configure a real provider or run a debug fixture.",
         );
@@ -1476,6 +1992,7 @@ function OverlayWindowApp() {
       });
 
       setGuidanceIssues(validation.issues);
+      setGuidanceProviderName(providerResponse.providerName ?? "mock-fixture");
       setSafetyDecision(nextSafetyDecision);
       setGuidanceProviderError(
         nextSafetyDecision.action === "allow" ||
@@ -1500,8 +2017,9 @@ function OverlayWindowApp() {
       }
     } catch (error) {
       setCaptureError(formatCaptureError(error));
-      if (providerMode === "real") {
+      if (isLiveGuidanceProvider) {
         setGuidanceProviderMode("unavailable");
+        setGuidanceProviderName("none");
       }
       setGuidanceSession((currentSession) =>
         currentSession == null
@@ -1519,6 +2037,7 @@ function OverlayWindowApp() {
       setOverlayState("error");
     } finally {
       setIsRefreshingCapture(false);
+      guidanceRefreshInFlightRef.current = false;
     }
   }
 
@@ -1547,10 +2066,9 @@ function OverlayWindowApp() {
     setCaptureError(null);
 
     try {
-      const [metadata, screenshot] = await Promise.all([
-        invoke<CaptureMetadata>("capture_metadata"),
-        invoke<ScreenshotCapture>("capture_screenshot"),
-      ]);
+      await ensureScreenCaptureAccess();
+      const metadata = await invokeCaptureCommand<CaptureMetadata>("capture_metadata");
+      const screenshot = await invokeCaptureCommand<ScreenshotCapture>("capture_screenshot");
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
@@ -1614,10 +2132,9 @@ function OverlayWindowApp() {
     setGuidanceProviderError(null);
 
     try {
-      const [metadata, screenshot] = await Promise.all([
-        invoke<CaptureMetadata>("capture_metadata"),
-        invoke<ScreenshotCapture>("capture_screenshot"),
-      ]);
+      await ensureScreenCaptureAccess();
+      const metadata = await invokeCaptureCommand<CaptureMetadata>("capture_metadata");
+      const screenshot = await invokeCaptureCommand<ScreenshotCapture>("capture_screenshot");
       const verification = verifySessionScreenChange(guidanceSession, screenshot);
 
       setCaptureMetadata(metadata);
@@ -1660,7 +2177,7 @@ function OverlayWindowApp() {
       setIsRefreshingCapture(false);
     }
 
-    await refreshCaptureMetadata(guidanceSession.originalGoal, "real");
+    await refreshCaptureMetadata(guidanceSession.originalGoal, "ollama-vision");
   }
 
   async function advanceActiveWorkflowStep() {
@@ -1704,13 +2221,38 @@ function OverlayWindowApp() {
   }
 
   function cancelVoiceRuntime() {
-    voiceSessionRef.current?.abort();
-    voiceSessionRef.current = null;
+    clearVoiceCaptureTimeout();
+    voiceSubmitInFlightRef.current = false;
     routedVoiceCommandRef.current = null;
+    void resetNativeVoiceCapture().catch(() => undefined);
     setVoiceRuntime({
       ...createDefaultVoiceRuntimeState(),
       status: "cancelled",
     });
+  }
+
+  function clearVoiceCaptureTimeout() {
+    if (voiceCaptureTimeoutRef.current == null) {
+      return;
+    }
+
+    window.clearTimeout(voiceCaptureTimeoutRef.current);
+    voiceCaptureTimeoutRef.current = null;
+  }
+
+  function scheduleVoiceCaptureTimeout() {
+    clearVoiceCaptureTimeout();
+
+    voiceCaptureTimeoutRef.current = window.setTimeout(() => {
+      voiceCaptureTimeoutRef.current = null;
+      if (!voiceRuntimeRef.current.enabled || voiceSubmitInFlightRef.current) {
+        return;
+      }
+
+      emitTo("overlay", "toki://overlay-command", {
+        type: "submit-voice-listening",
+      } satisfies OverlayCommand).catch(() => undefined);
+    }, 10_000);
   }
 
   useEffect(() => {
@@ -1732,29 +2274,69 @@ function OverlayWindowApp() {
 
   useEffect(() => {
     let disposed = false;
+    let lastPointerShadow: PointerShadowPosition | null = null;
 
-    async function syncCursorShadow() {
-      try {
-        const position = await getOverlayCursorPosition();
+    function updateCursorShadow(position: Pick<NativeCursorPosition, "x" | "y">) {
+      const nextPointerShadow =
+        viewport.width <= 240 && viewport.height <= 240
+          ? {
+              x: Math.max(
+                pointerShadowGeometry.margin,
+                (viewport.width - pointerShadowGeometry.width) / 2,
+              ),
+              y: Math.max(
+                pointerShadowGeometry.margin,
+                (viewport.height - pointerShadowGeometry.height) / 2,
+              ),
+            }
+          : getPointerShadowPosition(position.x, position.y, viewport);
 
-        if (!disposed) {
-          setPointerShadow(getPointerShadowPosition(position.x, position.y, viewport));
+      if (!disposed) {
+        if (
+          lastPointerShadow == null ||
+          Math.abs(nextPointerShadow.x - lastPointerShadow.x) >=
+            POINTER_SHADOW_UPDATE_THRESHOLD_PX ||
+          Math.abs(nextPointerShadow.y - lastPointerShadow.y) >=
+            POINTER_SHADOW_UPDATE_THRESHOLD_PX
+        ) {
+          lastPointerShadow = nextPointerShadow;
+          setPointerShadow(nextPointerShadow);
         }
-      } catch {
-        return;
       }
     }
 
-    void syncCursorShadow();
-    const timer = window.setInterval(() => {
-      void syncCursorShadow();
-    }, 32);
+    void getOverlayCursorPosition()
+      .then(updateCursorShadow)
+      .catch(() => undefined);
+
+    let unlisten: (() => void) | null = null;
+
+    listen<NativeCursorPosition>("toki://native-cursor", (event) => {
+      updateCursorShadow(event.payload);
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+
+        unlisten = cleanup;
+      })
+      .catch(() => undefined);
 
     return () => {
       disposed = true;
-      window.clearInterval(timer);
+      unlisten?.();
     };
   }, [viewport]);
+
+  useEffect(() => {
+    const mode = hasAcceptedGuidance || workflowRuntime.status === "active" ? "guidance" : "puck";
+
+    invoke("set_overlay_surface_mode", {
+      request: { mode },
+    }).catch(() => undefined);
+  }, [hasAcceptedGuidance, workflowRuntime.status]);
 
   useEffect(() => {
     let disposed = false;
@@ -1887,11 +2469,11 @@ function OverlayWindowApp() {
 
   useEffect(() => {
     void publishRuntimeSnapshots();
-  }, [overlaySnapshot, debugSnapshot]);
+  }, [overlaySnapshot]);
 
   useEffect(() => {
     window.__tokiRunRealGuidanceSmoke = (goal = "Show me what to click next.") => {
-      void refreshCaptureMetadata(goal, "real");
+      void refreshCaptureMetadata(goal, "ollama-vision");
     };
 
     return () => {
@@ -1925,7 +2507,7 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "request-state") {
-        await publishRuntimeSnapshots();
+        await publishRuntimeSnapshots({ includeDebug: true });
       }
 
       if (event.payload.type === "set-state") {
@@ -2114,8 +2696,8 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "start-voice-listening") {
-        voiceSessionRef.current?.abort();
-        voiceSessionRef.current = null;
+        clearVoiceCaptureTimeout();
+        voiceSubmitInFlightRef.current = false;
         routedVoiceCommandRef.current = null;
         setVoiceRuntime({
           enabled: true,
@@ -2125,26 +2707,26 @@ function OverlayWindowApp() {
         });
         setOverlayState("listening");
 
-        if (event.payload.source !== "debug") {
-          try {
-            await startNativeVoiceCapture();
-            setVoiceRuntime((currentState) => ({
-              ...currentState,
-              permission: "granted",
-              status: "listening",
-              transcript: undefined,
-              pendingCommand: undefined,
-              error: undefined,
-            }));
-          } catch (error) {
-            setVoiceRuntime((currentState) => ({
-              ...currentState,
-              enabled: false,
-              permission: "error",
-              status: "error",
-              error: error instanceof Error ? error.message : String(error),
-            }));
-          }
+        try {
+          await startNativeVoiceCapture();
+          setVoiceRuntime((currentState) => ({
+            ...currentState,
+            permission: "granted",
+            status: "listening",
+            transcript: undefined,
+            pendingCommand: undefined,
+            error: undefined,
+          }));
+          scheduleVoiceCaptureTimeout();
+        } catch (error) {
+          clearVoiceCaptureTimeout();
+          setVoiceRuntime((currentState) => ({
+            ...currentState,
+            enabled: false,
+            permission: "error",
+            status: "error",
+            error: error instanceof Error ? error.message : String(error),
+          }));
         }
 
         return;
@@ -2159,65 +2741,73 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "submit-voice-listening") {
-        if (voiceRuntime.activationSource !== "debug") {
-          setVoiceRuntime((currentState) => ({
-            ...currentState,
-            status: "transcribing",
-          }));
+        const activeVoiceRuntime = voiceRuntimeRef.current;
+        if (!activeVoiceRuntime.enabled || voiceSubmitInFlightRef.current) {
+          return;
+        }
 
-          try {
-            const capture = await stopNativeVoiceCapture();
-            const transcription = await transcribeNativeVoiceCapture(capture);
+        clearVoiceCaptureTimeout();
+        voiceSubmitInFlightRef.current = true;
 
-            if (transcription.status === "ready") {
-              const pendingCommand: VoiceCommandRequest = {
-                text: transcription.transcript.text,
-                source: voiceRuntime.activationSource ?? "settings",
-                createdAt: new Date().toISOString(),
-              };
+        setVoiceRuntime((currentState) => ({
+          ...currentState,
+          status: "transcribing",
+        }));
 
-              setVoiceRuntime((currentState) => ({
-                ...currentState,
-                enabled: false,
-                permission: "granted",
-                status: "command_ready",
-                transcript: transcription.transcript,
-                pendingCommand,
-                error: undefined,
-              }));
-            } else {
-              setVoiceRuntime((currentState) => ({
-                ...currentState,
-                enabled: false,
-                status: "error",
-                error: transcription.error,
-              }));
-            }
-          } catch (error) {
+        try {
+          const captureStatus = await getNativeVoiceCaptureStatus().catch(() => null);
+
+          if (captureStatus?.status !== "capturing") {
+            setVoiceRuntime((currentState) => ({
+              ...currentState,
+              enabled: false,
+              status: "idle",
+              error: undefined,
+            }));
+            setOverlayState((currentState) =>
+              currentState === "listening" ? "idle" : currentState,
+            );
+            return;
+          }
+
+          const capture = await stopNativeVoiceCapture();
+          const transcription = await transcribeNativeVoiceCapture(capture);
+
+          if (transcription.status === "ready") {
+            const pendingCommand: VoiceCommandRequest = {
+              text: transcription.transcript.text,
+              source: activeVoiceRuntime.activationSource ?? "settings",
+              createdAt: new Date().toISOString(),
+            };
+
+            setVoiceRuntime((currentState) => ({
+              ...currentState,
+              enabled: false,
+              permission: "granted",
+              status: "command_ready",
+              transcript: transcription.transcript,
+              pendingCommand,
+              error: undefined,
+            }));
+          } else {
             setVoiceRuntime((currentState) => ({
               ...currentState,
               enabled: false,
               status: "error",
-              error: error instanceof Error ? error.message : String(error),
+              error: transcription.error,
             }));
           }
-
-          return;
+        } catch (error) {
+          setVoiceRuntime((currentState) => ({
+            ...currentState,
+            enabled: false,
+            status: "error",
+            error: error instanceof Error ? error.message : String(error),
+          }));
+        } finally {
+          voiceSubmitInFlightRef.current = false;
         }
 
-        voiceSessionRef.current?.stop();
-        voiceSessionRef.current = null;
-        setVoiceRuntime((currentState) =>
-          currentState.enabled
-            ? {
-                ...currentState,
-                status:
-                  currentState.status === "command_ready"
-                    ? "command_ready"
-                    : "transcribing",
-              }
-            : currentState,
-        );
         return;
       }
     })
@@ -2232,93 +2822,6 @@ function OverlayWindowApp() {
       unlistenCommand?.();
     };
   }, [overlaySnapshot, debugSnapshot, viewport, guidanceResult, workflowRuntime]);
-
-  useEffect(() => {
-    if (!voiceRuntime.enabled || voiceRuntime.activationSource !== "debug") {
-      return;
-    }
-
-    let session: VoiceRecognitionSession | null = null;
-
-    try {
-      session = startVoiceRecognition({
-        onStart: () => {
-          setVoiceRuntime((currentState) => ({
-            ...currentState,
-            permission: "granted",
-            status: "listening",
-            error: undefined,
-          }));
-        },
-        onTranscript: (transcript: VoiceTranscript) => {
-          setVoiceRuntime((currentState) => {
-            const pendingCommand: VoiceCommandRequest | undefined = transcript.isFinal
-              ? {
-                  text: transcript.text,
-                  source: currentState.activationSource ?? "settings",
-                  createdAt: new Date().toISOString(),
-                }
-              : currentState.pendingCommand;
-
-            return {
-              ...currentState,
-              status: transcript.isFinal ? "command_ready" : "listening",
-              transcript,
-              pendingCommand,
-              error: undefined,
-            };
-          });
-        },
-        onEnd: () => {
-          setVoiceRuntime((currentState) =>
-            currentState.status === "command_ready"
-              ? {
-                  ...currentState,
-                  enabled: false,
-                }
-              : {
-                  ...currentState,
-                  enabled: false,
-                  status: "idle",
-                },
-          );
-          voiceSessionRef.current = null;
-        },
-        onError: (message) => {
-          setVoiceRuntime((currentState) => ({
-            ...currentState,
-            enabled: false,
-            permission:
-              message.toLowerCase().includes("not allowed") ||
-              message.toLowerCase().includes("denied")
-                ? "denied"
-                : currentState.permission === "unknown"
-                  ? "error"
-                  : currentState.permission,
-            status: "error",
-            error: message,
-          }));
-          voiceSessionRef.current = null;
-        },
-      });
-      voiceSessionRef.current = session;
-    } catch (error) {
-      setVoiceRuntime((currentState) => ({
-        ...currentState,
-        enabled: false,
-        permission: "unsupported",
-        status: "error",
-        error: error instanceof Error ? error.message : String(error),
-      }));
-    }
-
-    return () => {
-      if (voiceSessionRef.current === session) {
-        session?.abort();
-        voiceSessionRef.current = null;
-      }
-    };
-  }, [voiceRuntime.enabled, voiceRuntime.activationSource]);
 
   useEffect(() => {
     const command = voiceRuntime.pendingCommand;
@@ -2338,12 +2841,7 @@ function OverlayWindowApp() {
       ...currentState,
       status: "transcribing",
     }));
-    const providerMode: GuidanceProviderMode = import.meta.env
-      .VITE_TOKI_GUIDANCE_ENDPOINT
-      ? "real"
-      : "unavailable";
-
-    void refreshCaptureMetadata(command.text, providerMode).finally(() => {
+    void refreshCaptureMetadata(command.text, "ollama-vision").finally(() => {
       setVoiceRuntime((currentState) =>
         currentState.pendingCommand?.createdAt === command.createdAt
           ? {
@@ -2403,6 +2901,10 @@ function OverlayWindowApp() {
         />
       ) : null}
       <VoiceStatusCue voiceRuntime={voiceRuntime} pointerShadow={pointerShadow} />
+      <GuidanceFailureCue
+        message={visibleGuidanceFailure}
+        pointerShadow={pointerShadow}
+      />
     </main>
   );
 }
@@ -2633,11 +3135,38 @@ function DebugWindowApp() {
   const guidancePayloadSize = guidancePayload
     ? `${(guidancePayload.byteLength / 1024 / 1024).toFixed(2)} MB`
     : "Missing";
+  const guidancePayloadRegion = guidancePayload?.crop
+    ? `${guidancePayload.crop.appName ?? "active app"} ${
+        guidancePayload.crop.title ? `"${guidancePayload.crop.title}" ` : ""
+      }${guidancePayload.crop.width} x ${guidancePayload.crop.height} @ ${guidancePayload.crop.x}, ${guidancePayload.crop.y}`
+    : guidancePayload
+      ? "Full display fallback"
+      : "Missing";
   const guidancePayloadPlan = guidancePayload
     ? guidancePayload.byteLength > 2_000_000
       ? "Downscale before provider"
       : "Ready for smoke test"
     : "Capture required";
+  const guidanceBlocker =
+    snapshot.captureError != null
+      ? `Capture: ${snapshot.captureError}`
+      : snapshot.guidanceProviderError != null
+        ? `Provider: ${snapshot.guidanceProviderError}`
+      : snapshot.safetyDecision?.action === "block"
+        ? `Safety: ${snapshot.safetyDecision.message}`
+      : snapshot.guidanceIssues.length > 0
+        ? `Validation: ${snapshot.guidanceIssues[0]?.path} ${snapshot.guidanceIssues[0]?.message}`
+      : guidanceScreen?.candidateError != null && guidanceCandidateCount === 0
+        ? `Candidates: ${guidanceScreen.candidateError}`
+      : target == null
+        ? "No accepted target yet"
+        : "Target accepted";
+  const guidanceInputQuality =
+    guidancePayload == null
+      ? "No screenshot payload"
+      : guidancePayload.crop == null
+        ? "Full display fallback"
+        : `Active-window crop: ${guidancePayload.crop.appName ?? "unknown app"}`;
   const debugVoiceStatusDetails = getVoiceStatusDetails(snapshot.voiceRuntime);
   const currentWorkflowStep =
     snapshot.workflowRuntime.plan?.steps[snapshot.workflowRuntime.currentStepIndex] ??
@@ -2662,6 +3191,15 @@ function DebugWindowApp() {
     sendOverlayCommand({ type: "run-real-guidance-smoke" });
   }
 
+  function testOllamaVisionGuidance() {
+    setGuidanceTesterVerdict("untested");
+    sendOverlayCommand({
+      type: "refresh-capture",
+      goal: "Show me what to click next.",
+      providerMode: "ollama-vision",
+    });
+  }
+
   function startMockWorkflow(goal: string) {
     sendOverlayCommand({
       type: "start-mock-workflow",
@@ -2669,11 +3207,11 @@ function DebugWindowApp() {
     });
   }
 
-  function refreshVoiceCapabilities(requestMicrophone = false) {
-    setVoiceProbeStatus(requestMicrophone ? "requesting" : "probing");
+  function refreshVoiceCapabilities() {
+    setVoiceProbeStatus("probing");
     setVoiceProbeError(null);
 
-    probeVoiceCapabilities({ requestMicrophone })
+    probeVoiceCapabilities()
       .then((result) => {
         setVoiceProbe(result);
         setVoiceProbeStatus(
@@ -2740,7 +3278,7 @@ function DebugWindowApp() {
     emitTo("overlay", "toki://overlay-command", {
       type: "request-state",
     } satisfies OverlayCommand).catch(() => undefined);
-    refreshVoiceCapabilities(false);
+    refreshVoiceCapabilities();
     refreshCameraDevices();
 
     return () => {
@@ -3326,7 +3864,7 @@ function DebugWindowApp() {
                 }}
                 disabled={snapshot.voiceRuntime.status === "listening"}
               >
-                Start Web Speech
+                Start native capture
               </button>
               <button
                 type="button"
@@ -3369,8 +3907,8 @@ function DebugWindowApp() {
               </div>
             </dl>
             <p className="debug-muted">
-              {debugVoiceStatusDetails.message}. Web Speech is debug-only until
-              native microphone capture and cloud transcription are connected.
+              {debugVoiceStatusDetails.message}. Debug uses the same native
+              microphone path as Option.
             </p>
           </section>
 
@@ -3381,24 +3919,11 @@ function DebugWindowApp() {
               <button
                 type="button"
                 onClick={() => {
-                  refreshVoiceCapabilities(false);
+                  refreshVoiceCapabilities();
                 }}
-                disabled={
-                  voiceProbeStatus === "probing" || voiceProbeStatus === "requesting"
-                }
+                disabled={voiceProbeStatus === "probing"}
               >
                 {voiceProbeStatus === "probing" ? "Probing" : "Probe"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  refreshVoiceCapabilities(true);
-                }}
-                disabled={
-                  voiceProbeStatus === "probing" || voiceProbeStatus === "requesting"
-                }
-              >
-                {voiceProbeStatus === "requesting" ? "Requesting" : "Request mic"}
               </button>
             </div>
             {voiceProbeError ? <p className="debug-muted">{voiceProbeError}</p> : null}
@@ -3868,6 +4393,13 @@ function DebugWindowApp() {
               </button>
               <button
                 type="button"
+                onClick={testOllamaVisionGuidance}
+                disabled={snapshot.isRefreshingCapture}
+              >
+                Ollama vision
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   sendOverlayCommand({ type: "continue-guidance-session" });
                 }}
@@ -3885,12 +4417,28 @@ function DebugWindowApp() {
                 <dd>{snapshot.guidanceProviderMode}</dd>
               </div>
               <div>
+                <dt>Decision source</dt>
+                <dd>{snapshot.guidanceProviderName ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Blocker</dt>
+                <dd>{guidanceBlocker}</dd>
+              </div>
+              <div>
+                <dt>Input</dt>
+                <dd>{guidanceInputQuality}</dd>
+              </div>
+              <div>
                 <dt>Safety</dt>
                 <dd>{snapshot.safetyDecision?.action ?? "None"}</dd>
               </div>
               <div>
                 <dt>Reason</dt>
                 <dd>{snapshot.safetyDecision?.reason ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Summary</dt>
+                <dd>{snapshot.guidanceResult?.summary ?? snapshot.guidanceProviderError ?? "None"}</dd>
               </div>
               <div>
                 <dt>Fixture</dt>
@@ -4037,6 +4585,10 @@ function DebugWindowApp() {
               <div>
                 <dt>Payload</dt>
                 <dd>{guidancePayload ? `${guidancePayload.format} ${guidancePayloadSize}` : "Missing"}</dd>
+              </div>
+              <div>
+                <dt>Region</dt>
+                <dd>{guidancePayloadRegion}</dd>
               </div>
               <div>
                 <dt>Calibration</dt>

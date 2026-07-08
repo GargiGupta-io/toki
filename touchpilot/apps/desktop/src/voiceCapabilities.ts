@@ -62,18 +62,6 @@ function getPermissionFromState(state: PermissionState): VoicePermissionState {
   return "unknown";
 }
 
-function getPermissionFromError(error: unknown): VoicePermissionState {
-  if (error instanceof DOMException && error.name === "NotAllowedError") {
-    return "denied";
-  }
-
-  if (error instanceof DOMException && error.name === "NotFoundError") {
-    return "unsupported";
-  }
-
-  return "error";
-}
-
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -94,31 +82,6 @@ async function queryMicrophonePermission(): Promise<VoicePermissionState> {
     return getPermissionFromState(status.state);
   } catch {
     return "unknown";
-  }
-}
-
-async function requestMicrophonePermission(): Promise<{
-  permission: VoicePermissionState;
-  error?: string;
-}> {
-  if (navigator.mediaDevices?.getUserMedia == null) {
-    return { permission: "unsupported", error: "getUserMedia is not available." };
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: false,
-    });
-    stream.getTracks().forEach((track) => {
-      track.stop();
-    });
-    return { permission: "granted" };
-  } catch (error) {
-    return {
-      permission: getPermissionFromError(error),
-      error: getErrorMessage(error),
-    };
   }
 }
 
@@ -151,9 +114,8 @@ export async function probeVoiceCapabilities(
   let error: string | undefined;
 
   if (options.requestMicrophone) {
-    const requestResult = await requestMicrophonePermission();
-    microphonePermission = requestResult.permission;
-    error = requestResult.error;
+    error =
+      "Browser microphone requests are disabled. Toki uses native push-to-talk for voice capture.";
   }
 
   const microphones = await getMicrophones().catch((deviceError: unknown) => {
