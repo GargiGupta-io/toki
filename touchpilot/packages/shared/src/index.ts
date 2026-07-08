@@ -147,6 +147,15 @@ export type GuidanceScreenContext = {
     imageWidth: number;
     imageHeight: number;
     imageBase64: string;
+    crop?: {
+      source: "active_window";
+      appName?: string;
+      title?: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
   };
   calibration?: CoordinateCalibration;
   candidates?: ScreenCandidate[];
@@ -178,7 +187,7 @@ export type GuidanceValidationResult = {
   issues: GuidanceValidationIssue[];
 };
 
-export type GuidanceProviderMode = "mock" | "real" | "unavailable";
+export type GuidanceProviderMode = "mock" | "real" | "ollama-vision" | "unavailable";
 
 export type GuidanceProviderRequest = GuidanceRequest;
 

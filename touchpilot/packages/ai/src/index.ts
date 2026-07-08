@@ -481,7 +481,7 @@ function isProviderResponse(value: unknown): value is GuidanceProviderResponse {
     value != null &&
     typeof value === "object" &&
     "mode" in value &&
-    ["mock", "real", "unavailable"].includes(
+      ["mock", "real", "ollama-vision", "unavailable"].includes(
       String((value as GuidanceProviderResponse).mode),
     )
   );
