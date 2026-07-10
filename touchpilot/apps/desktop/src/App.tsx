@@ -82,6 +82,10 @@ import type {
   ViewportMetrics,
 } from "./overlayGeometry";
 import { requestOllamaVisionGuidance } from "./ollamaVisionProvider";
+import {
+  createProviderImagePreparationPlan,
+  type ProviderImagePreparationPlan,
+} from "./providerImagePreparation";
 import { getPuckMotionModel } from "./puckMotion";
 import { collectScreenCandidatesForGuidance } from "./screenCandidates";
 import { getTokiCreatureState } from "./tokiCreatureState";
@@ -769,12 +773,58 @@ function verifySessionScreenChange(
   };
 }
 
-const MAX_PROVIDER_SCREENSHOT_EDGE = 1024;
-const PROVIDER_SCREENSHOT_JPEG_QUALITY = 0.76;
-
 function estimateBase64ByteLength(imageBase64: string) {
   const padding = imageBase64.endsWith("==") ? 2 : imageBase64.endsWith("=") ? 1 : 0;
   return Math.max(0, Math.floor((imageBase64.length * 3) / 4) - padding);
+}
+
+function renderProviderScreenshotImage(
+  image: HTMLImageElement,
+  plan: ProviderImagePreparationPlan,
+): Omit<ScreenshotPayload, "crop"> | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = plan.output.imageWidth;
+  canvas.height = plan.output.imageHeight;
+  const context = canvas.getContext("2d", { alpha: false });
+
+  if (!context) {
+    return null;
+  }
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  const source = plan.sourceGeometry.region;
+  context.drawImage(
+    image,
+    source.x,
+    source.y,
+    source.width,
+    source.height,
+    0,
+    0,
+    plan.output.imageWidth,
+    plan.output.imageHeight,
+  );
+  const dataUrl = canvas.toDataURL(
+    "image/jpeg",
+    plan.preprocessing.jpegQuality,
+  );
+  const [, imageBase64 = ""] = dataUrl.split(",");
+
+  if (!imageBase64) {
+    return null;
+  }
+
+  return {
+    encoding: "base64",
+    format: plan.output.format,
+    byteLength: estimateBase64ByteLength(imageBase64),
+    imageWidth: plan.output.imageWidth,
+    imageHeight: plan.output.imageHeight,
+    imageBase64,
+    sourceGeometry: plan.sourceGeometry,
+    preprocessing: plan.preprocessing,
+  };
 }
 
 function loadScreenshotImage(dataUrl: string): Promise<HTMLImageElement> {
@@ -801,44 +851,26 @@ async function getProviderScreenshotPayload(
     }
   }
 
-  const longestEdge = Math.max(screenshot.imageWidth, screenshot.imageHeight);
+  const plan = createProviderImagePreparationPlan({
+    imageWidth: screenshot.imageWidth,
+    imageHeight: screenshot.imageHeight,
+    format: screenshot.format,
+    byteLength: screenshot.byteLength,
+  });
 
-  if (longestEdge <= MAX_PROVIDER_SCREENSHOT_EDGE && screenshot.byteLength <= 2_000_000) {
-    return originalPayload;
+  if (!plan.shouldRender) {
+    return {
+      ...originalPayload,
+      sourceGeometry: plan.sourceGeometry,
+      preprocessing: plan.preprocessing,
+    };
   }
 
   try {
     const image = await loadScreenshotImage(
       `data:image/${screenshot.format};base64,${screenshot.imageBase64}`,
     );
-    const scale = Math.min(1, MAX_PROVIDER_SCREENSHOT_EDGE / longestEdge);
-    const imageWidth = Math.max(1, Math.round(screenshot.imageWidth * scale));
-    const imageHeight = Math.max(1, Math.round(screenshot.imageHeight * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = imageWidth;
-    canvas.height = imageHeight;
-    const context = canvas.getContext("2d");
-
-    if (!context) {
-      return originalPayload;
-    }
-
-    context.drawImage(image, 0, 0, imageWidth, imageHeight);
-    const dataUrl = canvas.toDataURL("image/jpeg", PROVIDER_SCREENSHOT_JPEG_QUALITY);
-    const [, imageBase64 = ""] = dataUrl.split(",");
-
-    if (!imageBase64) {
-      return originalPayload;
-    }
-
-    return {
-      encoding: "base64",
-      format: "jpeg",
-      byteLength: estimateBase64ByteLength(imageBase64),
-      imageWidth,
-      imageHeight,
-      imageBase64,
-    };
+    return renderProviderScreenshotImage(image, plan) ?? originalPayload;
   } catch {
     return originalPayload;
   }
@@ -934,47 +966,24 @@ async function getCroppedScreenshotPayload(
   crop: NonNullable<ReturnType<typeof getActiveWindowCrop>>,
 ): Promise<ScreenshotPayload | null> {
   try {
+    const plan = createProviderImagePreparationPlan({
+      imageWidth: screenshot.imageWidth,
+      imageHeight: screenshot.imageHeight,
+      format: screenshot.format,
+      byteLength: screenshot.byteLength,
+      crop,
+    });
     const image = await loadScreenshotImage(
       `data:image/${screenshot.format};base64,${screenshot.imageBase64}`,
     );
-    const longestEdge = Math.max(crop.width, crop.height);
-    const scale = Math.min(1, MAX_PROVIDER_SCREENSHOT_EDGE / longestEdge);
-    const imageWidth = Math.max(1, Math.round(crop.width * scale));
-    const imageHeight = Math.max(1, Math.round(crop.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = imageWidth;
-    canvas.height = imageHeight;
-    const context = canvas.getContext("2d");
+    const payload = renderProviderScreenshotImage(image, plan);
 
-    if (!context) {
-      return null;
-    }
-
-    context.drawImage(
-      image,
-      crop.x,
-      crop.y,
-      crop.width,
-      crop.height,
-      0,
-      0,
-      imageWidth,
-      imageHeight,
-    );
-    const dataUrl = canvas.toDataURL("image/jpeg", PROVIDER_SCREENSHOT_JPEG_QUALITY);
-    const [, imageBase64 = ""] = dataUrl.split(",");
-
-    if (!imageBase64) {
+    if (payload == null) {
       return null;
     }
 
     return {
-      encoding: "base64",
-      format: "jpeg",
-      byteLength: estimateBase64ByteLength(imageBase64),
-      imageWidth,
-      imageHeight,
-      imageBase64,
+      ...payload,
       crop,
     };
   } catch {
@@ -3578,9 +3587,15 @@ function DebugWindowApp() {
       ? "Full display fallback"
       : "Missing";
   const guidancePayloadPlan = guidancePayload
-    ? guidancePayload.byteLength > 2_000_000
-      ? "Downscale before provider"
-      : "Ready for smoke test"
+    ? guidancePayload.preprocessing
+      ? `${guidancePayload.preprocessing.strategy}; ${Math.round(
+          guidancePayload.preprocessing.scaleX * 100,
+        )}% x ${Math.round(guidancePayload.preprocessing.scaleY * 100)}%${
+          guidancePayload.preprocessing.jpegQuality == null
+            ? ""
+            : `; JPEG ${Math.round(guidancePayload.preprocessing.jpegQuality * 100)}%`
+        }`
+      : "Legacy payload metadata"
     : "Capture required";
   const guidanceBlocker =
     snapshot.captureError != null
@@ -5116,6 +5131,14 @@ function DebugWindowApp() {
                 <dd>{guidancePayload ? `${guidancePayload.format} ${guidancePayloadSize}` : "Missing"}</dd>
               </div>
               <div>
+                <dt>Provider Image</dt>
+                <dd>
+                  {guidancePayload
+                    ? `${guidancePayload.imageWidth} x ${guidancePayload.imageHeight}`
+                    : "Missing"}
+                </dd>
+              </div>
+              <div>
                 <dt>Region</dt>
                 <dd>{guidancePayloadRegion}</dd>
               </div>
@@ -5124,7 +5147,7 @@ function DebugWindowApp() {
                 <dd>{guidanceScreen?.calibration?.status ?? "Missing"}</dd>
               </div>
               <div>
-                <dt>Provider Plan</dt>
+                <dt>Preparation</dt>
                 <dd>{guidancePayloadPlan}</dd>
               </div>
               <div>
