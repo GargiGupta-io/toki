@@ -1,0 +1,123 @@
+.toki-status-ring {
+  --toki-status-color: var(--toki-cyan);
+  --toki-status-underlay: var(--toki-ink);
+  position: absolute;
+  left: var(--toki-status-x);
+  top: var(--toki-status-y);
+  width: 52px;
+  height: 52px;
+  transform: translate(-50%, -50%);
+  opacity: calc(0.64 + var(--toki-status-energy) * 0.28);
+  pointer-events: none;
+  z-index: 99;
+}
+
+.toki-status-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  animation: toki-status-ring-drift 7s linear infinite;
+}
+
+.toki-status-ring__orbit,
+.toki-status-ring__orbit-underlay,
+.toki-status-ring__progress,
+.toki-status-ring__progress-underlay {
+  fill: none;
+  transform-origin: 26px 26px;
+}
+
+.toki-status-ring__orbit-underlay {
+  stroke: var(--toki-status-underlay);
+  stroke-width: 2.4;
+  stroke-dasharray: 2 5;
+}
+
+.toki-status-ring__orbit {
+  stroke: color-mix(in srgb, var(--toki-status-color) 62%, transparent);
+  stroke-width: 1.15;
+  stroke-dasharray: 2 5;
+}
+
+.toki-status-ring__progress-underlay {
+  stroke: var(--toki-status-underlay);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-dasharray: 22 98;
+  animation: toki-status-ring-progress 1.8s ease-in-out infinite;
+}
+
+.toki-status-ring__progress {
+  stroke: var(--toki-status-color);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-dasharray: 22 98;
+  filter: drop-shadow(0 0 3px var(--toki-status-color));
+  animation: toki-status-ring-progress 1.8s ease-in-out infinite;
+}
+
+.toki-status-ring__label {
+  fill: color-mix(in srgb, var(--toki-status-color) 78%, white);
+  stroke: var(--toki-status-underlay);
+  stroke-width: 0.85px;
+  paint-order: stroke fill;
+  font: 600 4.2px/1 system-ui, sans-serif;
+  letter-spacing: 1.15px;
+  text-transform: uppercase;
+}
+
+.toki-status-ring[data-mode="guiding"],
+.toki-status-ring[data-mode="confirming"] {
+  --toki-status-color: var(--toki-cyan-strong);
+}
+
+.toki-status-ring[data-gesture="pinch"] {
+  transform: translate(-50%, -50%) scale(0.9);
+}
+
+.toki-status-ring[data-gesture="open_palm"] {
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.toki-status-ring[data-gesture-phase="holding"] .toki-status-ring__progress,
+.toki-status-ring[data-gesture-phase="holding"]
+  .toki-status-ring__progress-underlay {
+  animation-duration: 0.82s;
+}
+
+.toki-status-ring[data-tone="blocked"] {
+  --toki-status-color: var(--toki-danger);
+}
+
+.toki-status-ring[data-mode="paused"] {
+  --toki-status-color: var(--toki-muted);
+  opacity: 0.52;
+}
+
+@keyframes toki-status-ring-drift {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes toki-status-ring-progress {
+  0%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.46;
+  }
+
+  50% {
+    stroke-dashoffset: -34;
+    opacity: 0.9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toki-status-ring svg,
+  .toki-status-ring__progress,
+  .toki-status-ring__progress-underlay {
+    animation: none;
+  }
+}
