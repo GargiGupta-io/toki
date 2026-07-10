@@ -197,6 +197,48 @@ export type GuidanceProviderResponse = {
   error?: string;
   validation?: GuidanceValidationResult;
   providerName?: string;
+  debug?: {
+    vision?: {
+      coordinateMode: "center" | "top_left";
+      rawTarget?: {
+        x?: number;
+        y?: number;
+        centerX?: number;
+        centerY?: number;
+        width?: number;
+        height?: number;
+        label?: string;
+      };
+      payload?: {
+        imageWidth: number;
+        imageHeight: number;
+        crop?: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+          appName?: string;
+          title?: string;
+        };
+      };
+      screenshot?: {
+        imageWidth: number;
+        imageHeight: number;
+      };
+      display?: {
+        width: number;
+        height: number;
+      };
+      scale?: {
+        imageToScreenshotX: number;
+        imageToScreenshotY: number;
+        screenshotToDisplayX: number;
+        screenshotToDisplayY: number;
+      };
+      mappedBeforeTighten?: TargetBox;
+      mappedFinal?: TargetBox;
+    };
+  };
 };
 
 export type WorkflowStepKind =
@@ -519,6 +561,7 @@ export type VoiceRuntimeStatus =
   | "listening"
   | "transcribing"
   | "command_ready"
+  | "no_speech"
   | "cancelled"
   | "error";
 
