@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
-    menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, PhysicalPosition, PhysicalSize,
-    Position, Size, State,
+    menu::MenuBuilder, tray::TrayIconBuilder, Emitter, LogicalSize, Manager, PhysicalPosition,
+    PhysicalSize, Position, Size, State,
 };
 use toki_capture::{
     capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
@@ -95,6 +95,20 @@ struct NativeWindowBounds {
 #[serde(rename_all = "camelCase")]
 struct OverlaySurfaceModeRequest {
     mode: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopUtilityModeRequest {
+    mode: String,
+    focus: Option<bool>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TopUtilityModePayload {
+    mode: String,
+    focused: bool,
 }
 
 #[derive(Deserialize)]
@@ -1570,7 +1584,18 @@ fn prepare_macos_overlay_window<R: tauri::Runtime>(window: &tauri::WebviewWindow
     }
 }
 
-fn position_settings_panel<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+fn position_top_utility<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    logical_width: f64,
+    logical_height: f64,
+) -> Result<(), String> {
+    window
+        .set_size(Size::Logical(LogicalSize::new(
+            logical_width,
+            logical_height,
+        )))
+        .map_err(|error| error.to_string())?;
+
     let monitor = window
         .current_monitor()
         .ok()
@@ -1578,21 +1603,85 @@ fn position_settings_panel<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) 
         .or_else(|| window.primary_monitor().ok().flatten());
 
     let Some(monitor) = monitor else {
-        return;
-    };
-
-    let Ok(window_size) = window.outer_size() else {
-        return;
+        return Ok(());
     };
 
     let monitor_position = monitor.position();
     let monitor_size = monitor.size();
-    let margin = 22i32;
-    let menu_bar_gap = 46i32;
-    let x = monitor_position.x + monitor_size.width as i32 - window_size.width as i32 - margin;
-    let y = monitor_position.y + menu_bar_gap;
+    let scale_factor = monitor.scale_factor();
+    let window_width = (logical_width * scale_factor).round() as i32;
 
-    let _ = window.set_position(Position::Physical(PhysicalPosition { x, y }));
+    #[cfg(target_os = "macos")]
+    let top_gap = (30.0 * scale_factor).round() as i32;
+    #[cfg(not(target_os = "macos"))]
+    let top_gap = (8.0 * scale_factor).round() as i32;
+
+    let x = monitor_position.x + (monitor_size.width as i32 - window_width) / 2;
+    let y = monitor_position.y + top_gap;
+
+    window
+        .set_position(Position::Physical(PhysicalPosition { x, y }))
+        .map_err(|error| error.to_string())
+}
+
+fn apply_top_utility_mode<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    mode: &str,
+    focus: bool,
+) -> Result<(), String> {
+    let payload = TopUtilityModePayload {
+        mode: mode.to_string(),
+        focused: mode == "expanded" && focus,
+    };
+
+    match mode {
+        "hidden" => {
+            window
+                .emit("toki://top-utility-mode", payload.clone())
+                .map_err(|error| error.to_string())?;
+            let _ = window.app_handle().emit_to(
+                "overlay",
+                "toki://top-utility-mode",
+                payload,
+            );
+            return window.hide().map_err(|error| error.to_string());
+        }
+        "peek" => {
+            position_top_utility(window, 392.0, 60.0)?;
+            window
+                .set_focusable(false)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_ignore_cursor_events(true)
+                .map_err(|error| error.to_string())?;
+        }
+        "expanded" => {
+            position_top_utility(window, 424.0, 344.0)?;
+            window
+                .set_focusable(true)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_ignore_cursor_events(false)
+                .map_err(|error| error.to_string())?;
+        }
+        _ => return Err(format!("unsupported top utility mode: {mode}")),
+    }
+
+    window.show().map_err(|error| error.to_string())?;
+    window
+        .emit("toki://top-utility-mode", payload.clone())
+        .map_err(|error| error.to_string())?;
+    let _ = window.app_handle().emit_to(
+        "overlay",
+        "toki://top-utility-mode",
+        payload,
+    );
+
+    if mode == "expanded" && focus {
+        window.set_focus().map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -1737,16 +1826,24 @@ fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
         return Err("settings window not found".to_string());
     };
 
-    window.hide().map_err(|error| error.to_string())
+    apply_top_utility_mode(&window, "hidden", false)
+}
+
+#[tauri::command]
+fn set_top_utility_mode(
+    app: tauri::AppHandle,
+    request: TopUtilityModeRequest,
+) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("settings") else {
+        return Err("settings window not found".to_string());
+    };
+
+    apply_top_utility_mode(&window, &request.mode, request.focus.unwrap_or(false))
 }
 
 fn show_settings_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
-        #[cfg(target_os = "macos")]
-        position_settings_panel(&window);
-
-        let _ = window.show();
-        let _ = window.set_focus();
+        let _ = apply_top_utility_mode(&window, "expanded", true);
     }
 }
 
@@ -1776,9 +1873,8 @@ fn start_native_voice_key_monitor(app: tauri::AppHandle) {
             }
 
             if !is_down && was_down {
-                if VOICE_SHORTCUT_HELD.swap(false, Ordering::SeqCst) {
-                    emit_overlay_command(&app, OverlayCommandPayload::SubmitVoiceListening);
-                }
+                VOICE_SHORTCUT_HELD.store(false, Ordering::SeqCst);
+                emit_overlay_command(&app, OverlayCommandPayload::SubmitVoiceListening);
             }
 
             was_down = is_down;
@@ -2336,6 +2432,7 @@ pub fn run() {
                 let _ = settings.set_focusable(true);
                 let _ = settings.set_skip_taskbar(true);
                 let _ = settings.set_visible_on_all_workspaces(true);
+                let _ = settings.set_shadow(false);
                 #[cfg(windows)]
                 prepare_windows_utility_window(&settings, false);
             }
@@ -2378,9 +2475,6 @@ pub fn run() {
             }
 
             let _tray = tray.build(app)?;
-
-            #[cfg(target_os = "macos")]
-            show_settings_window(app.handle());
 
             if std::env::var("TOKI_AUTO_REAL_SMOKE").ok().as_deref() == Some("true") {
                 let app_handle = app.handle().clone();
@@ -2440,6 +2534,7 @@ pub fn run() {
             native_voice_capture_start,
             native_voice_capture_stop,
             set_overlay_surface_mode,
+            set_top_utility_mode,
             transcribe_voice_capture
         ])
         .run(tauri::generate_context!())
