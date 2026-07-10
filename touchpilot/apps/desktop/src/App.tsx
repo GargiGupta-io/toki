@@ -13,6 +13,8 @@ import {
   validateGuidanceResult,
 } from "@toki/ai";
 import type {
+  ActiveWindowBounds,
+  ActiveWindowCaptureSnapshot,
   CameraDeviceSummary,
   CameraPermissionState,
   CameraStreamStatus,
@@ -694,15 +696,6 @@ type ScreenCandidateContext = Pick<
   "candidates" | "candidateSource" | "candidateError"
 >;
 
-type NativeWindowBounds = {
-  appName?: string | null;
-  title?: string | null;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
 function getPreferredAppNameFromGoal(goal: string) {
   const normalized = goal.toLowerCase();
   const knownApps = [
@@ -798,7 +791,7 @@ function loadScreenshotImage(dataUrl: string): Promise<HTMLImageElement> {
 
 async function getProviderScreenshotPayload(
   screenshot: ScreenshotCapture,
-  windowBounds?: NativeWindowBounds | null,
+  windowBounds?: ActiveWindowBounds | null,
 ): Promise<ScreenshotPayload> {
   const originalPayload = getScreenshotPayload(screenshot);
   const crop = getActiveWindowCrop(screenshot, windowBounds);
@@ -856,7 +849,7 @@ async function getProviderScreenshotPayload(
 
 function getActiveWindowCrop(
   screenshot: ScreenshotCapture,
-  windowBounds?: NativeWindowBounds | null,
+  windowBounds?: ActiveWindowBounds | null,
 ) {
   if (windowBounds == null) {
     return null;
@@ -1751,11 +1744,14 @@ function OverlayWindowApp() {
     }
   }
 
-  async function invokeCaptureCommand<T>(command: string): Promise<T> {
+  async function invokeCaptureCommand<T>(
+    command: string,
+    args?: Record<string, unknown>,
+  ): Promise<T> {
     await ensureScreenCaptureAccess();
 
     try {
-      const result = await invoke<T>(command);
+      const result = await invoke<T>(command, args);
       capturePermissionBlockRef.current = null;
       captureAccessPreflightRef.current = {
         allowed: true,
@@ -1886,49 +1882,45 @@ function OverlayWindowApp() {
     try {
       await ensureScreenCaptureAccess();
       const preferredAppName = getPreferredAppNameFromGoal(goal);
+      let metadata: CaptureMetadata;
+      let screenshot: ScreenshotCapture;
+      let windowBounds: ActiveWindowBounds | null = null;
+
       if (isLiveGuidanceProvider) {
-        beginTraceStage("active_window", "Resolving the active application window.");
+        beginTraceStage(
+          "active_window",
+          "Resolving the active window and capturing one native snapshot.",
+        );
+        const snapshot = await invokeCaptureCommand<ActiveWindowCaptureSnapshot>(
+          "capture_active_window_snapshot",
+          { appName: preferredAppName },
+        );
+        metadata = snapshot.metadata;
+        screenshot = snapshot.screenshot;
+        windowBounds = snapshot.window;
+        finishTraceStage("active_window", {
+          summary: "Active window resolved inside the native capture transaction.",
+          details: {
+            snapshotId: snapshot.snapshotId,
+            appName: snapshot.window.appName ?? "unknown",
+            x: snapshot.window.x,
+            y: snapshot.window.y,
+            width: snapshot.window.width,
+            height: snapshot.window.height,
+            windowToCaptureDelayMs: snapshot.windowToCaptureDelayMs,
+            transactionDurationMs: snapshot.completedAtMs - snapshot.startedAtMs,
+          },
+        });
+        beginTraceStage("screenshot", "Recording the native snapshot payload.");
       } else {
         finishTraceStage("active_window", {
           status: "skipped",
           summary: "Active-window localization is not used by this provider mode.",
         });
+        beginTraceStage("screenshot", "Capturing screen metadata and pixels.");
+        metadata = await invokeCaptureCommand<CaptureMetadata>("capture_metadata");
+        screenshot = await invokeCaptureCommand<ScreenshotCapture>("capture_screenshot");
       }
-      const windowBoundsResult = isLiveGuidanceProvider
-        ? await invoke<NativeWindowBounds>("frontmost_window_bounds", {
-            appName: preferredAppName,
-          })
-            .then((bounds) => ({ bounds, error: null }))
-            .catch((error) => ({
-              bounds: null,
-              error: error instanceof Error ? error.message : String(error),
-            }))
-        : null;
-      if (isLiveGuidanceProvider) {
-        const resolvedBounds = windowBoundsResult?.bounds ?? null;
-        finishTraceStage("active_window", {
-          status: resolvedBounds == null ? "failed" : "completed",
-          summary:
-            resolvedBounds == null
-              ? windowBoundsResult?.error ?? "Active window bounds were unavailable."
-              : "Active window bounds resolved.",
-          details:
-            resolvedBounds == null
-              ? undefined
-              : {
-                  appName: resolvedBounds.appName ?? "unknown",
-                  x: resolvedBounds.x,
-                  y: resolvedBounds.y,
-                  width: resolvedBounds.width,
-                  height: resolvedBounds.height,
-                },
-        });
-      }
-      beginTraceStage("screenshot", "Capturing screen metadata and pixels.");
-      const metadata = await invokeCaptureCommand<CaptureMetadata>("capture_metadata");
-      const screenshot = await invokeCaptureCommand<ScreenshotCapture>("capture_screenshot");
-      const windowBounds = windowBoundsResult?.bounds ?? null;
-      const windowBoundsError = windowBoundsResult?.error ?? null;
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
@@ -1970,7 +1962,6 @@ function OverlayWindowApp() {
 
       if (isLiveGuidanceProvider && screenshotPayload.crop == null) {
         const message =
-          windowBoundsError ??
           "active window crop was unavailable, so Toki refused to run full-display vision against the desktop";
         throw new Error(
           `${message}. Live guidance needs a trusted active app window crop to avoid targeting the menu bar, dock, desktop icons, or unrelated windows.`,
