@@ -27,6 +27,10 @@ import type {
   GuidanceScreenContext,
   GuidanceSession,
   GuidanceStep,
+  GuidanceTrace,
+  GuidanceTraceDetail,
+  GuidanceTraceSource,
+  GuidanceTraceStage,
   GuidanceValidationIssue,
   GestureActionEvent,
   GestureClassification,
@@ -46,6 +50,13 @@ import type {
 } from "@toki/shared";
 import { probeCameraDevices } from "./cameraDevices";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
+import {
+  beginGuidanceTraceStage,
+  createGuidanceTrace,
+  createGuidanceTraceId,
+  finishGuidanceTraceStage,
+  getGuidanceTraceEvent,
+} from "./guidanceTrace";
 import {
   initialGestureSmoothingState,
   smoothGestureCandidate,
@@ -128,6 +139,7 @@ type OverlaySnapshot = {
 };
 
 type DebugSnapshot = OverlaySnapshot & {
+  guidanceTrace: GuidanceTrace | null;
   guidanceProviderMode: GuidanceProviderMode;
   guidanceProviderName: string | null;
   guidanceProviderDebug: GuidanceProviderResponse["debug"] | null;
@@ -1405,6 +1417,7 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     gestureRuntime: createDefaultGestureRuntimeState(),
     voiceRuntime: createDefaultVoiceRuntimeState(),
     topStatus: null,
+    guidanceTrace: null,
     guidanceProviderMode: "unavailable",
     guidanceProviderName: null,
     guidanceProviderDebug: null,
@@ -1435,6 +1448,7 @@ function OverlayWindowApp() {
   const [guidanceProviderName, setGuidanceProviderName] = useState<string | null>(null);
   const [guidanceProviderDebug, setGuidanceProviderDebug] =
     useState<GuidanceProviderResponse["debug"] | null>(null);
+  const [guidanceTrace, setGuidanceTrace] = useState<GuidanceTrace | null>(null);
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [guidanceSession, setGuidanceSession] = useState<GuidanceSession | null>(null);
@@ -1466,6 +1480,8 @@ function OverlayWindowApp() {
   const voiceCaptureTimeoutRef = useRef<number | null>(null);
   const voiceSubmitInFlightRef = useRef(false);
   const routedVoiceCommandRef = useRef<string | null>(null);
+  const guidanceTraceRef = useRef<GuidanceTrace | null>(null);
+  const activeGuidanceTraceStageRef = useRef<GuidanceTraceStage | null>(null);
   const guidanceRefreshInFlightRef = useRef(false);
   const clickAwareAdvanceInFlightRef = useRef(false);
   const capturePermissionBlockRef = useRef<{
@@ -1581,6 +1597,24 @@ function OverlayWindowApp() {
   }, [voiceRuntime]);
 
   useEffect(() => {
+    const renderEvent = getGuidanceTraceEvent(guidanceTraceRef.current, "render");
+    if (acceptedTarget == null || renderEvent?.status !== "pending") {
+      return;
+    }
+
+    finishTraceStage("render", {
+      summary: "Accepted target rendered by the overlay.",
+      details: {
+        label: acceptedTarget.label,
+        x: acceptedTarget.x,
+        y: acceptedTarget.y,
+        width: acceptedTarget.width,
+        height: acceptedTarget.height,
+      },
+    });
+  }, [acceptedTarget]);
+
+  useEffect(() => {
     topStatusRef.current = topStatus;
 
     if (topUtilityModeRef.current !== "expanded") {
@@ -1610,6 +1644,7 @@ function OverlayWindowApp() {
   const debugSnapshot = useMemo<DebugSnapshot>(
     () => ({
       ...overlaySnapshot,
+      guidanceTrace,
       guidanceProviderMode,
       guidanceProviderName,
       guidanceProviderDebug,
@@ -1630,6 +1665,7 @@ function OverlayWindowApp() {
     }),
     [
       overlaySnapshot,
+      guidanceTrace,
       guidanceProviderMode,
       guidanceProviderName,
       guidanceProviderDebug,
@@ -1744,9 +1780,82 @@ function OverlayWindowApp() {
     }
   }
 
+  function publishGuidanceTrace(nextTrace: GuidanceTrace) {
+    guidanceTraceRef.current = nextTrace;
+    setGuidanceTrace(nextTrace);
+  }
+
+  function beginTraceStage(stage: GuidanceTraceStage, summary?: string) {
+    const currentTrace = guidanceTraceRef.current;
+    if (currentTrace == null) {
+      return;
+    }
+
+    activeGuidanceTraceStageRef.current = stage;
+    publishGuidanceTrace(beginGuidanceTraceStage(currentTrace, stage, summary));
+  }
+
+  function finishTraceStage(
+    stage: GuidanceTraceStage,
+    options: {
+      status?: "completed" | "failed" | "skipped";
+      summary?: string;
+      details?: Record<string, GuidanceTraceDetail>;
+    } = {},
+  ) {
+    const currentTrace = guidanceTraceRef.current;
+    if (currentTrace == null) {
+      return;
+    }
+
+    if (activeGuidanceTraceStageRef.current === stage) {
+      activeGuidanceTraceStageRef.current = null;
+    }
+    publishGuidanceTrace(
+      finishGuidanceTraceStage(currentTrace, stage, options),
+    );
+  }
+
+  function startGuidanceTrace(
+    goal: string,
+    providerMode: GuidanceProviderMode,
+    options: {
+      traceId?: string;
+      source?: GuidanceTraceSource;
+      transcript?: string;
+      transcriptAt?: string;
+    },
+  ): GuidanceTrace {
+    const startedAt = options.transcriptAt ?? new Date().toISOString();
+    let nextTrace = createGuidanceTrace({
+      id: options.traceId,
+      goal,
+      providerMode,
+      source: options.source ?? "manual",
+      startedAt,
+    });
+    nextTrace = finishGuidanceTraceStage(nextTrace, "transcript", {
+      status: options.transcript ? "completed" : "skipped",
+      completedAt: startedAt,
+      summary: options.transcript
+        ? "Final voice transcript attached to the guidance request."
+        : "No voice transcript was used for this guidance request.",
+      details: options.transcript == null ? undefined : { text: options.transcript },
+    });
+    activeGuidanceTraceStageRef.current = null;
+    publishGuidanceTrace(nextTrace);
+    return nextTrace;
+  }
+
   async function refreshCaptureMetadata(
     goal = "Show me what to click next.",
     providerMode: GuidanceProviderMode = "unavailable",
+    traceOptions: {
+      traceId?: string;
+      source?: GuidanceTraceSource;
+      transcript?: string;
+      transcriptAt?: string;
+    } = {},
   ) {
     const isLiveGuidanceProvider =
       providerMode === "real" || providerMode === "ollama-vision";
@@ -1758,6 +1867,7 @@ function OverlayWindowApp() {
       return;
     }
 
+    const trace = startGuidanceTrace(goal, providerMode, traceOptions);
     guidanceRefreshInFlightRef.current = true;
     setIsRefreshingCapture(true);
     setCaptureError(null);
@@ -1776,6 +1886,14 @@ function OverlayWindowApp() {
     try {
       await ensureScreenCaptureAccess();
       const preferredAppName = getPreferredAppNameFromGoal(goal);
+      if (isLiveGuidanceProvider) {
+        beginTraceStage("active_window", "Resolving the active application window.");
+      } else {
+        finishTraceStage("active_window", {
+          status: "skipped",
+          summary: "Active-window localization is not used by this provider mode.",
+        });
+      }
       const windowBoundsResult = isLiveGuidanceProvider
         ? await invoke<NativeWindowBounds>("frontmost_window_bounds", {
             appName: preferredAppName,
@@ -1786,6 +1904,27 @@ function OverlayWindowApp() {
               error: error instanceof Error ? error.message : String(error),
             }))
         : null;
+      if (isLiveGuidanceProvider) {
+        const resolvedBounds = windowBoundsResult?.bounds ?? null;
+        finishTraceStage("active_window", {
+          status: resolvedBounds == null ? "failed" : "completed",
+          summary:
+            resolvedBounds == null
+              ? windowBoundsResult?.error ?? "Active window bounds were unavailable."
+              : "Active window bounds resolved.",
+          details:
+            resolvedBounds == null
+              ? undefined
+              : {
+                  appName: resolvedBounds.appName ?? "unknown",
+                  x: resolvedBounds.x,
+                  y: resolvedBounds.y,
+                  width: resolvedBounds.width,
+                  height: resolvedBounds.height,
+                },
+        });
+      }
+      beginTraceStage("screenshot", "Capturing screen metadata and pixels.");
       const metadata = await invokeCaptureCommand<CaptureMetadata>("capture_metadata");
       const screenshot = await invokeCaptureCommand<ScreenshotCapture>("capture_screenshot");
       const windowBounds = windowBoundsResult?.bounds ?? null;
@@ -1793,6 +1932,15 @@ function OverlayWindowApp() {
 
       setCaptureMetadata(metadata);
       setScreenshotCapture(screenshot);
+      finishTraceStage("screenshot", {
+        summary: "Screenshot capture completed.",
+        details: {
+          format: screenshot.format,
+          imageWidth: screenshot.imageWidth,
+          imageHeight: screenshot.imageHeight,
+          byteLength: screenshot.byteLength,
+        },
+      });
       const screenshotMetadata = getScreenshotMetadata(screenshot);
       const shouldTrackSession = isLiveGuidanceProvider;
       const isContinuingGuidanceSession =
@@ -1830,6 +1978,7 @@ function OverlayWindowApp() {
       }
 
       const requestCalibration = getCalibration(metadata, viewport, screenshotMetadata);
+      beginTraceStage("candidates", "Collecting screen-understanding candidates.");
       const rawCandidateContext =
         isLiveGuidanceProvider
           ? await collectScreenCandidatesForGuidance(
@@ -1846,7 +1995,16 @@ function OverlayWindowApp() {
         isLiveGuidanceProvider
           ? filterCandidateContextForPayload(rawCandidateContext, screenshotPayload, screenshot)
           : rawCandidateContext;
+      finishTraceStage("candidates", {
+        summary: "Candidate collection completed.",
+        details: {
+          count: candidateContext.candidates?.length ?? 0,
+          source: candidateContext.candidateSource ?? "none",
+          hadError: candidateContext.candidateError != null,
+        },
+      });
       const nextGuidanceRequest: GuidanceRequest = {
+        traceId: trace.id,
         goal,
         screen: {
           display: metadata.display,
@@ -1865,6 +2023,7 @@ function OverlayWindowApp() {
         const endpoint = import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT;
         let providerResponse: GuidanceProviderResponse;
 
+        beginTraceStage("provider", "Requesting a guidance decision.");
         if (providerMode === "ollama-vision") {
           providerResponse = await requestOllamaVisionGuidance(nextGuidanceRequest, {
             endpoint: import.meta.env.VITE_TOKI_OLLAMA_ENDPOINT,
@@ -1884,21 +2043,72 @@ function OverlayWindowApp() {
           });
         }
 
+        providerResponse = {
+          ...providerResponse,
+          traceId: trace.id,
+        };
+        finishTraceStage("provider", {
+          status: providerResponse.error == null ? "completed" : "failed",
+          summary:
+            providerResponse.error ??
+            (providerResponse.result?.step?.target
+              ? "Provider returned a target decision."
+              : "Provider returned without a target."),
+          details: {
+            mode: providerResponse.mode,
+            providerName: providerResponse.providerName ?? "unknown",
+            hasTarget: providerResponse.result?.step?.target != null,
+          },
+        });
+
+        const providerTarget = providerResponse.result?.step?.target ?? null;
+        const mappedTarget = providerResponse.debug?.vision?.mappedFinal ?? providerTarget;
+        finishTraceStage("mapping", {
+          status: mappedTarget == null ? "skipped" : "completed",
+          summary:
+            mappedTarget == null
+              ? "No provider coordinates were available to map."
+              : providerResponse.debug?.vision?.mappedFinal
+                ? "Vision coordinates mapped into display points."
+                : "Provider target was already expressed in display points.",
+          details:
+            mappedTarget == null
+              ? undefined
+              : {
+                  label: mappedTarget.label,
+                  x: mappedTarget.x,
+                  y: mappedTarget.y,
+                  width: mappedTarget.width,
+                  height: mappedTarget.height,
+                },
+        });
+
         setGuidanceProviderMode(providerResponse.mode);
         setGuidanceProviderName(providerResponse.providerName ?? null);
         setGuidanceProviderDebug(providerResponse.debug ?? null);
         setGuidanceProviderError(providerResponse.error ?? null);
         setGuidanceIssues(providerResponse.validation?.issues ?? []);
+        beginTraceStage("validation", "Applying schema and safety validation.");
         const nextSafetyDecision = evaluateSafetyPolicy({
           provider: providerResponse,
           minConfidence: 0.7,
         });
-
-        setSafetyDecision(nextSafetyDecision);
-
+        const providerValidationPassed = providerResponse.validation?.valid ?? false;
         const guidanceAllowed =
           nextSafetyDecision.action === "allow" ||
           nextSafetyDecision.action === "confirm";
+
+        finishTraceStage("validation", {
+          status: providerValidationPassed && guidanceAllowed ? "completed" : "failed",
+          summary: nextSafetyDecision.message,
+          details: {
+            valid: providerValidationPassed,
+            issueCount: providerResponse.validation?.issues.length ?? 0,
+            safetyAction: nextSafetyDecision.action,
+          },
+        });
+
+        setSafetyDecision(nextSafetyDecision);
 
         if (nextSession != null) {
           setGuidanceSession(
@@ -1913,6 +2123,14 @@ function OverlayWindowApp() {
         }
 
         if (guidanceAllowed) {
+          if (providerTarget == null) {
+            finishTraceStage("render", {
+              status: "skipped",
+              summary: "The accepted response did not contain a visual target.",
+            });
+          } else {
+            beginTraceStage("render", "Committing the accepted target to overlay state.");
+          }
           setGuidanceResult(providerResponse.result ?? null);
           setOverlayState(
             nextSafetyDecision.action === "confirm"
@@ -1920,6 +2138,10 @@ function OverlayWindowApp() {
               : "guiding",
           );
         } else {
+          finishTraceStage("render", {
+            status: "skipped",
+            summary: "Guidance was refused before target rendering.",
+          });
           setGuidanceResult(null);
           setGuidanceProviderError(nextSafetyDecision.message);
           setOverlayState(nextSafetyDecision.action === "clarify" ? "idle" : "error");
@@ -1928,6 +2150,22 @@ function OverlayWindowApp() {
       }
 
       if (providerMode === "unavailable") {
+        finishTraceStage("provider", {
+          status: "skipped",
+          summary: "No guidance provider was configured for this request.",
+        });
+        finishTraceStage("mapping", {
+          status: "skipped",
+          summary: "No provider target was available to map.",
+        });
+        finishTraceStage("validation", {
+          status: "skipped",
+          summary: "Validation was skipped because no provider ran.",
+        });
+        finishTraceStage("render", {
+          status: "skipped",
+          summary: "No target was rendered.",
+        });
         setGuidanceProviderMode("unavailable");
         setGuidanceProviderName("none");
         setGuidanceProviderDebug(null);
@@ -1949,22 +2187,64 @@ function OverlayWindowApp() {
           : guidanceFixture === "risky"
             ? createRiskyMockGuidance(nextGuidanceRequest)
             : createMockGuidance(nextGuidanceRequest);
+      beginTraceStage("provider", "Running the selected mock fixture.");
       const validation = validateGuidanceResult(nextGuidance);
       const providerResponse: GuidanceProviderResponse = validation.valid
         ? {
             mode: "mock",
+            traceId: trace.id,
             result: nextGuidance,
             validation,
             providerName: "mock-fixture",
           }
         : {
             mode: "mock",
+            traceId: trace.id,
             validation,
             providerName: "mock-fixture",
           };
+      finishTraceStage("provider", {
+        summary: "Mock fixture returned a deterministic response.",
+        details: {
+          mode: providerResponse.mode,
+          providerName: providerResponse.providerName ?? "mock-fixture",
+          hasTarget: nextGuidance.step?.target != null,
+        },
+      });
+      const mockTarget = nextGuidance.step?.target ?? null;
+      finishTraceStage("mapping", {
+        status: mockTarget == null ? "skipped" : "completed",
+        summary:
+          mockTarget == null
+            ? "The mock response did not include a target."
+            : "Mock target was already expressed in display points.",
+        details:
+          mockTarget == null
+            ? undefined
+            : {
+                label: mockTarget.label,
+                x: mockTarget.x,
+                y: mockTarget.y,
+                width: mockTarget.width,
+                height: mockTarget.height,
+              },
+      });
+      beginTraceStage("validation", "Applying schema and safety validation.");
       const nextSafetyDecision = evaluateSafetyPolicy({
         provider: providerResponse,
         minConfidence: 0.7,
+      });
+      const mockGuidanceAllowed =
+        nextSafetyDecision.action === "allow" ||
+        nextSafetyDecision.action === "confirm";
+      finishTraceStage("validation", {
+        status: validation.valid && mockGuidanceAllowed ? "completed" : "failed",
+        summary: nextSafetyDecision.message,
+        details: {
+          valid: validation.valid,
+          issueCount: validation.issues.length,
+          safetyAction: nextSafetyDecision.action,
+        },
       });
 
       setGuidanceIssues(validation.issues);
@@ -1982,6 +2262,14 @@ function OverlayWindowApp() {
         nextSafetyDecision.action === "allow" ||
         nextSafetyDecision.action === "confirm"
       ) {
+        if (mockTarget == null) {
+          finishTraceStage("render", {
+            status: "skipped",
+            summary: "The accepted mock response did not contain a visual target.",
+          });
+        } else {
+          beginTraceStage("render", "Committing the mock target to overlay state.");
+        }
         setGuidanceResult(nextGuidance);
         setOverlayState(
           nextSafetyDecision.action === "confirm"
@@ -1989,11 +2277,41 @@ function OverlayWindowApp() {
             : "guiding",
         );
       } else {
+        finishTraceStage("render", {
+          status: "skipped",
+          summary: "Mock guidance was refused before target rendering.",
+        });
         setGuidanceResult(null);
         setOverlayState(nextSafetyDecision.action === "clarify" ? "idle" : "error");
       }
     } catch (error) {
-      setCaptureError(formatCaptureError(error));
+      const formattedError = formatCaptureError(error);
+      const activeTraceStage = activeGuidanceTraceStageRef.current;
+      if (activeTraceStage != null) {
+        finishTraceStage(activeTraceStage, {
+          status: "failed",
+          summary: formattedError,
+        });
+      }
+      (
+        [
+          "active_window",
+          "screenshot",
+          "candidates",
+          "provider",
+          "mapping",
+          "validation",
+          "render",
+        ] as const
+      ).forEach((stage) => {
+        if (getGuidanceTraceEvent(guidanceTraceRef.current, stage) == null) {
+          finishTraceStage(stage, {
+            status: "skipped",
+            summary: `Skipped after ${activeTraceStage ?? "capture"} failed.`,
+          });
+        }
+      });
+      setCaptureError(formattedError);
       if (isLiveGuidanceProvider) {
         setGuidanceProviderMode("unavailable");
         setGuidanceProviderName("none");
@@ -2155,7 +2473,9 @@ function OverlayWindowApp() {
       setIsRefreshingCapture(false);
     }
 
-    await refreshCaptureMetadata(guidanceSession.originalGoal, "ollama-vision");
+    await refreshCaptureMetadata(guidanceSession.originalGoal, "ollama-vision", {
+      source: "session",
+    });
   }
 
   async function advanceActiveWorkflowStep() {
@@ -2519,7 +2839,7 @@ function OverlayWindowApp() {
 
   useEffect(() => {
     window.__tokiRunRealGuidanceSmoke = (goal = "Show me what to click next.") => {
-      void refreshCaptureMetadata(goal, "ollama-vision");
+      void refreshCaptureMetadata(goal, "ollama-vision", { source: "debug" });
     };
 
     return () => {
@@ -2540,7 +2860,9 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "run-real-guidance-smoke") {
-        await refreshCaptureMetadata("Show me what to click next.", "real");
+        await refreshCaptureMetadata("Show me what to click next.", "real", {
+          source: "debug",
+        });
         return;
       }
 
@@ -2856,10 +3178,16 @@ function OverlayWindowApp() {
           const transcription = await transcribeNativeVoiceCapture(capture);
 
           if (transcription.status === "ready") {
+            const traceId = createGuidanceTraceId();
+            const tracedTranscript = {
+              ...transcription.transcript,
+              traceId,
+            };
             const pendingCommand: VoiceCommandRequest = {
-              text: transcription.transcript.text,
+              text: tracedTranscript.text,
               source: activeVoiceRuntime.activationSource ?? "settings",
               createdAt: new Date().toISOString(),
+              traceId,
             };
 
             setVoiceRuntime((currentState) => ({
@@ -2867,7 +3195,7 @@ function OverlayWindowApp() {
               enabled: false,
               permission: "granted",
               status: "command_ready",
-              transcript: transcription.transcript,
+              transcript: tracedTranscript,
               pendingCommand,
               error: undefined,
             }));
@@ -2933,7 +3261,12 @@ function OverlayWindowApp() {
       ...currentState,
       status: "transcribing",
     }));
-    void refreshCaptureMetadata(command.text, "ollama-vision").finally(() => {
+    void refreshCaptureMetadata(command.text, "ollama-vision", {
+      traceId: command.traceId,
+      source: "voice",
+      transcript: command.text,
+      transcriptAt: voiceRuntime.transcript?.updatedAt ?? command.createdAt,
+    }).finally(() => {
       setVoiceRuntime((currentState) =>
         currentState.pendingCommand?.createdAt === command.createdAt
           ? {
@@ -3246,6 +3579,7 @@ function DebugWindowApp() {
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
   const visionTrace = snapshot.guidanceProviderDebug?.vision ?? null;
+  const guidanceTraceEvents = snapshot.guidanceTrace?.events ?? [];
   const guidanceGoal =
     snapshot.guidanceRequest?.goal ??
     snapshot.voiceRuntime.transcript?.text ??
@@ -4594,6 +4928,14 @@ function DebugWindowApp() {
             </div>
             <dl>
               <div>
+                <dt>Trace</dt>
+                <dd>{snapshot.guidanceTrace?.id ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Trace source</dt>
+                <dd>{snapshot.guidanceTrace?.source ?? "None"}</dd>
+              </div>
+              <div>
                 <dt>Provider</dt>
                 <dd>{snapshot.guidanceProviderMode}</dd>
               </div>
@@ -4704,6 +5046,24 @@ function DebugWindowApp() {
                 <dd>{formatTargetBox(visionTrace?.mappedFinal)}</dd>
               </div>
             </dl>
+            {guidanceTraceEvents.length > 0 ? (
+              <ol className="debug-candidate-list">
+                {guidanceTraceEvents.map((event, index) => (
+                  <li key={`${event.stage}-${index}`}>
+                    <div>
+                      <strong>
+                        {index + 1}. {event.stage}
+                      </strong>
+                      <span>{event.summary ?? "No summary"}</span>
+                    </div>
+                    <div>
+                      <span>{event.status}</span>
+                      <span>{event.durationMs ?? 0} ms</span>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
             <div className="debug-result-review">
               <div>
                 <span>Target</span>
