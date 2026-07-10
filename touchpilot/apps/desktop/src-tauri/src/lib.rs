@@ -14,7 +14,8 @@ use tauri::{
     PhysicalSize, Position, Size, State,
 };
 use toki_capture::{
-    capture_primary_display, capture_primary_display_metadata, CaptureMetadata, ScreenshotCapture,
+    capture_primary_display, capture_primary_display_metadata, ActiveWindowContext,
+    CaptureMetadata, ScreenshotCapture,
 };
 
 static VOICE_SHORTCUT_HELD: AtomicBool = AtomicBool::new(false);
@@ -80,7 +81,7 @@ struct NativeCursorPosition {
     source: &'static str,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeWindowBounds {
     app_name: Option<String>,
@@ -89,6 +90,20 @@ struct NativeWindowBounds {
     y: f64,
     width: f64,
     height: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActiveWindowCaptureSnapshot {
+    snapshot_id: String,
+    started_at_ms: u128,
+    window_observed_at_ms: u128,
+    capture_started_at_ms: u128,
+    completed_at_ms: u128,
+    window_to_capture_delay_ms: u128,
+    window: NativeWindowBounds,
+    metadata: CaptureMetadata,
+    screenshot: ScreenshotCapture,
 }
 
 #[derive(Deserialize)]
@@ -1712,12 +1727,7 @@ fn capture_metadata() -> Result<CaptureMetadata, String> {
     result
 }
 
-#[tauri::command]
-fn capture_screenshot() -> Result<ScreenshotCapture, String> {
-    if auto_smoke_logs_enabled() {
-        eprintln!("toki auto real smoke: capture_screenshot start");
-    }
-
+fn capture_screenshot_with_permission_context() -> Result<ScreenshotCapture, String> {
     #[cfg(target_os = "macos")]
     let preflight_trusted = macos_screen_capture_is_trusted();
 
@@ -1740,6 +1750,59 @@ fn capture_screenshot() -> Result<ScreenshotCapture, String> {
             "toki auto real smoke: capture_screenshot succeeded even though macOS preflight returned false"
         );
     }
+
+    result
+}
+
+fn metadata_from_screenshot(screenshot: &ScreenshotCapture) -> CaptureMetadata {
+    CaptureMetadata {
+        source: screenshot.source.clone(),
+        display: screenshot.display.clone(),
+        cursor: screenshot.cursor.clone(),
+        active_window: screenshot.active_window.clone(),
+        captured_at: screenshot.captured_at.clone(),
+    }
+}
+
+#[tauri::command]
+fn capture_active_window_snapshot(
+    app_name: Option<String>,
+) -> Result<ActiveWindowCaptureSnapshot, String> {
+    let started_at_ms = now_ms();
+    let snapshot_id = format!("active-window-{started_at_ms}");
+    let window = frontmost_window_bounds(app_name)?;
+    let window_observed_at_ms = now_ms();
+    let capture_started_at_ms = now_ms();
+    let mut screenshot = capture_screenshot_with_permission_context()?;
+
+    screenshot.active_window = Some(ActiveWindowContext {
+        title: window.title.clone(),
+        app_name: window.app_name.clone(),
+    });
+
+    let metadata = metadata_from_screenshot(&screenshot);
+    let completed_at_ms = now_ms();
+
+    Ok(ActiveWindowCaptureSnapshot {
+        snapshot_id,
+        started_at_ms,
+        window_observed_at_ms,
+        capture_started_at_ms,
+        completed_at_ms,
+        window_to_capture_delay_ms: capture_started_at_ms.saturating_sub(window_observed_at_ms),
+        window,
+        metadata,
+        screenshot,
+    })
+}
+
+#[tauri::command]
+fn capture_screenshot() -> Result<ScreenshotCapture, String> {
+    if auto_smoke_logs_enabled() {
+        eprintln!("toki auto real smoke: capture_screenshot start");
+    }
+
+    let result = capture_screenshot_with_permission_context();
 
     if auto_smoke_logs_enabled() {
         eprintln!("toki auto real smoke: capture_screenshot done");
@@ -2534,6 +2597,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            capture_active_window_snapshot,
             capture_metadata,
             capture_screenshot,
             collect_screen_candidates,
@@ -2552,4 +2616,52 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::metadata_from_screenshot;
+    use toki_capture::{
+        ActiveWindowContext, CaptureSource, CursorContext, DisplayContext, ScreenshotCapture,
+        ScreenshotFormat,
+    };
+
+    #[test]
+    fn snapshot_metadata_uses_the_exact_screenshot_context() {
+        let screenshot = ScreenshotCapture {
+            source: CaptureSource::ActiveDisplay,
+            display: DisplayContext {
+                id: "display-1".to_string(),
+                width: 1512,
+                height: 982,
+                scale_factor: 2.0,
+            },
+            cursor: Some(CursorContext { x: 412.0, y: 318.0 }),
+            active_window: Some(ActiveWindowContext {
+                title: Some("Known screen".to_string()),
+                app_name: Some("Fixture App".to_string()),
+            }),
+            captured_at: "2026-07-10T12:00:00Z".to_string(),
+            format: ScreenshotFormat::Png,
+            byte_length: 4,
+            image_width: 3024,
+            image_height: 1964,
+            image_base64: "dGVzdA==".to_string(),
+        };
+
+        let metadata = metadata_from_screenshot(&screenshot);
+
+        assert!(matches!(metadata.source, CaptureSource::ActiveDisplay));
+        assert_eq!(metadata.display.id, screenshot.display.id);
+        assert_eq!(metadata.display.width, screenshot.display.width);
+        assert_eq!(metadata.cursor.as_ref().map(|cursor| cursor.x), Some(412.0));
+        assert_eq!(
+            metadata
+                .active_window
+                .as_ref()
+                .and_then(|window| window.app_name.as_deref()),
+            Some("Fixture App")
+        );
+        assert_eq!(metadata.captured_at, screenshot.captured_at);
+    }
 }
