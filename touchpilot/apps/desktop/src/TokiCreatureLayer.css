@@ -1,0 +1,84 @@
+.toki-creature-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  contain: layout style paint;
+  z-index: 6;
+}
+
+.toki-target-travel {
+  position: absolute;
+  left: var(--toki-target-x);
+  top: var(--toki-target-y);
+  width: var(--toki-target-width);
+  height: var(--toki-target-height);
+  min-width: 30px;
+  min-height: 30px;
+  transform: translate(-50%, -50%);
+  opacity: 0.86;
+  mix-blend-mode: screen;
+  z-index: 5;
+}
+
+.toki-target-travel__ring,
+.toki-target-travel__glint {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
+}
+
+.toki-target-travel__ring {
+  inset: -8px;
+  border: 1px solid rgba(156, 225, 255, 0.6);
+  box-shadow:
+    0 0 16px rgba(45, 177, 255, 0.24),
+    inset 0 0 14px rgba(255, 255, 255, 0.2);
+  animation: toki-target-travel-pulse 1.45s ease-in-out infinite;
+}
+
+.toki-target-travel__glint {
+  width: 6px;
+  height: 6px;
+  background: rgba(226, 250, 255, 0.72);
+  filter: blur(0.3px);
+  animation: toki-target-glint 1.65s ease-in-out infinite;
+}
+
+.toki-target-travel__glint--one {
+  top: -8px;
+  right: 12%;
+}
+
+.toki-target-travel__glint--two {
+  right: -7px;
+  bottom: 16%;
+  animation-delay: 0.28s;
+  opacity: 0.6;
+}
+
+@keyframes toki-target-travel-pulse {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.48;
+  }
+
+  45% {
+    transform: scale(1.08);
+    opacity: 0.9;
+  }
+}
+
+@keyframes toki-target-glint {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.86);
+    opacity: 0.26;
+  }
+
+  50% {
+    transform: translate3d(-2px, 2px, 0) scale(1.08);
+    opacity: 0.8;
+  }
+}
