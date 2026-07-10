@@ -147,6 +147,24 @@ export type GuidanceScreenContext = {
     imageWidth: number;
     imageHeight: number;
     imageBase64: string;
+    sourceGeometry?: {
+      imageWidth: number;
+      imageHeight: number;
+      format: "png" | "jpeg";
+      region: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+    };
+    preprocessing?: {
+      strategy: "passthrough" | "crop" | "resize" | "crop_resize" | "reencode";
+      scaleX: number;
+      scaleY: number;
+      maxEdge: number;
+      jpegQuality?: number;
+    };
     crop?: {
       source: "active_window";
       appName?: string;
