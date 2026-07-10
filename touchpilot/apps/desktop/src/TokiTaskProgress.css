@@ -1,0 +1,156 @@
+.toki-task-progress {
+  position: fixed;
+  top: max(62px, calc(env(safe-area-inset-top) + 54px));
+  right: 16px;
+  width: min(284px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--toki-status-border);
+  border-radius: 8px;
+  background: rgba(7, 9, 12, 0.92);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 22px rgba(77, 207, 255, 0.06);
+  color: rgba(244, 249, 252, 0.94);
+  pointer-events: none;
+  user-select: none;
+  z-index: 130;
+  animation: toki-task-progress-arrive 170ms ease-out both;
+}
+
+.toki-task-progress__header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toki-task-progress__title,
+.toki-task-progress__status,
+.toki-task-progress__current strong,
+.toki-task-progress__current small,
+.toki-task-progress__history span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.toki-task-progress__title {
+  min-width: 0;
+  color: rgba(248, 252, 255, 0.96);
+  font-size: 0.75rem;
+  font-weight: 720;
+}
+
+.toki-task-progress__status {
+  flex: 0 0 auto;
+  color: var(--toki-cyan);
+  font-size: 0.64rem;
+  font-weight: 680;
+}
+
+.toki-task-progress[data-status="blocked"] .toki-task-progress__status,
+.toki-task-progress[data-status="error"] .toki-task-progress__status {
+  color: var(--toki-danger);
+}
+
+.toki-task-progress[data-status="paused"] .toki-task-progress__status,
+.toki-task-progress[data-status="cancelled"] .toki-task-progress__status {
+  color: var(--toki-muted);
+}
+
+.toki-task-progress__bar {
+  height: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.toki-task-progress__bar span {
+  display: block;
+  height: 100%;
+  background: var(--toki-cyan-strong);
+  box-shadow: 0 0 8px rgba(105, 239, 255, 0.42);
+  transition: width 220ms ease;
+}
+
+.toki-task-progress__current {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.toki-task-progress__current > span {
+  color: rgba(221, 233, 241, 0.44);
+  font-size: 0.6rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.toki-task-progress__current strong {
+  color: rgba(246, 250, 253, 0.92);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.toki-task-progress__current small {
+  color: rgba(221, 233, 241, 0.6);
+  font-size: 0.67rem;
+  font-weight: 540;
+}
+
+.toki-task-progress__history {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.toki-task-progress__history span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  color: rgba(221, 233, 241, 0.46);
+  font-size: 0.63rem;
+  font-weight: 560;
+}
+
+.toki-task-progress__history i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(120, 236, 207, 0.78);
+  box-shadow: 0 0 5px rgba(120, 236, 207, 0.28);
+}
+
+@keyframes toki-task-progress-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .toki-task-progress {
+    right: 12px;
+    width: min(260px, calc(100vw - 24px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toki-task-progress,
+  .toki-task-progress__bar span {
+    animation: none;
+    transition: none;
+  }
+}
