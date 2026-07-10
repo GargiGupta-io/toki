@@ -39,7 +39,7 @@
         "alwaysOnTop": true,
         "visibleOnAllWorkspaces": true,
         "resizable": false,
-        "shadow": true,
+        "shadow": false,
         "skipTaskbar": true,
         "visible": false
       },
