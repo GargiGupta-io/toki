@@ -18,6 +18,8 @@ type OllamaTargetResponse = {
   target?: {
     x?: number;
     y?: number;
+    centerX?: number;
+    centerY?: number;
     width?: number;
     height?: number;
     label?: string;
@@ -26,6 +28,8 @@ type OllamaTargetResponse = {
   reason?: string;
   risk?: RiskClass;
 };
+
+type VisionDebugTrace = NonNullable<GuidanceProviderResponse["debug"]>["vision"];
 
 export type OllamaVisionOptions = {
   endpoint?: string;
@@ -43,6 +47,9 @@ const CLICK_CENTER_TARGET_SIZE = 44;
 const PLACEHOLDER_LABELS = new Set([
   "button label or visual description",
   "button label",
+  "exact visible target",
+  "visible control",
+  "visible target control",
   "visual description",
   "target",
   "ui target",
@@ -95,6 +102,72 @@ function isPlaceholderTargetLabel(label: string | undefined) {
     normalized.includes("visual description") ||
     normalized.includes("button label")
   );
+}
+
+function isAddIntent(goal: string) {
+  return includesAny(goal, [
+    "add",
+    "create",
+    "make",
+    "new",
+    "plus",
+    "invite",
+    "collaborator",
+    "collaborators",
+    "member",
+    "members",
+    "share",
+  ]);
+}
+
+function isMediaIntent(goal: string) {
+  return includesAny(goal, [
+    "play",
+    "pause",
+    "resume",
+    "next",
+    "previous",
+    "skip",
+    "song",
+    "track",
+    "music",
+  ]);
+}
+
+function getIntentMismatch(target: TargetBox, request: GuidanceRequest, reason?: string) {
+  const goal = normalizeText(request.goal);
+  const targetText = normalizeText(`${target.label} ${reason ?? ""}`);
+  const targetLooksAdditive = includesAny(targetText, [
+    "plus",
+    "add",
+    "create",
+    "new",
+    "playlist",
+    "invite",
+    "collaborator",
+    "member",
+    "share",
+  ]);
+  const targetLooksMedia = includesAny(targetText, [
+    "play",
+    "pause",
+    "next",
+    "previous",
+    "skip",
+    "song",
+    "track",
+    "media",
+  ]);
+
+  if (targetLooksAdditive && !isAddIntent(goal)) {
+    return `Ollama vision selected an add/create target (${target.label}) for a non-add command.`;
+  }
+
+  if (targetLooksMedia && !isMediaIntent(goal) && !isAddIntent(goal)) {
+    return `Ollama vision selected a media-control target (${target.label}) for a non-media command.`;
+  }
+
+  return null;
 }
 
 function shouldTightenToClickCenter(target: TargetBox, request: GuidanceRequest) {
@@ -220,7 +293,7 @@ function parseJsonObject(text: string): OllamaTargetResponse {
 function mapTargetToDisplay(
   target: NonNullable<OllamaTargetResponse["target"]>,
   request: GuidanceRequest,
-): TargetBox {
+): { target: TargetBox; debug: VisionDebugTrace } {
   const payload = request.screen.screenshotPayload;
 
   if (payload == null) {
@@ -235,20 +308,30 @@ function mapTargetToDisplay(
   const rawHeight = Number.isFinite(target.height) ? Number(target.height) : DEFAULT_TARGET_SIZE;
   const rawX = Number(target.x);
   const rawY = Number(target.y);
+  const rawCenterX = Number(target.centerX);
+  const rawCenterY = Number(target.centerY);
+  const hasCenterCoordinates = Number.isFinite(rawCenterX) && Number.isFinite(rawCenterY);
+  const hasTopLeftCoordinates = Number.isFinite(rawX) && Number.isFinite(rawY);
 
-  if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) {
+  if (!hasCenterCoordinates && !hasTopLeftCoordinates) {
     throw new Error("vision model target coordinates are missing");
   }
 
+  const coordinateMode = hasCenterCoordinates ? "center" : "top_left";
+  const targetCenterX = hasCenterCoordinates ? rawCenterX : rawX + rawWidth / 2;
+  const targetCenterY = hasCenterCoordinates ? rawCenterY : rawY + rawHeight / 2;
+  const targetLeft = targetCenterX - rawWidth / 2;
+  const targetTop = targetCenterY - rawHeight / 2;
+
   if (
-    rawX < 0 ||
-    rawY < 0 ||
-    rawX + rawWidth > payload.imageWidth ||
-    rawY + rawHeight > payload.imageHeight
+    targetLeft < 0 ||
+    targetTop < 0 ||
+    targetLeft + rawWidth > payload.imageWidth ||
+    targetTop + rawHeight > payload.imageHeight
   ) {
     throw new Error(
-      `vision model target is outside the provided image (${Math.round(rawX)}, ${Math.round(
-        rawY,
+      `vision model target is outside the provided image (${Math.round(targetLeft)}, ${Math.round(
+        targetTop,
       )}, ${Math.round(rawWidth)} x ${Math.round(rawHeight)} for ${payload.imageWidth} x ${
         payload.imageHeight
       })`,
@@ -268,10 +351,14 @@ function mapTargetToDisplay(
     request.screen.display.width / request.screen.screenshot.imageWidth;
   const screenshotToDisplayScaleY =
     request.screen.display.height / request.screen.screenshot.imageHeight;
-  const screenshotX =
-    crop == null ? rawX * imageToScreenshotScaleX : crop.x + rawX * imageToScreenshotScaleX;
-  const screenshotY =
-    crop == null ? rawY * imageToScreenshotScaleY : crop.y + rawY * imageToScreenshotScaleY;
+  const screenshotCenterX =
+    crop == null
+      ? targetCenterX * imageToScreenshotScaleX
+      : crop.x + targetCenterX * imageToScreenshotScaleX;
+  const screenshotCenterY =
+    crop == null
+      ? targetCenterY * imageToScreenshotScaleY
+      : crop.y + targetCenterY * imageToScreenshotScaleY;
   const width = Math.round(
     clamp(
       rawWidth * imageToScreenshotScaleX * screenshotToDisplayScaleX,
@@ -287,23 +374,76 @@ function mapTargetToDisplay(
     ),
   );
   const x = Math.round(
-    clamp(screenshotX * screenshotToDisplayScaleX, 0, request.screen.display.width - width),
+    clamp(
+      screenshotCenterX * screenshotToDisplayScaleX - width / 2,
+      0,
+      request.screen.display.width - width,
+    ),
   );
   const y = Math.round(
-    clamp(screenshotY * screenshotToDisplayScaleY, 0, request.screen.display.height - height),
+    clamp(
+      screenshotCenterY * screenshotToDisplayScaleY - height / 2,
+      0,
+      request.screen.display.height - height,
+    ),
   );
 
-  return tightenTargetToClickCenter(
-    {
+  const mappedBeforeTighten: TargetBox = {
     candidateId: "ollama-vision-target",
     label: target.label?.trim() || "Vision target",
     x,
     y,
     width,
     height,
+  };
+  const mappedFinal = tightenTargetToClickCenter(mappedBeforeTighten, request);
+
+  return {
+    target: mappedFinal,
+    debug: {
+      coordinateMode,
+      rawTarget: {
+        x: target.x,
+        y: target.y,
+        centerX: target.centerX,
+        centerY: target.centerY,
+        width: target.width,
+        height: target.height,
+        label: target.label,
+      },
+      payload: {
+        imageWidth: payload.imageWidth,
+        imageHeight: payload.imageHeight,
+        crop:
+          crop == null
+            ? undefined
+            : {
+                x: crop.x,
+                y: crop.y,
+                width: crop.width,
+                height: crop.height,
+                appName: crop.appName,
+                title: crop.title,
+              },
+      },
+      screenshot: {
+        imageWidth: request.screen.screenshot.imageWidth,
+        imageHeight: request.screen.screenshot.imageHeight,
+      },
+      display: {
+        width: request.screen.display.width,
+        height: request.screen.display.height,
+      },
+      scale: {
+        imageToScreenshotX: imageToScreenshotScaleX,
+        imageToScreenshotY: imageToScreenshotScaleY,
+        screenshotToDisplayX: screenshotToDisplayScaleX,
+        screenshotToDisplayY: screenshotToDisplayScaleY,
+      },
+      mappedBeforeTighten,
+      mappedFinal,
     },
-    request,
-  );
+  };
 }
 
 function isLikelySystemMenuTarget(target: TargetBox, request: GuidanceRequest) {
@@ -347,7 +487,9 @@ function createPrompt(request: GuidanceRequest) {
     regionInstruction,
     "",
     "Return target coordinates in the provided image pixels, not display pixels.",
-    "Use top-left x/y plus width/height around a tight clickable box centered on the actual control.",
+    "Use centerX and centerY for the exact click point at the center of the intended control.",
+    "Use width and height for a tight clickable box around that center point.",
+    "Do not use top-left x/y unless centerX/centerY are impossible.",
     "For icon controls, return a small box around the icon center, not the surrounding row, label, artwork, or nearby text.",
     "If the target is an icon-only control, identify it visually from the screenshot.",
     "Prefer controls inside the active application content over system menu bars, desktop icons, docks, browser chrome, app title bars, or unrelated windows.",
@@ -361,17 +503,17 @@ function createPrompt(request: GuidanceRequest) {
     "Available supporting OCR/accessibility candidates:",
     getTopCandidateSummary(request),
     "",
-    "JSON schema:",
+    "Return exactly this JSON shape, replacing every placeholder value with the actual target:",
     JSON.stringify({
       target: {
-        x: 324,
-        y: 210,
-        width: 44,
-        height: 44,
-        label: "plus icon",
+        centerX: 0,
+        centerY: 0,
+        width: 0,
+        height: 0,
+        label: "",
       },
-      confidence: 0.82,
-      reason: "The plus icon creates a new item for this command.",
+      confidence: 0,
+      reason: "",
       risk: "safe_navigation",
     }),
   ].join("\n");
@@ -448,12 +590,25 @@ export async function requestOllamaVisionGuidance(
       };
     }
     const confidence = clamp(Number(parsed.confidence), 0, 1);
-    const target = parsed.target == null ? undefined : mapTargetToDisplay(parsed.target, request);
+    const mapped = parsed.target == null ? undefined : mapTargetToDisplay(parsed.target, request);
+    const target = mapped?.target;
+    const debug = mapped == null ? undefined : { vision: mapped.debug };
     if (target != null && isLikelySystemMenuTarget(target, request)) {
       return {
         mode: "unavailable",
         error: `Ollama vision chose the macOS menu bar (${target.label}); rejected because the command targets the active app content.`,
         providerName: `ollama-vision:${model}`,
+        debug,
+      };
+    }
+    const intentMismatch =
+      target == null ? null : getIntentMismatch(target, request, parsed.reason);
+    if (intentMismatch != null) {
+      return {
+        mode: "unavailable",
+        error: intentMismatch,
+        providerName: `ollama-vision:${model}`,
+        debug,
       };
     }
     const step: GuidanceStep | undefined =
@@ -486,6 +641,7 @@ export async function requestOllamaVisionGuidance(
             : "Ollama vision returned an invalid target.",
         validation,
         providerName: `ollama-vision:${model}`,
+        debug,
       };
     }
 
@@ -494,6 +650,7 @@ export async function requestOllamaVisionGuidance(
       result,
       validation,
       providerName: `ollama-vision:${model}`,
+      debug,
     };
   } catch (error) {
     window.clearTimeout(timeout);
