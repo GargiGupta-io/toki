@@ -51,6 +51,7 @@ import type {
   WorkflowVerificationResult,
 } from "@toki/shared";
 import { probeCameraDevices } from "./cameraDevices";
+import { createScreenshotCropFromDisplayRect } from "./coordinateTransforms";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
 import {
   beginGuidanceTraceStage,
@@ -771,10 +772,6 @@ function verifySessionScreenChange(
 const MAX_PROVIDER_SCREENSHOT_EDGE = 1024;
 const PROVIDER_SCREENSHOT_JPEG_QUALITY = 0.76;
 
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
 function estimateBase64ByteLength(imageBase64: string) {
   const padding = imageBase64.endsWith("==") ? 2 : imageBase64.endsWith("=") ? 1 : 0;
   return Math.max(0, Math.floor((imageBase64.length * 3) / 4) - padding);
@@ -855,20 +852,13 @@ function getActiveWindowCrop(
     return null;
   }
 
-  const scaleX = screenshot.imageWidth / screenshot.display.width;
-  const scaleY = screenshot.imageHeight / screenshot.display.height;
-  const x = Math.round(clampNumber(windowBounds.x * scaleX, 0, screenshot.imageWidth - 1));
-  const y = Math.round(clampNumber(windowBounds.y * scaleY, 0, screenshot.imageHeight - 1));
-  const right = Math.round(
-    clampNumber((windowBounds.x + windowBounds.width) * scaleX, x + 1, screenshot.imageWidth),
+  const crop = createScreenshotCropFromDisplayRect(
+    windowBounds,
+    screenshot.display,
+    { width: screenshot.imageWidth, height: screenshot.imageHeight },
   );
-  const bottom = Math.round(
-    clampNumber((windowBounds.y + windowBounds.height) * scaleY, y + 1, screenshot.imageHeight),
-  );
-  const width = right - x;
-  const height = bottom - y;
 
-  if (width < 120 || height < 120) {
+  if (crop == null) {
     return null;
   }
 
@@ -876,10 +866,7 @@ function getActiveWindowCrop(
     source: "active_window" as const,
     appName: windowBounds.appName ?? undefined,
     title: windowBounds.title ?? undefined,
-    x,
-    y,
-    width,
-    height,
+    ...crop,
   };
 }
 
