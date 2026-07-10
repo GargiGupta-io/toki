@@ -1,4 +1,5 @@
 export { knownScreenEvalDataset } from "./fixtures";
+export { sanitizedGuidanceTraceFixtures } from "./guidanceTraceFixtures";
 export type {
   ProviderComparisonCaseResult,
   ProviderComparisonInput,
