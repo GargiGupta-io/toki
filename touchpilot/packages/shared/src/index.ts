@@ -652,6 +652,15 @@ export type ActiveWindowContext = {
   appName?: string;
 };
 
+export type ActiveWindowBounds = {
+  appName?: string | null;
+  title?: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type ScreenContext = {
   imageBase64?: string;
   display: DisplayContext;
@@ -680,6 +689,18 @@ export type ScreenshotMetadata = CaptureMetadata & {
 
 export type ScreenshotCapture = ScreenshotMetadata & {
   imageBase64: string;
+};
+
+export type ActiveWindowCaptureSnapshot = {
+  snapshotId: string;
+  startedAtMs: number;
+  windowObservedAtMs: number;
+  captureStartedAtMs: number;
+  completedAtMs: number;
+  windowToCaptureDelayMs: number;
+  window: ActiveWindowBounds;
+  metadata: CaptureMetadata;
+  screenshot: ScreenshotCapture;
 };
 
 export type CalibrationStatus =
