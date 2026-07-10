@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef } from "react";
-import gsap from "gsap";
 import "./BlobCursor.css";
 
 type BlobType = "circle" | "square";
@@ -7,6 +6,14 @@ type BlobType = "circle" | "square";
 type BlobCursorPosition = {
   clientX: number;
   clientY: number;
+};
+
+type BlobFrame = {
+  x: number;
+  y: number;
+  previousX: number;
+  previousY: number;
+  initialized: boolean;
 };
 
 type BlobCursorProps = {
@@ -53,8 +60,6 @@ export default function BlobCursor({
   useFilter = true,
   fastDuration = 0.1,
   slowDuration = 0.5,
-  fastEase = "power3.out",
-  slowEase = "power1.out",
   zIndex = 100,
   position = null,
   trailPull = 0,
@@ -62,68 +67,140 @@ export default function BlobCursor({
 }: BlobCursorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const blobsRef = useRef<Array<HTMLDivElement | null>>([]);
-  const lastPositionRef = useRef<BlobCursorPosition | null>(null);
+  const targetPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const lastClientPositionRef = useRef<BlobCursorPosition | null>(null);
+  const blobFramesRef = useRef<BlobFrame[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
+  const offsetRef = useRef({ left: 0, top: 0 });
   const trailVectorRef = useRef({ x: -1, y: 0.18 });
 
   const updateOffset = useCallback(() => {
     if (!containerRef.current) {
-      return { left: 0, top: 0 };
+      offsetRef.current = { left: 0, top: 0 };
+      return offsetRef.current;
     }
 
     const rect = containerRef.current.getBoundingClientRect();
-    return { left: rect.left, top: rect.top };
+    offsetRef.current = { left: rect.left, top: rect.top };
+    return offsetRef.current;
   }, []);
+
+  const getLerpAlpha = useCallback((duration: number) => {
+    const frames = Math.max(1, duration * 60);
+    return Math.min(0.78, Math.max(0.1, 1 - Math.pow(0.001, 1 / frames)));
+  }, []);
+
+  const applyFrame = useCallback(() => {
+    const target = targetPositionRef.current;
+
+    if (target == null) {
+      animationFrameRef.current = null;
+      return;
+    }
+
+    const trailVector = trailVectorRef.current;
+    const rotation = Math.atan2(-trailVector.y, -trailVector.x) * (180 / Math.PI);
+    let shouldContinue = false;
+
+    blobsRef.current.forEach((el, i) => {
+      if (!el) {
+        return;
+      }
+
+      const isLead = i === 0;
+      const offset = i * trailPull;
+      const desiredX = target.x + trailVector.x * offset;
+      const desiredY = target.y + trailVector.y * offset;
+      const alpha = getLerpAlpha(isLead ? fastDuration : slowDuration);
+      const frame =
+        blobFramesRef.current[i] ??
+        {
+          x: desiredX,
+          y: desiredY,
+          previousX: desiredX,
+          previousY: desiredY,
+          initialized: false,
+        };
+
+      if (!frame.initialized) {
+        frame.x = desiredX;
+        frame.y = desiredY;
+        frame.previousX = desiredX;
+        frame.previousY = desiredY;
+        frame.initialized = true;
+      } else {
+        frame.previousX = frame.x;
+        frame.previousY = frame.y;
+        frame.x += (desiredX - frame.x) * alpha;
+        frame.y += (desiredY - frame.y) * alpha;
+      }
+
+      const remainingDistance = Math.hypot(desiredX - frame.x, desiredY - frame.y);
+      const speed = Math.min(Math.hypot(frame.x - frame.previousX, frame.y - frame.previousY) / 16, 1);
+      const scaleX = 1 + speed * liquidStretch * (isLead ? 1 : 0.65);
+      const scaleY = 1 - speed * liquidStretch * (isLead ? 0.42 : 0.28);
+
+      blobFramesRef.current[i] = frame;
+      el.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0) translate(-50%, -50%) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`;
+
+      if (remainingDistance > 0.35) {
+        shouldContinue = true;
+      }
+    });
+
+    animationFrameRef.current = shouldContinue ? window.requestAnimationFrame(applyFrame) : null;
+  }, [fastDuration, getLerpAlpha, liquidStretch, slowDuration, trailPull]);
+
+  const startAnimationLoop = useCallback(() => {
+    if (animationFrameRef.current != null) {
+      return;
+    }
+
+    animationFrameRef.current = window.requestAnimationFrame(applyFrame);
+  }, [applyFrame]);
 
   const moveTo = useCallback(
     (clientX: number, clientY: number) => {
       const { left, top } = updateOffset();
-      const x = clientX - left;
-      const y = clientY - top;
-      const previous = lastPositionRef.current;
+      const previous = lastClientPositionRef.current;
+      const deltaX = previous == null ? 0 : clientX - previous.clientX;
+      const deltaY = previous == null ? 0 : clientY - previous.clientY;
+      const distance = Math.hypot(deltaX, deltaY);
 
-      if (previous != null) {
-        const deltaX = clientX - previous.clientX;
-        const deltaY = clientY - previous.clientY;
-        const distance = Math.hypot(deltaX, deltaY);
-
-        if (distance < 1.25) {
-          return;
-        }
-
-        if (distance > 1.25) {
-          trailVectorRef.current = {
-            x: -deltaX / distance,
-            y: -deltaY / distance,
-          };
-        }
+      if (distance > 1.25) {
+        trailVectorRef.current = {
+          x: -deltaX / distance,
+          y: -deltaY / distance,
+        };
       }
 
-      lastPositionRef.current = { clientX, clientY };
-      const trailVector = trailVectorRef.current;
-      const speed = previous == null ? 0 : Math.min(Math.hypot(clientX - previous.clientX, clientY - previous.clientY) / 42, 1);
-      const rotation = Math.atan2(-trailVector.y, -trailVector.x) * (180 / Math.PI);
+      lastClientPositionRef.current = { clientX, clientY };
+      targetPositionRef.current = {
+        x: clientX - left,
+        y: clientY - top,
+      };
+      startAnimationLoop();
+    },
+    [startAnimationLoop, updateOffset],
+  );
 
+  useEffect(() => {
+    blobFramesRef.current = [];
+
+    const target = targetPositionRef.current;
+    if (target != null) {
       blobsRef.current.forEach((el, i) => {
         if (!el) {
           return;
         }
 
-        const isLead = i === 0;
         const offset = i * trailPull;
-        gsap.to(el, {
-          x: x + trailVector.x * offset,
-          y: y + trailVector.y * offset,
-          scaleX: 1 + speed * liquidStretch * (isLead ? 1 : 0.65),
-          scaleY: 1 - speed * liquidStretch * (isLead ? 0.42 : 0.28),
-          rotate: rotation,
-          duration: isLead ? fastDuration : slowDuration,
-          ease: isLead ? fastEase : slowEase,
-          overwrite: true,
-        });
+        const x = target.x + trailVectorRef.current.x * offset;
+        const y = target.y + trailVectorRef.current.y * offset;
+        el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
       });
-    },
-    [fastDuration, fastEase, liquidStretch, slowDuration, slowEase, trailPull, updateOffset],
-  );
+    }
+  }, [trailCount, trailPull]);
 
   const handleMove = useCallback(
     (event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
@@ -140,13 +217,24 @@ export default function BlobCursor({
   );
 
   useEffect(() => {
-    const onResize = () => updateOffset();
+    const onResize = () => {
+      updateOffset();
+
+      const lastClientPosition = lastClientPositionRef.current;
+      if (lastClientPosition != null) {
+        moveTo(lastClientPosition.clientX, lastClientPosition.clientY);
+      }
+    };
+
     window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
-      gsap.killTweensOf(blobsRef.current.filter(Boolean));
+      if (animationFrameRef.current != null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
     };
-  }, [updateOffset]);
+  }, [moveTo, updateOffset]);
 
   useEffect(() => {
     if (position == null) {
