@@ -8,6 +8,10 @@ import type {
   ScreenCandidate,
   TargetBox,
 } from "@toki/shared";
+import {
+  mapDisplayRectToProviderImage,
+  mapProviderTargetToDisplay,
+} from "./coordinateTransforms";
 
 type OllamaGenerateResponse = {
   response?: string;
@@ -210,49 +214,18 @@ function getCandidateImageBox(candidate: ScreenCandidate, request: GuidanceReque
     return null;
   }
 
-  const displayToScreenshotX = screenshot.imageWidth / request.screen.display.width;
-  const displayToScreenshotY = screenshot.imageHeight / request.screen.display.height;
-  const screenshotX = candidate.x * displayToScreenshotX;
-  const screenshotY = candidate.y * displayToScreenshotY;
-  const screenshotWidth = candidate.width * displayToScreenshotX;
-  const screenshotHeight = candidate.height * displayToScreenshotY;
-
-  if (payload.crop == null) {
-    const imageScaleX = payload.imageWidth / screenshot.imageWidth;
-    const imageScaleY = payload.imageHeight / screenshot.imageHeight;
-
-    return {
-      x: Math.round(screenshotX * imageScaleX),
-      y: Math.round(screenshotY * imageScaleY),
-      width: Math.round(screenshotWidth * imageScaleX),
-      height: Math.round(screenshotHeight * imageScaleY),
-    };
-  }
-
-  const crop = payload.crop;
-  const candidateRight = screenshotX + screenshotWidth;
-  const candidateBottom = screenshotY + screenshotHeight;
-  const cropRight = crop.x + crop.width;
-  const cropBottom = crop.y + crop.height;
-  const intersects =
-    candidateRight > crop.x &&
-    screenshotX < cropRight &&
-    candidateBottom > crop.y &&
-    screenshotY < cropBottom;
-
-  if (!intersects) {
-    return null;
-  }
-
-  const imageScaleX = payload.imageWidth / crop.width;
-  const imageScaleY = payload.imageHeight / crop.height;
-
-  return {
-    x: Math.round((screenshotX - crop.x) * imageScaleX),
-    y: Math.round((screenshotY - crop.y) * imageScaleY),
-    width: Math.round(screenshotWidth * imageScaleX),
-    height: Math.round(screenshotHeight * imageScaleY),
-  };
+  return mapDisplayRectToProviderImage(candidate, {
+    display: request.screen.display,
+    screenshot: {
+      width: screenshot.imageWidth,
+      height: screenshot.imageHeight,
+    },
+    providerImage: {
+      width: payload.imageWidth,
+      height: payload.imageHeight,
+    },
+    crop: payload.crop,
+  });
 }
 
 function getTopCandidateSummary(request: GuidanceRequest) {
@@ -304,104 +277,38 @@ function mapTargetToDisplay(
     throw new Error("screenshot metadata is missing");
   }
 
-  const rawWidth = Number.isFinite(target.width) ? Number(target.width) : DEFAULT_TARGET_SIZE;
-  const rawHeight = Number.isFinite(target.height) ? Number(target.height) : DEFAULT_TARGET_SIZE;
-  const rawX = Number(target.x);
-  const rawY = Number(target.y);
-  const rawCenterX = Number(target.centerX);
-  const rawCenterY = Number(target.centerY);
-  const hasCenterCoordinates = Number.isFinite(rawCenterX) && Number.isFinite(rawCenterY);
-  const hasTopLeftCoordinates = Number.isFinite(rawX) && Number.isFinite(rawY);
-
-  if (!hasCenterCoordinates && !hasTopLeftCoordinates) {
-    throw new Error("vision model target coordinates are missing");
-  }
-
-  const coordinateMode = hasCenterCoordinates ? "center" : "top_left";
-  const targetCenterX = hasCenterCoordinates ? rawCenterX : rawX + rawWidth / 2;
-  const targetCenterY = hasCenterCoordinates ? rawCenterY : rawY + rawHeight / 2;
-  const targetLeft = targetCenterX - rawWidth / 2;
-  const targetTop = targetCenterY - rawHeight / 2;
-
-  if (
-    targetLeft < 0 ||
-    targetTop < 0 ||
-    targetLeft + rawWidth > payload.imageWidth ||
-    targetTop + rawHeight > payload.imageHeight
-  ) {
-    throw new Error(
-      `vision model target is outside the provided image (${Math.round(targetLeft)}, ${Math.round(
-        targetTop,
-      )}, ${Math.round(rawWidth)} x ${Math.round(rawHeight)} for ${payload.imageWidth} x ${
-        payload.imageHeight
-      })`,
-    );
-  }
-
   const crop = payload.crop;
-  const imageToScreenshotScaleX =
-    crop == null
-      ? request.screen.screenshot.imageWidth / payload.imageWidth
-      : crop.width / payload.imageWidth;
-  const imageToScreenshotScaleY =
-    crop == null
-      ? request.screen.screenshot.imageHeight / payload.imageHeight
-      : crop.height / payload.imageHeight;
-  const screenshotToDisplayScaleX =
-    request.screen.display.width / request.screen.screenshot.imageWidth;
-  const screenshotToDisplayScaleY =
-    request.screen.display.height / request.screen.screenshot.imageHeight;
-  const screenshotCenterX =
-    crop == null
-      ? targetCenterX * imageToScreenshotScaleX
-      : crop.x + targetCenterX * imageToScreenshotScaleX;
-  const screenshotCenterY =
-    crop == null
-      ? targetCenterY * imageToScreenshotScaleY
-      : crop.y + targetCenterY * imageToScreenshotScaleY;
-  const width = Math.round(
-    clamp(
-      rawWidth * imageToScreenshotScaleX * screenshotToDisplayScaleX,
-      16,
-      request.screen.display.width,
-    ),
-  );
-  const height = Math.round(
-    clamp(
-      rawHeight * imageToScreenshotScaleY * screenshotToDisplayScaleY,
-      16,
-      request.screen.display.height,
-    ),
-  );
-  const x = Math.round(
-    clamp(
-      screenshotCenterX * screenshotToDisplayScaleX - width / 2,
-      0,
-      request.screen.display.width - width,
-    ),
-  );
-  const y = Math.round(
-    clamp(
-      screenshotCenterY * screenshotToDisplayScaleY - height / 2,
-      0,
-      request.screen.display.height - height,
-    ),
+  const mapping = mapProviderTargetToDisplay(
+    target,
+    {
+      display: request.screen.display,
+      screenshot: {
+        width: request.screen.screenshot.imageWidth,
+        height: request.screen.screenshot.imageHeight,
+      },
+      providerImage: {
+        width: payload.imageWidth,
+        height: payload.imageHeight,
+      },
+      crop,
+    },
+    {
+      defaultTargetSize: DEFAULT_TARGET_SIZE,
+      minimumDisplayTargetSize: 16,
+    },
   );
 
   const mappedBeforeTighten: TargetBox = {
     candidateId: "ollama-vision-target",
     label: target.label?.trim() || "Vision target",
-    x,
-    y,
-    width,
-    height,
+    ...mapping.displayRect,
   };
   const mappedFinal = tightenTargetToClickCenter(mappedBeforeTighten, request);
 
   return {
     target: mappedFinal,
     debug: {
-      coordinateMode,
+      coordinateMode: mapping.coordinateMode,
       rawTarget: {
         x: target.x,
         y: target.y,
@@ -435,10 +342,10 @@ function mapTargetToDisplay(
         height: request.screen.display.height,
       },
       scale: {
-        imageToScreenshotX: imageToScreenshotScaleX,
-        imageToScreenshotY: imageToScreenshotScaleY,
-        screenshotToDisplayX: screenshotToDisplayScaleX,
-        screenshotToDisplayY: screenshotToDisplayScaleY,
+        imageToScreenshotX: mapping.scale.imageToScreenshotX,
+        imageToScreenshotY: mapping.scale.imageToScreenshotY,
+        screenshotToDisplayX: mapping.scale.screenshotToDisplayX,
+        screenshotToDisplayY: mapping.scale.screenshotToDisplayY,
       },
       mappedBeforeTighten,
       mappedFinal,
