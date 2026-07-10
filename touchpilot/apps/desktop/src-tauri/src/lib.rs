@@ -111,6 +111,11 @@ struct TopUtilityModePayload {
     focused: bool,
 }
 
+const TOP_UTILITY_PEEK_WIDTH: f64 = 392.0;
+const TOP_UTILITY_PEEK_HEIGHT: f64 = 60.0;
+const TOP_UTILITY_EXPANDED_WIDTH: f64 = 424.0;
+const TOP_UTILITY_EXPANDED_HEIGHT: f64 = 224.0;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeClickMonitorRequest {
@@ -1647,7 +1652,11 @@ fn apply_top_utility_mode<R: tauri::Runtime>(
             return window.hide().map_err(|error| error.to_string());
         }
         "peek" => {
-            position_top_utility(window, 392.0, 60.0)?;
+            position_top_utility(
+                window,
+                TOP_UTILITY_PEEK_WIDTH,
+                TOP_UTILITY_PEEK_HEIGHT,
+            )?;
             window
                 .set_focusable(false)
                 .map_err(|error| error.to_string())?;
@@ -1656,7 +1665,11 @@ fn apply_top_utility_mode<R: tauri::Runtime>(
                 .map_err(|error| error.to_string())?;
         }
         "expanded" => {
-            position_top_utility(window, 424.0, 344.0)?;
+            position_top_utility(
+                window,
+                TOP_UTILITY_EXPANDED_WIDTH,
+                TOP_UTILITY_EXPANDED_HEIGHT,
+            )?;
             window
                 .set_focusable(true)
                 .map_err(|error| error.to_string())?;

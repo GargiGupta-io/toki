@@ -34,8 +34,8 @@ export const TOP_UTILITY_LEAVE_DELAY_MS = 360;
 
 const TOP_EDGE_TRIGGER_HEIGHT = 20;
 const TOP_EDGE_TRIGGER_HALF_WIDTH = 220;
-const EXPANDED_SURFACE_WIDTH = 424;
-const EXPANDED_SURFACE_HEIGHT = 344;
+export const TOP_UTILITY_EXPANDED_WIDTH = 424;
+export const TOP_UTILITY_EXPANDED_HEIGHT = 224;
 const EXPANDED_SURFACE_TOP = 30;
 const EXPANDED_SURFACE_EXIT_PADDING = 20;
 
@@ -62,11 +62,11 @@ export function isInsideExpandedTopUtility(
   point: TopUtilityPoint,
   viewport: ViewportMetrics,
 ): boolean {
-  const left = (viewport.width - EXPANDED_SURFACE_WIDTH) / 2;
-  const right = left + EXPANDED_SURFACE_WIDTH;
+  const left = (viewport.width - TOP_UTILITY_EXPANDED_WIDTH) / 2;
+  const right = left + TOP_UTILITY_EXPANDED_WIDTH;
   const bottom =
     EXPANDED_SURFACE_TOP +
-    EXPANDED_SURFACE_HEIGHT +
+    TOP_UTILITY_EXPANDED_HEIGHT +
     EXPANDED_SURFACE_EXIT_PADDING;
 
   return (
