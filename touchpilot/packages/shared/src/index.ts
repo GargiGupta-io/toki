@@ -171,6 +171,7 @@ export type GuidanceScreenContext = {
 };
 
 export type GuidanceRequest = {
+  traceId?: string;
   goal: string;
   screen: GuidanceScreenContext;
   previousStep?: GuidanceStep | null;
@@ -187,12 +188,54 @@ export type GuidanceValidationResult = {
   issues: GuidanceValidationIssue[];
 };
 
+export type GuidanceTraceStage =
+  | "transcript"
+  | "active_window"
+  | "screenshot"
+  | "candidates"
+  | "provider"
+  | "mapping"
+  | "validation"
+  | "render";
+
+export type GuidanceTraceStageStatus =
+  | "pending"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export type GuidanceTraceSource = "voice" | "manual" | "debug" | "session";
+
+export type GuidanceTraceDetail = string | number | boolean | null;
+
+export type GuidanceTraceEvent = {
+  stage: GuidanceTraceStage;
+  status: GuidanceTraceStageStatus;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  summary?: string;
+  details?: Record<string, GuidanceTraceDetail>;
+};
+
+export type GuidanceTrace = {
+  schemaVersion: 1;
+  id: string;
+  goal: string;
+  providerMode: GuidanceProviderMode;
+  source: GuidanceTraceSource;
+  startedAt: string;
+  updatedAt: string;
+  events: GuidanceTraceEvent[];
+};
+
 export type GuidanceProviderMode = "mock" | "real" | "ollama-vision" | "unavailable";
 
 export type GuidanceProviderRequest = GuidanceRequest;
 
 export type GuidanceProviderResponse = {
   mode: GuidanceProviderMode;
+  traceId?: string;
   result?: GuidanceResult;
   error?: string;
   validation?: GuidanceValidationResult;
@@ -572,12 +615,14 @@ export type VoiceTranscript = {
   confidence?: number;
   isFinal: boolean;
   updatedAt: string;
+  traceId?: string;
 };
 
 export type VoiceCommandRequest = {
   text: string;
   source: VoiceActivationSource | "debug_text";
   createdAt: string;
+  traceId?: string;
 };
 
 export type VoiceRuntimeState = {
