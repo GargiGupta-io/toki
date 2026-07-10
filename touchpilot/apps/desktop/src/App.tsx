@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
@@ -51,6 +50,11 @@ import {
   initialGestureSmoothingState,
   smoothGestureCandidate,
 } from "./gestureSmoothing";
+import {
+  getGestureVisualAnchor,
+  isSameGestureVisualAnchor,
+  type GestureVisualAnchor,
+} from "./gestureVisuals";
 import { detectHandLandmarksForVideo, getHandLandmarker } from "./handLandmarker";
 import {
   getNativeVoiceCaptureStatus,
@@ -66,11 +70,25 @@ import type {
 import { requestOllamaVisionGuidance } from "./ollamaVisionProvider";
 import { getPuckMotionModel } from "./puckMotion";
 import { collectScreenCandidatesForGuidance } from "./screenCandidates";
+import { getTokiCreatureState } from "./tokiCreatureState";
 import { probeVoiceCapabilities } from "./voiceCapabilities";
 import type { VoiceCapabilityProbe } from "./voiceCapabilities";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
+import { TokiCreatureLayer } from "./TokiCreatureLayer";
+import { TokiTopUtilitySurface } from "./TokiTopUtilitySurface";
+import { TokiTaskProgress } from "./TokiTaskProgress";
+import {
+  getPassiveTopUtilityMode,
+  isInsideExpandedTopUtility,
+  isTopUtilityRevealPoint,
+  TOP_UTILITY_LEAVE_DELAY_MS,
+  TOP_UTILITY_REVEAL_DWELL_MS,
+  type TokiTopStatusModel,
+  type TopUtilityMode,
+  type TopUtilityModeEvent,
+} from "./topUtility";
 import "./App.css";
 
 declare global {
@@ -88,17 +106,31 @@ type OverlayStateMeta = {
   tone: "neutral" | "active" | "paused" | "error";
 };
 
+function setTopUtilityWindowMode(
+  mode: TopUtilityMode,
+  options: { focus?: boolean } = {},
+) {
+  return invoke("set_top_utility_mode", {
+    request: {
+      mode,
+      focus: options.focus ?? false,
+    },
+  });
+}
+
 type OverlaySnapshot = {
   overlayState: OverlayState;
   hasAcceptedGuidance: boolean;
   isRefreshingCapture: boolean;
   gestureRuntime: GestureRuntimeState;
   voiceRuntime: VoiceRuntimeState;
+  topStatus: TokiTopStatusModel | null;
 };
 
 type DebugSnapshot = OverlaySnapshot & {
   guidanceProviderMode: GuidanceProviderMode;
   guidanceProviderName: string | null;
+  guidanceProviderDebug: GuidanceProviderResponse["debug"] | null;
   guidanceFixture: GuidanceFixture;
   workflowRuntime: WorkflowRuntimeState;
   clickAwareRuntime: ClickAwareRuntimeState;
@@ -140,6 +172,7 @@ type OverlayCommand =
       error?: string;
     }
   | { type: "set-gesture-classification"; classification: GestureClassification }
+  | { type: "set-gesture-visual-anchor"; anchor: GestureVisualAnchor | null }
   | { type: "set-gestures-enabled"; enabled: boolean }
   | { type: "start-voice-listening"; source: VoiceActivationSource }
   | { type: "submit-voice-listening" }
@@ -276,6 +309,31 @@ function formatCaptureError(error: unknown): string {
   return `${message}. On macOS, grant Screen Recording permission to Toki or the terminal app, then quit and relaunch it.`;
 }
 
+function formatTargetBox(target: TargetBox | null | undefined): string {
+  return target == null
+    ? "None"
+    : `${target.x}, ${target.y}, ${target.width} x ${target.height}`;
+}
+
+function formatVisionRawTarget(
+  trace: NonNullable<GuidanceProviderResponse["debug"]>["vision"] | null | undefined,
+): string {
+  const raw = trace?.rawTarget;
+  if (raw == null) {
+    return "None";
+  }
+
+  if (raw.centerX != null && raw.centerY != null) {
+    return `${Math.round(raw.centerX)}, ${Math.round(raw.centerY)} center`;
+  }
+
+  if (raw.x != null && raw.y != null) {
+    return `${Math.round(raw.x)}, ${Math.round(raw.y)} top-left`;
+  }
+
+  return "Unknown";
+}
+
 function isCapturePermissionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalizedMessage = message.toLowerCase();
@@ -288,6 +346,27 @@ function isCapturePermissionError(error: unknown): boolean {
     normalizedMessage.includes("not authorized to capture") ||
     normalizedMessage.includes("record this computer")
   );
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRecoverableVoiceTranscriptionError(error: unknown): boolean {
+  const normalizedMessage = formatErrorMessage(error).toLowerCase();
+
+  return (
+    normalizedMessage.includes("no usable audio") ||
+    normalizedMessage.includes("empty transcript") ||
+    normalizedMessage.includes("blank_audio") ||
+    normalizedMessage.includes("inaudible") ||
+    normalizedMessage.includes("silence") ||
+    normalizedMessage.includes("no speech")
+  );
+}
+
+function getVoiceRetryMessage(): string {
+  return "I didn't catch that. Hold Option and speak again.";
 }
 
 function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDetails {
@@ -327,6 +406,15 @@ function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDeta
     };
   }
 
+  if (voiceRuntime.status === "no_speech") {
+    return {
+      tone: "idle",
+      label: "Try again",
+      message: voiceRuntime.error || getVoiceRetryMessage(),
+      visible: true,
+    };
+  }
+
   if (voiceRuntime.status === "error") {
     return {
       tone: "error",
@@ -353,69 +441,119 @@ function getVoiceStatusDetails(voiceRuntime: VoiceRuntimeState): VoiceStatusDeta
   };
 }
 
-function VoiceStatusCue({
+function getTokiTopStatusModel({
   voiceRuntime,
-  pointerShadow,
+  overlayState,
+  isRefreshingCapture,
+  guidanceFailure,
+  hasAcceptedGuidance,
+  targetLabel,
+  instruction,
+  confirmationMessage,
+  gestureClassification,
 }: {
   voiceRuntime: VoiceRuntimeState;
-  pointerShadow: PointerShadowPosition | null;
-}) {
-  const details = getVoiceStatusDetails(voiceRuntime);
-  const style =
-    pointerShadow == null
-      ? undefined
-      : ({
-          left: pointerShadow.x + 32,
-          top: pointerShadow.y + 28,
-        } as CSSProperties);
-
-  if (!details.visible || pointerShadow == null) {
-    return null;
+  overlayState: OverlayState;
+  isRefreshingCapture: boolean;
+  guidanceFailure: string | null;
+  hasAcceptedGuidance: boolean;
+  targetLabel: string;
+  instruction: string;
+  confirmationMessage: string | null;
+  gestureClassification: GestureClassification;
+}): TokiTopStatusModel | null {
+  if (overlayState === "paused") {
+    return {
+      mode: "paused",
+      label: "Toki paused",
+      message: "Resume when you're ready",
+    };
   }
 
-  return (
-    <aside
-      className="voice-status-cue"
-      data-tone={details.tone}
-      style={style}
-      aria-label={`Voice status: ${details.label}`}
-    >
-      <span>{details.label}</span>
-      <small>{details.message}</small>
-    </aside>
-  );
-}
-
-function GuidanceFailureCue({
-  message,
-  pointerShadow,
-}: {
-  message: string | null;
-  pointerShadow: PointerShadowPosition | null;
-}) {
-  const style =
-    pointerShadow == null
-      ? undefined
-      : ({
-          left: pointerShadow.x + 32,
-          top: pointerShadow.y + 64,
-        } as CSSProperties);
-
-  if (message == null || pointerShadow == null) {
-    return null;
+  if (overlayState === "confirmation_required" && hasAcceptedGuidance) {
+    return {
+      mode: "confirming",
+      label: "Confirmation needed",
+      message: confirmationMessage ?? instruction,
+    };
   }
 
-  return (
-    <aside
-      className="voice-status-cue guidance-failure-cue"
-      data-tone="error"
-      style={style}
-      aria-label="Guidance unavailable"
-    >
-      <span>Guidance unavailable</span>
-      <small>{message}</small>
-    </aside>
-  );
+  const voiceDetails = getVoiceStatusDetails(voiceRuntime);
+  if (
+    voiceRuntime.status === "requesting_microphone" ||
+    voiceRuntime.status === "listening" ||
+    voiceRuntime.status === "transcribing"
+  ) {
+    return {
+      mode:
+        voiceRuntime.status === "listening"
+          ? "listening"
+          : voiceRuntime.status === "transcribing"
+            ? "transcribing"
+            : "thinking",
+      label: voiceDetails.label,
+      message: voiceDetails.message,
+    };
+  }
+
+  if (
+    gestureClassification.label !== "none" &&
+    gestureClassification.phase !== "inactive" &&
+    gestureClassification.phase !== "cooldown"
+  ) {
+    const isPinch = gestureClassification.label === "pinch";
+    const isRecognized = gestureClassification.phase === "recognized";
+
+    return {
+      mode: "gesture",
+      label: isRecognized
+        ? "Gesture accepted"
+        : isPinch
+          ? "Pinch detected"
+          : "Open palm detected",
+      message: isRecognized
+        ? isPinch
+          ? "Opening voice capture"
+          : "Pausing Toki"
+        : isPinch
+          ? "Hold to activate"
+          : "Hold to pause",
+    };
+  }
+
+  if (isRefreshingCapture || overlayState === "thinking") {
+    return {
+      mode: "thinking",
+      label: "Finding the next step",
+      message: "Reading the active screen",
+    };
+  }
+
+  if (guidanceFailure != null || overlayState === "error") {
+    return {
+      mode: "error",
+      label: "Guidance unavailable",
+      message: guidanceFailure ?? "Toki could not complete this request",
+    };
+  }
+
+  if (hasAcceptedGuidance) {
+    return {
+      mode: "guiding",
+      label: targetLabel,
+      message: instruction,
+    };
+  }
+
+  if (voiceDetails.visible) {
+    return {
+      mode: voiceDetails.tone === "error" ? "error" : "ready",
+      label: voiceDetails.label,
+      message: voiceDetails.message,
+    };
+  }
+
+  return null;
 }
 
 function PointerRing({ target }: { target: TargetBox }) {
@@ -433,267 +571,6 @@ function PointerRing({ target }: { target: TargetBox }) {
       <span className="pointer-pulse" aria-hidden="true" />
       <span className="pointer-crosshair" aria-hidden="true" />
     </div>
-  );
-}
-
-function StepBubble({
-  step,
-  target,
-}: {
-  step: GuidanceStep | null;
-  target: RenderedGuidanceTarget;
-}) {
-  return (
-    <aside
-      className="step-bubble"
-      style={{
-        left: target.x + target.width / 2 + 22,
-        top: target.y - target.height / 2,
-      }}
-      aria-label={`Guidance step for ${target.label}`}
-    >
-      <span className="bubble-anchor" aria-hidden="true" />
-      <span className="step-cue-label">{target.label}</span>
-      <span className="step-cue-text">{step?.instruction ?? target.instruction}</span>
-    </aside>
-  );
-}
-
-function WorkflowStepCue({
-  runtime,
-  step,
-  pointerShadow,
-  onPrevious,
-  onNext,
-  onStop,
-}: {
-  runtime: WorkflowRuntimeState;
-  step: WorkflowStep | null;
-  pointerShadow: PointerShadowPosition | null;
-  onPrevious: () => void;
-  onNext: () => void;
-  onStop: () => void;
-}) {
-  if (runtime.plan == null || step == null || pointerShadow == null) {
-    return null;
-  }
-
-  const isFirstStep = runtime.currentStepIndex <= 0;
-  const isLastStep = runtime.currentStepIndex >= runtime.plan.steps.length - 1;
-
-  return (
-    <aside
-      className="workflow-step-cue"
-      data-confirmation-required={step.requiresConfirmation ? "true" : "false"}
-      style={{
-        left: pointerShadow.x + 22,
-        top: pointerShadow.y + 42,
-      }}
-      aria-label={`Workflow step ${step.index + 1} of ${runtime.plan.steps.length}`}
-    >
-      <span className="workflow-step-meta">
-        Step {step.index + 1}/{runtime.plan.steps.length}
-        {step.requiresConfirmation ? (
-          <span className="workflow-step-risk">Confirm first</span>
-        ) : null}
-      </span>
-      <span className="workflow-step-title">{step.title}</span>
-      <span className="workflow-step-instruction">{step.instruction}</span>
-      <span className="workflow-step-actions" aria-label="Workflow controls">
-        <button
-          type="button"
-          onClick={onPrevious}
-          disabled={isFirstStep}
-          aria-label="Go to previous workflow step"
-        >
-          Back
-        </button>
-        <button type="button" onClick={onNext} aria-label="Continue workflow">
-          {isLastStep ? "Done" : "Next"}
-        </button>
-        <button type="button" onClick={onStop} aria-label="Stop workflow">
-          Stop
-        </button>
-      </span>
-    </aside>
-  );
-}
-
-function ConfirmationBubble({
-  decision,
-  target,
-}: {
-  decision: SafetyPolicyDecision;
-  target: RenderedGuidanceTarget;
-}) {
-  return (
-    <aside
-      className="confirmation-bubble"
-      style={{
-        left: target.x + target.width / 2 + 22,
-        top: target.y - target.height / 2,
-      }}
-      aria-label={`Confirmation required for ${target.label}`}
-    >
-      <span className="bubble-anchor" aria-hidden="true" />
-      <span className="confirmation-cue-kicker">Confirm first</span>
-      <span className="step-cue-label">{target.label}</span>
-      <span className="step-cue-text">{decision.message}</span>
-    </aside>
-  );
-}
-
-function SettingsPopup({
-  overlayState,
-  hasAcceptedGuidance,
-  isRefreshingCapture,
-  voiceRuntime,
-  onRefreshCapture,
-  onPauseToggle,
-  onVoicePressStart,
-  onVoicePressEnd,
-  onStartDrag,
-  onClose,
-}: {
-  overlayState: OverlayState;
-  hasAcceptedGuidance: boolean;
-  isRefreshingCapture: boolean;
-  voiceRuntime: VoiceRuntimeState;
-  onRefreshCapture: () => void;
-  onPauseToggle: () => void;
-  onVoicePressStart: () => void;
-  onVoicePressEnd: () => void;
-  onStartDrag: () => void;
-  onClose: () => void;
-}) {
-  const isPaused = overlayState === "paused";
-  const voiceListening =
-    voiceRuntime.status === "listening" ||
-    voiceRuntime.status === "requesting_microphone" ||
-    voiceRuntime.status === "transcribing";
-  const voiceStatusDetails = getVoiceStatusDetails(voiceRuntime);
-  const settingsStatusText = hasAcceptedGuidance
-    ? "Target locked."
-    : isPaused
-      ? "Paused. Resume when ready."
-      : voiceRuntime.status === "command_ready" && voiceRuntime.transcript
-        ? `Heard: ${voiceRuntime.transcript.text}`
-      : voiceListening
-        ? "Listening."
-        : "Ready for a command.";
-
-  return (
-    <section className="settings-popup" aria-label="Toki settings">
-      <div
-        className="settings-popup-header"
-        onPointerDown={(event) => {
-          const target = event.target;
-          if (
-            event.button === 0 &&
-            target instanceof HTMLElement &&
-            !target.closest("button,input,label")
-          ) {
-            onStartDrag();
-          }
-        }}
-      >
-        <div className="settings-title-group">
-          <span
-            className={`settings-status-dot${
-              isPaused ? " settings-status-dot-muted" : ""
-            }`}
-            aria-hidden="true"
-          />
-          <h2>Toki</h2>
-        </div>
-        <div className="settings-window-actions">
-          <span className="settings-state-label">{isPaused ? "Paused" : "Active"}</span>
-          <button
-            className="settings-close-button"
-            type="button"
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            onMouseDown={(event) => {
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onClose();
-            }}
-            aria-label="Close settings"
-          >
-            x
-          </button>
-        </div>
-      </div>
-
-      <div className="settings-separator" />
-
-      <p className="settings-instruction">Hold Option anywhere.</p>
-
-      <button
-        className="settings-talk-button"
-        type="button"
-        data-active={voiceListening}
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          onVoicePressStart();
-        }}
-        onPointerUp={(event) => {
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-          }
-
-          onVoicePressEnd();
-        }}
-        onPointerCancel={onVoicePressEnd}
-        onKeyDown={(event) => {
-          if (event.repeat) {
-            return;
-          }
-
-          if (event.key === " " || event.key === "Enter") {
-            event.preventDefault();
-            onVoicePressStart();
-          }
-        }}
-        onKeyUp={(event) => {
-          if (event.key === " " || event.key === "Enter") {
-            event.preventDefault();
-            onVoicePressEnd();
-          }
-        }}
-      >
-        <span>{voiceListening ? "Listening" : "Push to talk"}</span>
-        <small>
-          {voiceStatusDetails.visible
-            ? voiceStatusDetails.message
-            : "Or press here as a fallback."}
-        </small>
-      </button>
-
-      <p className="settings-footnote">{settingsStatusText}</p>
-
-      <div className="settings-footer-actions" aria-label="Settings actions">
-        <button
-          className="settings-footer-button"
-          type="button"
-          onClick={onRefreshCapture}
-          disabled={isRefreshingCapture}
-        >
-          {isRefreshingCapture ? "Updating" : "Update screen"}
-        </button>
-        <button
-          className="settings-footer-button"
-          type="button"
-          onClick={onPauseToggle}
-        >
-          {isPaused ? "Resume" : "Pause"}
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -1501,6 +1378,23 @@ function createInactiveGestureClassification(): GestureClassification {
   return createDefaultGestureRuntimeState().currentGesture;
 }
 
+function isSameGestureClassification(
+  left: GestureClassification | null | undefined,
+  right: GestureClassification | null | undefined,
+): boolean {
+  if (left == null || right == null) {
+    return left === right;
+  }
+
+  return (
+    left.label === right.label &&
+    left.phase === right.phase &&
+    Math.abs(left.confidence - right.confidence) < 0.01 &&
+    Math.abs(left.holdMs - right.holdMs) < 50 &&
+    Math.abs(left.cooldownRemainingMs - right.cooldownRemainingMs) < 50
+  );
+}
+
 function createEmptyDebugSnapshot(): DebugSnapshot {
   const viewport = getViewportMetrics();
 
@@ -1510,8 +1404,10 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     isRefreshingCapture: false,
     gestureRuntime: createDefaultGestureRuntimeState(),
     voiceRuntime: createDefaultVoiceRuntimeState(),
+    topStatus: null,
     guidanceProviderMode: "unavailable",
     guidanceProviderName: null,
+    guidanceProviderDebug: null,
     guidanceFixture: "safe",
     workflowRuntime: createEmptyWorkflowRuntimeState(),
     clickAwareRuntime: createDefaultClickAwareRuntimeState(),
@@ -1537,6 +1433,8 @@ function OverlayWindowApp() {
   const [guidanceProviderMode, setGuidanceProviderMode] =
     useState<GuidanceProviderMode>("unavailable");
   const [guidanceProviderName, setGuidanceProviderName] = useState<string | null>(null);
+  const [guidanceProviderDebug, setGuidanceProviderDebug] =
+    useState<GuidanceProviderResponse["debug"] | null>(null);
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
   const [guidanceSession, setGuidanceSession] = useState<GuidanceSession | null>(null);
@@ -1562,6 +1460,8 @@ function OverlayWindowApp() {
     useState<ClickAwareRuntimeState>(() => createDefaultClickAwareRuntimeState());
   const [viewport, setViewport] = useState<ViewportMetrics>(() => getViewportMetrics());
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
+  const [gestureVisualAnchor, setGestureVisualAnchor] =
+    useState<GestureVisualAnchor | null>(null);
   const voiceRuntimeRef = useRef<VoiceRuntimeState>(voiceRuntime);
   const voiceCaptureTimeoutRef = useRef<number | null>(null);
   const voiceSubmitInFlightRef = useRef(false);
@@ -1577,6 +1477,13 @@ function OverlayWindowApp() {
     checkedAt: number;
   } | null>(null);
   const lastPublishedOverlaySnapshotRef = useRef<string | null>(null);
+  const lastPublishedDebugSnapshotRef = useRef<string | null>(null);
+  const lastGestureClassificationRef = useRef<GestureClassification | null>(null);
+  const topStatusRef = useRef<TokiTopStatusModel | null>(null);
+  const topUtilityModeRef = useRef<TopUtilityMode>("hidden");
+  const topUtilityFocusedRef = useRef(false);
+  const topUtilityRevealTimerRef = useRef<number | null>(null);
+  const topUtilityLeaveTimerRef = useRef<number | null>(null);
 
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep = activeStep?.target != null ? activeStep : null;
@@ -1621,6 +1528,49 @@ function OverlayWindowApp() {
     hasCaptureError: captureError != null,
     guidanceIssueCount: guidanceIssues.length,
   });
+  const tokiCreatureState = getTokiCreatureState({
+    overlayState,
+    hasAcceptedGuidance,
+    hasActiveTarget: acceptedTarget != null || workflowTarget != null,
+    isRefreshingCapture,
+    hasCaptureError: captureError != null,
+    guidanceIssueCount: guidanceIssues.length,
+    voiceStatus: voiceRuntime.status,
+    gestureEnabled: gestureRuntime.enabled,
+    gestureLabel: gestureRuntime.currentGesture.label,
+    gesturePhase: gestureRuntime.currentGesture.phase,
+    gestureVisualAnchor,
+    hasWorkflow: workflowRuntime.status === "active",
+  });
+  const topStatus = getTokiTopStatusModel({
+    voiceRuntime,
+    overlayState,
+    isRefreshingCapture,
+    guidanceFailure: visibleGuidanceFailure,
+    hasAcceptedGuidance,
+    targetLabel: activeTarget.label,
+    instruction:
+      activeStep?.instruction ?? currentWorkflowStep?.instruction ?? activeTarget.instruction,
+    confirmationMessage: safetyDecision?.message ?? null,
+    gestureClassification: gestureRuntime.currentGesture,
+  });
+
+  function clearTopUtilityTimer(timerRef: { current: number | null }) {
+    if (timerRef.current != null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function requestTopUtilityMode(mode: TopUtilityMode) {
+    if (topUtilityModeRef.current === mode) {
+      return;
+    }
+
+    topUtilityModeRef.current = mode;
+    void setTopUtilityWindowMode(mode).catch(() => undefined);
+  }
+
   const calibration = useMemo(
     () => getCalibration(captureMetadata, viewport),
     [captureMetadata, viewport],
@@ -1630,6 +1580,14 @@ function OverlayWindowApp() {
     voiceRuntimeRef.current = voiceRuntime;
   }, [voiceRuntime]);
 
+  useEffect(() => {
+    topStatusRef.current = topStatus;
+
+    if (topUtilityModeRef.current !== "expanded") {
+      requestTopUtilityMode(getPassiveTopUtilityMode(topStatus));
+    }
+  }, [topStatus]);
+
   const overlaySnapshot = useMemo<OverlaySnapshot>(
     () => ({
       overlayState,
@@ -1637,6 +1595,7 @@ function OverlayWindowApp() {
       isRefreshingCapture,
       gestureRuntime,
       voiceRuntime,
+      topStatus,
     }),
     [
       overlayState,
@@ -1644,6 +1603,7 @@ function OverlayWindowApp() {
       isRefreshingCapture,
       gestureRuntime,
       voiceRuntime,
+      topStatus,
     ],
   );
 
@@ -1652,6 +1612,7 @@ function OverlayWindowApp() {
       ...overlaySnapshot,
       guidanceProviderMode,
       guidanceProviderName,
+      guidanceProviderDebug,
       guidanceFixture,
       workflowRuntime,
       clickAwareRuntime,
@@ -1671,6 +1632,7 @@ function OverlayWindowApp() {
       overlaySnapshot,
       guidanceProviderMode,
       guidanceProviderName,
+      guidanceProviderDebug,
       guidanceFixture,
       workflowRuntime,
       clickAwareRuntime,
@@ -1688,7 +1650,9 @@ function OverlayWindowApp() {
     ],
   );
 
-  async function publishRuntimeSnapshots(options: { includeDebug?: boolean } = {}) {
+  async function publishRuntimeSnapshots(
+    options: { includeDebug?: boolean; forceDebug?: boolean } = {},
+  ) {
     const serializedOverlaySnapshot = JSON.stringify(overlaySnapshot);
 
     if (serializedOverlaySnapshot !== lastPublishedOverlaySnapshotRef.current) {
@@ -1702,12 +1666,16 @@ function OverlayWindowApp() {
       return;
     }
 
-    await emitTo("settings", "toki://overlay-state", overlaySnapshot).catch(
-      () => undefined,
-    );
-    await emitTo("debug", "toki://debug-state", debugSnapshot).catch(
-      () => undefined,
-    );
+    const serializedDebugSnapshot = JSON.stringify(debugSnapshot);
+    if (
+      options.forceDebug ||
+      serializedDebugSnapshot !== lastPublishedDebugSnapshotRef.current
+    ) {
+      lastPublishedDebugSnapshotRef.current = serializedDebugSnapshot;
+      await emitTo("debug", "toki://debug-state", debugSnapshot).catch(
+        () => undefined,
+      );
+    }
   }
 
   function getRecentCapturePermissionBlock(): string | null {
@@ -1796,6 +1764,7 @@ function OverlayWindowApp() {
     setGuidanceProviderError(null);
     setGuidanceProviderMode(providerMode);
     setGuidanceProviderName(null);
+    setGuidanceProviderDebug(null);
     setGuidanceIssues([]);
     setSafetyDecision(null);
     setGuidanceRequest(null);
@@ -1826,8 +1795,13 @@ function OverlayWindowApp() {
       setScreenshotCapture(screenshot);
       const screenshotMetadata = getScreenshotMetadata(screenshot);
       const shouldTrackSession = isLiveGuidanceProvider;
+      const isContinuingGuidanceSession =
+        shouldTrackSession && guidanceSession?.originalGoal === goal;
+      const previousGuidanceStep = isContinuingGuidanceSession
+        ? guidanceResult?.step ?? null
+        : null;
       const nextSession =
-        shouldTrackSession && guidanceSession?.originalGoal === goal
+        isContinuingGuidanceSession
           ? {
               ...guidanceSession,
               status: "active" as const,
@@ -1882,7 +1856,7 @@ function OverlayWindowApp() {
           calibration: requestCalibration,
           ...candidateContext,
         },
-        previousStep: guidanceResult?.step ?? null,
+        previousStep: previousGuidanceStep,
         session: nextSession == null ? undefined : getGuidanceSessionContext(nextSession),
       };
       setGuidanceRequest(nextGuidanceRequest);
@@ -1912,6 +1886,7 @@ function OverlayWindowApp() {
 
         setGuidanceProviderMode(providerResponse.mode);
         setGuidanceProviderName(providerResponse.providerName ?? null);
+        setGuidanceProviderDebug(providerResponse.debug ?? null);
         setGuidanceProviderError(providerResponse.error ?? null);
         setGuidanceIssues(providerResponse.validation?.issues ?? []);
         const nextSafetyDecision = evaluateSafetyPolicy({
@@ -1955,6 +1930,7 @@ function OverlayWindowApp() {
       if (providerMode === "unavailable") {
         setGuidanceProviderMode("unavailable");
         setGuidanceProviderName("none");
+        setGuidanceProviderDebug(null);
         setGuidanceProviderError(
           "No guidance provider is active. Configure a real provider or run a debug fixture.",
         );
@@ -1993,6 +1969,7 @@ function OverlayWindowApp() {
 
       setGuidanceIssues(validation.issues);
       setGuidanceProviderName(providerResponse.providerName ?? "mock-fixture");
+      setGuidanceProviderDebug(providerResponse.debug ?? null);
       setSafetyDecision(nextSafetyDecision);
       setGuidanceProviderError(
         nextSafetyDecision.action === "allow" ||
@@ -2021,6 +1998,7 @@ function OverlayWindowApp() {
         setGuidanceProviderMode("unavailable");
         setGuidanceProviderName("none");
       }
+      setGuidanceProviderDebug(null);
       setGuidanceSession((currentSession) =>
         currentSession == null
           ? currentSession
@@ -2276,7 +2254,53 @@ function OverlayWindowApp() {
     let disposed = false;
     let lastPointerShadow: PointerShadowPosition | null = null;
 
+    function updateTopUtility(position: Pick<NativeCursorPosition, "x" | "y">) {
+      if (
+        topUtilityModeRef.current === "expanded" &&
+        topUtilityFocusedRef.current
+      ) {
+        clearTopUtilityTimer(topUtilityRevealTimerRef);
+        clearTopUtilityTimer(topUtilityLeaveTimerRef);
+        return;
+      }
+
+      if (isTopUtilityRevealPoint(position, viewport)) {
+        clearTopUtilityTimer(topUtilityLeaveTimerRef);
+
+        if (
+          topUtilityModeRef.current !== "expanded" &&
+          topUtilityRevealTimerRef.current == null
+        ) {
+          topUtilityRevealTimerRef.current = window.setTimeout(() => {
+            topUtilityRevealTimerRef.current = null;
+            requestTopUtilityMode("expanded");
+          }, TOP_UTILITY_REVEAL_DWELL_MS);
+        }
+
+        return;
+      }
+
+      clearTopUtilityTimer(topUtilityRevealTimerRef);
+
+      if (
+        topUtilityModeRef.current === "expanded" &&
+        isInsideExpandedTopUtility(position, viewport)
+      ) {
+        clearTopUtilityTimer(topUtilityLeaveTimerRef);
+        return;
+      }
+
+      if (topUtilityLeaveTimerRef.current == null) {
+        topUtilityLeaveTimerRef.current = window.setTimeout(() => {
+          topUtilityLeaveTimerRef.current = null;
+          requestTopUtilityMode(getPassiveTopUtilityMode(topStatusRef.current));
+        }, TOP_UTILITY_LEAVE_DELAY_MS);
+      }
+    }
+
     function updateCursorShadow(position: Pick<NativeCursorPosition, "x" | "y">) {
+      updateTopUtility(position);
+
       const nextPointerShadow =
         viewport.width <= 240 && viewport.height <= 240
           ? {
@@ -2309,7 +2333,8 @@ function OverlayWindowApp() {
       .then(updateCursorShadow)
       .catch(() => undefined);
 
-    let unlisten: (() => void) | null = null;
+    let unlistenCursor: (() => void) | null = null;
+    let unlistenMode: (() => void) | null = null;
 
     listen<NativeCursorPosition>("toki://native-cursor", (event) => {
       updateCursorShadow(event.payload);
@@ -2320,13 +2345,30 @@ function OverlayWindowApp() {
           return;
         }
 
-        unlisten = cleanup;
+        unlistenCursor = cleanup;
+      })
+      .catch(() => undefined);
+
+    listen<TopUtilityModeEvent>("toki://top-utility-mode", (event) => {
+      topUtilityModeRef.current = event.payload.mode;
+      topUtilityFocusedRef.current = event.payload.focused;
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+
+        unlistenMode = cleanup;
       })
       .catch(() => undefined);
 
     return () => {
       disposed = true;
-      unlisten?.();
+      clearTopUtilityTimer(topUtilityRevealTimerRef);
+      clearTopUtilityTimer(topUtilityLeaveTimerRef);
+      unlistenCursor?.();
+      unlistenMode?.();
     };
   }, [viewport]);
 
@@ -2472,6 +2514,10 @@ function OverlayWindowApp() {
   }, [overlaySnapshot]);
 
   useEffect(() => {
+    void publishRuntimeSnapshots({ includeDebug: true });
+  }, [debugSnapshot]);
+
+  useEffect(() => {
     window.__tokiRunRealGuidanceSmoke = (goal = "Show me what to click next.") => {
       void refreshCaptureMetadata(goal, "ollama-vision");
     };
@@ -2507,7 +2553,7 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "request-state") {
-        await publishRuntimeSnapshots({ includeDebug: true });
+        await publishRuntimeSnapshots({ includeDebug: true, forceDebug: true });
       }
 
       if (event.payload.type === "set-state") {
@@ -2598,6 +2644,10 @@ function OverlayWindowApp() {
       if (event.payload.type === "set-camera-enabled") {
         const enabled = event.payload.enabled;
 
+        if (!enabled) {
+          setGestureVisualAnchor(null);
+        }
+
         setGestureRuntime((currentState) => ({
           ...currentState,
           enabled: enabled ? currentState.enabled : false,
@@ -2617,6 +2667,10 @@ function OverlayWindowApp() {
 
       if (event.payload.type === "set-camera-preview-status") {
         const { status, permission, error } = event.payload;
+
+        if (status !== "active" && status !== "requesting_permission") {
+          setGestureVisualAnchor(null);
+        }
 
         setGestureRuntime((currentState) => ({
           ...currentState,
@@ -2638,8 +2692,24 @@ function OverlayWindowApp() {
         return;
       }
 
+      if (event.payload.type === "set-gesture-visual-anchor") {
+        setGestureVisualAnchor(event.payload.anchor);
+        return;
+      }
+
       if (event.payload.type === "set-gesture-classification") {
         const { classification } = event.payload;
+
+        if (
+          isSameGestureClassification(
+            lastGestureClassificationRef.current,
+            classification,
+          )
+        ) {
+          return;
+        }
+
+        lastGestureClassificationRef.current = classification;
         let gestureAction: GestureActionEvent | undefined;
 
         if (classification.phase === "recognized" && classification.label === "pinch") {
@@ -2668,11 +2738,16 @@ function OverlayWindowApp() {
           setOverlayState("paused");
         }
 
-        setGestureRuntime((currentState) => ({
-          ...currentState,
-          currentGesture: classification,
-          lastAction: gestureAction ?? currentState.lastAction,
-        }));
+        setGestureRuntime((currentState) =>
+          isSameGestureClassification(currentState.currentGesture, classification) &&
+          gestureAction == null
+            ? currentState
+            : {
+                ...currentState,
+                currentGesture: classification,
+                lastAction: gestureAction ?? currentState.lastAction,
+              },
+        );
         return;
       }
 
@@ -2708,6 +2783,7 @@ function OverlayWindowApp() {
         setOverlayState("listening");
 
         try {
+          await resetNativeVoiceCapture().catch(() => undefined);
           await startNativeVoiceCapture();
           setVoiceRuntime((currentState) => ({
             ...currentState,
@@ -2720,13 +2796,17 @@ function OverlayWindowApp() {
           scheduleVoiceCaptureTimeout();
         } catch (error) {
           clearVoiceCaptureTimeout();
+          await resetNativeVoiceCapture().catch(() => undefined);
           setVoiceRuntime((currentState) => ({
             ...currentState,
             enabled: false,
             permission: "error",
             status: "error",
-            error: error instanceof Error ? error.message : String(error),
+            error: formatErrorMessage(error),
           }));
+          setOverlayState((currentState) =>
+            currentState === "listening" ? "idle" : currentState,
+          );
         }
 
         return;
@@ -2761,6 +2841,8 @@ function OverlayWindowApp() {
             setVoiceRuntime((currentState) => ({
               ...currentState,
               enabled: false,
+              permission:
+                currentState.permission === "unknown" ? "granted" : currentState.permission,
               status: "idle",
               error: undefined,
             }));
@@ -2790,22 +2872,32 @@ function OverlayWindowApp() {
               error: undefined,
             }));
           } else {
+            const isRetryable = isRecoverableVoiceTranscriptionError(transcription.error);
             setVoiceRuntime((currentState) => ({
               ...currentState,
               enabled: false,
-              status: "error",
-              error: transcription.error,
+              permission: isRetryable ? "granted" : currentState.permission,
+              status: isRetryable ? "no_speech" : "error",
+              error: isRetryable ? getVoiceRetryMessage() : transcription.error,
             }));
           }
         } catch (error) {
+          const message = formatErrorMessage(error);
+          const isRetryable = isRecoverableVoiceTranscriptionError(message);
           setVoiceRuntime((currentState) => ({
             ...currentState,
             enabled: false,
-            status: "error",
-            error: error instanceof Error ? error.message : String(error),
+            permission: isRetryable ? "granted" : "error",
+            status: isRetryable ? "no_speech" : "error",
+            error: isRetryable ? getVoiceRetryMessage() : message,
           }));
         } finally {
+          clearVoiceCaptureTimeout();
+          await resetNativeVoiceCapture().catch(() => undefined);
           voiceSubmitInFlightRef.current = false;
+          setOverlayState((currentState) =>
+            currentState === "listening" ? "idle" : currentState,
+          );
         }
 
         return;
@@ -2862,66 +2954,47 @@ function OverlayWindowApp() {
   return (
     <main
       className={`overlay-shell is-${stateMeta[overlayState].tone}`}
+      data-creature-mode={tokiCreatureState.mode}
+      data-creature-anchor={tokiCreatureState.anchor}
+      data-creature-tone={tokiCreatureState.tone}
+      data-creature-energy={tokiCreatureState.energy}
       aria-label="Toki overlay"
     >
+      <TokiTaskProgress runtime={workflowRuntime} />
       {overlayState !== "idle" && hasAcceptedGuidance && (
-        <>
-          <PointerRing target={activeTarget} />
-          {overlayState === "confirmation_required" && safetyDecision != null ? (
-            <ConfirmationBubble decision={safetyDecision} target={activeTarget} />
-          ) : (
-            <StepBubble step={activeStep} target={activeTarget} />
-          )}
-        </>
+        <PointerRing target={activeTarget} />
       )}
-      <BlobPuck
-        motion={puckMotion}
-        pointerShadow={pointerShadow}
-      />
-      {workflowRuntime.status === "active" ? (
-        <WorkflowStepCue
-          runtime={workflowRuntime}
-          step={currentWorkflowStep}
+      <TokiCreatureLayer
+        state={tokiCreatureState}
+        target={hasAcceptedGuidance ? activeTarget : null}
+      >
+        <BlobPuck
+          creatureState={tokiCreatureState}
+          motion={puckMotion}
           pointerShadow={pointerShadow}
-          onPrevious={() => {
-            emitTo("overlay", "toki://overlay-command", {
-              type: "retreat-workflow-step",
-            } satisfies OverlayCommand).catch(() => undefined);
-          }}
-          onNext={() => {
-            emitTo("overlay", "toki://overlay-command", {
-              type: "advance-workflow-step",
-            } satisfies OverlayCommand).catch(() => undefined);
-          }}
-          onStop={() => {
-            emitTo("overlay", "toki://overlay-command", {
-              type: "stop-workflow",
-            } satisfies OverlayCommand).catch(() => undefined);
-          }}
         />
-      ) : null}
-      <VoiceStatusCue voiceRuntime={voiceRuntime} pointerShadow={pointerShadow} />
-      <GuidanceFailureCue
-        message={visibleGuidanceFailure}
-        pointerShadow={pointerShadow}
-      />
+      </TokiCreatureLayer>
     </main>
   );
 }
 
 function SettingsWindowApp() {
+  const [utilityMode, setUtilityMode] = useState<TopUtilityMode>("hidden");
   const [overlayState, setOverlayState] = useState<OverlayState>("idle");
   const [hasAcceptedGuidance, setHasAcceptedGuidance] = useState(false);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
   );
+  const [topStatus, setTopStatus] = useState<TokiTopStatusModel | null>(null);
   const isSpaceVoiceHeldRef = useRef(false);
+  const utilityModeRef = useRef<TopUtilityMode>("hidden");
+  const topStatusRef = useRef<TokiTopStatusModel | null>(null);
 
-  function hideSettings() {
-    invoke("hide_settings_window").catch(() => {
-      overlayWindow.hide().catch(() => undefined);
-    });
+  function collapseTopUtility() {
+    void setTopUtilityWindowMode(
+      getPassiveTopUtilityMode(topStatusRef.current),
+    ).catch(() => undefined);
   }
 
   function startSettingsDrag() {
@@ -2932,12 +3005,15 @@ function SettingsWindowApp() {
 
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
+    let unlistenMode: (() => void) | undefined;
 
     listen<OverlaySnapshot>("toki://overlay-state", (event) => {
       setOverlayState(event.payload.overlayState);
       setHasAcceptedGuidance(event.payload.hasAcceptedGuidance);
       setIsRefreshingCapture(event.payload.isRefreshingCapture);
       setVoiceRuntime(event.payload.voiceRuntime);
+      topStatusRef.current = event.payload.topStatus;
+      setTopStatus(event.payload.topStatus);
     })
       .then((cleanup) => {
         unlistenState = cleanup;
@@ -2946,12 +3022,24 @@ function SettingsWindowApp() {
         unlistenState = undefined;
       });
 
+    listen<TopUtilityModeEvent>("toki://top-utility-mode", (event) => {
+      utilityModeRef.current = event.payload.mode;
+      setUtilityMode(event.payload.mode);
+    })
+      .then((cleanup) => {
+        unlistenMode = cleanup;
+      })
+      .catch(() => {
+        unlistenMode = undefined;
+      });
+
     emitTo("overlay", "toki://overlay-command", {
       type: "request-state",
     } satisfies OverlayCommand).catch(() => undefined);
 
     return () => {
       unlistenState?.();
+      unlistenMode?.();
     };
   }, []);
 
@@ -2960,8 +3048,8 @@ function SettingsWindowApp() {
 
     overlayWindow
       .onFocusChanged((event) => {
-        if (!event.payload) {
-          hideSettings();
+        if (!event.payload && utilityModeRef.current === "expanded") {
+          collapseTopUtility();
         }
       })
       .then((cleanup) => {
@@ -2985,7 +3073,7 @@ function SettingsWindowApp() {
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        hideSettings();
+        collapseTopUtility();
         return;
       }
 
@@ -3024,39 +3112,67 @@ function SettingsWindowApp() {
     };
   }, []);
 
+  const isPaused = overlayState === "paused";
+  const voiceActive =
+    voiceRuntime.status === "listening" ||
+    voiceRuntime.status === "requesting_microphone" ||
+    voiceRuntime.status === "transcribing";
+  const voiceStatusDetails = getVoiceStatusDetails(voiceRuntime);
+  const idleStatusText = hasAcceptedGuidance
+    ? "Target locked."
+    : isPaused
+      ? "Paused. Resume when ready."
+      : voiceRuntime.status === "command_ready" && voiceRuntime.transcript
+        ? `Heard: ${voiceRuntime.transcript.text}`
+        : voiceActive
+          ? "Listening."
+          : "Ready for a command.";
+
   return (
-    <main className="settings-shell" aria-label="Toki settings window">
-      <SettingsPopup
-        overlayState={overlayState}
-        hasAcceptedGuidance={hasAcceptedGuidance}
-        isRefreshingCapture={isRefreshingCapture}
-        voiceRuntime={voiceRuntime}
-        onRefreshCapture={() => {
-          emitTo("overlay", "toki://overlay-command", {
-            type: "refresh-capture",
-          } satisfies OverlayCommand).catch(() => undefined);
-        }}
-        onPauseToggle={() => {
-          emitTo("overlay", "toki://overlay-command", {
-            type: "toggle-pause",
-          } satisfies OverlayCommand).catch(() => undefined);
-        }}
-        onVoicePressStart={() => {
-          emitTo("overlay", "toki://overlay-command", {
-            type: "start-voice-listening",
-            source: "settings",
-          } satisfies OverlayCommand).catch(() => undefined);
-        }}
-        onVoicePressEnd={() => {
-          emitTo("overlay", "toki://overlay-command", {
-            type: "submit-voice-listening",
-          } satisfies OverlayCommand).catch(() => undefined);
-        }}
-        onStartDrag={startSettingsDrag}
-        onClose={() => {
-          hideSettings();
-        }}
-      />
+    <main
+      className="settings-shell"
+      data-mode={utilityMode}
+      aria-label="Toki top utility"
+    >
+      {utilityMode !== "hidden" && (
+        <TokiTopUtilitySurface
+          mode={utilityMode}
+          status={topStatus}
+          isPaused={isPaused}
+          isBusy={isRefreshingCapture}
+          voiceActive={voiceActive}
+          voiceLabel={voiceActive ? "Listening" : "Push to talk"}
+          voiceMessage={
+            voiceStatusDetails.visible
+              ? voiceStatusDetails.message
+              : "Press and hold as a fallback."
+          }
+          idleStatusText={idleStatusText}
+          onRefreshCapture={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "refresh-capture",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onPauseToggle={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "toggle-pause",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onVoicePressStart={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "start-voice-listening",
+              source: "settings",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onVoicePressEnd={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "submit-voice-listening",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onStartDrag={startSettingsDrag}
+          onClose={collapseTopUtility}
+        />
+      )}
     </main>
   );
 }
@@ -3092,9 +3208,15 @@ function DebugWindowApp() {
   const [smoothedGesture, setSmoothedGesture] = useState(
     createDefaultGestureRuntimeState().currentGesture,
   );
+  const debugGestureVisualAnchor = useMemo(
+    () => getGestureVisualAnchor(handLandmarkFrame, smoothedGesture.label),
+    [handLandmarkFrame, smoothedGesture.label],
+  );
   const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
   const handFrameIdRef = useRef(0);
   const gestureSmoothingStateRef = useRef(initialGestureSmoothingState);
+  const lastReportedGestureRef = useRef<GestureClassification | null>(null);
+  const lastReportedGestureVisualAnchorRef = useRef<GestureVisualAnchor | null>(null);
   const pinchClassification = useMemo(
     () =>
       classifyPinchGesture(
@@ -3123,6 +3245,7 @@ function DebugWindowApp() {
   const screenshot = snapshot.screenshotCapture;
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
+  const visionTrace = snapshot.guidanceProviderDebug?.vision ?? null;
   const guidanceGoal =
     snapshot.guidanceRequest?.goal ??
     snapshot.voiceRuntime.transcript?.text ??
@@ -3370,14 +3493,20 @@ function DebugWindowApp() {
   }, [snapshot.gestureRuntime.camera.enabled]);
 
   useEffect(() => {
-    if (cameraPreviewStatus !== "active") {
-      setHandLandmarkerStatus(cameraPreviewStatus === "disabled" ? "idle" : "loading");
+    if (cameraPreviewStatus !== "active" || !snapshot.gestureRuntime.enabled) {
+      setHandLandmarkerStatus(
+        cameraPreviewStatus === "disabled" || !snapshot.gestureRuntime.enabled
+          ? "idle"
+          : "loading",
+      );
       setHandLandmarkFrame(null);
       return;
     }
 
     let cancelled = false;
     let animationFrame = 0;
+    let lastDetectionAt = 0;
+    const detectionIntervalMs = 1_000 / 15;
 
     async function runHandLandmarker() {
       setHandLandmarkerStatus("loading");
@@ -3386,33 +3515,36 @@ function DebugWindowApp() {
       try {
         const landmarker = await getHandLandmarker();
 
-        function detectFrame() {
+        function detectFrame(now: number) {
           if (cancelled) {
             return;
           }
 
-          const video = cameraPreviewRef.current;
+          if (now - lastDetectionAt >= detectionIntervalMs) {
+            lastDetectionAt = now;
+            const video = cameraPreviewRef.current;
 
-          if (video) {
-            const frame = detectHandLandmarksForVideo(
-              landmarker,
-              video,
-              handFrameIdRef.current + 1,
-            );
-            handFrameIdRef.current += 1;
+            if (video) {
+              const frame = detectHandLandmarksForVideo(
+                landmarker,
+                video,
+                handFrameIdRef.current + 1,
+              );
+              handFrameIdRef.current += 1;
 
-            if (frame) {
-              setHandLandmarkFrame(frame);
-              setHandLandmarkerStatus("running");
-            } else {
-              setHandLandmarkerStatus("no_hand");
+              if (frame) {
+                setHandLandmarkFrame(frame);
+                setHandLandmarkerStatus("running");
+              } else {
+                setHandLandmarkerStatus("no_hand");
+              }
             }
           }
 
           animationFrame = window.requestAnimationFrame(detectFrame);
         }
 
-        detectFrame();
+        animationFrame = window.requestAnimationFrame(detectFrame);
       } catch (error) {
         if (!cancelled) {
           setHandLandmarkerStatus("error");
@@ -3427,17 +3559,18 @@ function DebugWindowApp() {
       cancelled = true;
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [cameraPreviewStatus]);
+  }, [cameraPreviewStatus, snapshot.gestureRuntime.enabled]);
 
   useEffect(() => {
     if (!snapshot.gestureRuntime.enabled) {
       gestureSmoothingStateRef.current = initialGestureSmoothingState;
       const inactiveGesture = createDefaultGestureRuntimeState().currentGesture;
-      setSmoothedGesture(inactiveGesture);
-      sendOverlayCommand({
-        type: "set-gesture-classification",
-        classification: inactiveGesture,
-      });
+      lastReportedGestureRef.current = null;
+      setSmoothedGesture((currentGesture) =>
+        isSameGestureClassification(currentGesture, inactiveGesture)
+          ? currentGesture
+          : inactiveGesture,
+      );
       return;
     }
 
@@ -3449,7 +3582,22 @@ function DebugWindowApp() {
     );
 
     gestureSmoothingStateRef.current = result.state;
-    setSmoothedGesture(result.classification);
+    setSmoothedGesture((currentGesture) =>
+      isSameGestureClassification(currentGesture, result.classification)
+        ? currentGesture
+        : result.classification,
+    );
+
+    if (
+      isSameGestureClassification(
+        lastReportedGestureRef.current,
+        result.classification,
+      )
+    ) {
+      return;
+    }
+
+    lastReportedGestureRef.current = result.classification;
     sendOverlayCommand({
       type: "set-gesture-classification",
       classification: result.classification,
@@ -3459,7 +3607,40 @@ function DebugWindowApp() {
     rawGestureCandidate.confidence,
     rawGestureCandidate.sourceFrameId,
     snapshot.gestureRuntime.enabled,
-    snapshot.gestureRuntime.thresholds,
+    snapshot.gestureRuntime.thresholds.minDetectionConfidence,
+    snapshot.gestureRuntime.thresholds.pinchHoldMs,
+    snapshot.gestureRuntime.thresholds.openPalmHoldMs,
+    snapshot.gestureRuntime.thresholds.cooldownMs,
+    snapshot.gestureRuntime.thresholds.maxHands,
+  ]);
+
+  useEffect(() => {
+    const gestureCanAnimate =
+      snapshot.gestureRuntime.enabled &&
+      smoothedGesture.label !== "none" &&
+      smoothedGesture.phase !== "inactive" &&
+      smoothedGesture.phase !== "cooldown";
+    const nextAnchor = gestureCanAnimate ? debugGestureVisualAnchor : null;
+
+    if (
+      isSameGestureVisualAnchor(
+        lastReportedGestureVisualAnchorRef.current,
+        nextAnchor,
+      )
+    ) {
+      return;
+    }
+
+    lastReportedGestureVisualAnchorRef.current = nextAnchor;
+    sendOverlayCommand({
+      type: "set-gesture-visual-anchor",
+      anchor: nextAnchor,
+    });
+  }, [
+    debugGestureVisualAnchor,
+    smoothedGesture.label,
+    smoothedGesture.phase,
+    snapshot.gestureRuntime.enabled,
   ]);
 
   return (
@@ -4504,11 +4685,23 @@ function DebugWindowApp() {
               </div>
               <div>
                 <dt>Box</dt>
-                <dd>
-                  {target
-                    ? `${target.x}, ${target.y}, ${target.width} x ${target.height}`
-                    : "None"}
-                </dd>
+                <dd>{formatTargetBox(target)}</dd>
+              </div>
+              <div>
+                <dt>Vision mode</dt>
+                <dd>{visionTrace?.coordinateMode ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Raw vision</dt>
+                <dd>{formatVisionRawTarget(visionTrace)}</dd>
+              </div>
+              <div>
+                <dt>Mapped raw</dt>
+                <dd>{formatTargetBox(visionTrace?.mappedBeforeTighten)}</dd>
+              </div>
+              <div>
+                <dt>Mapped final</dt>
+                <dd>{formatTargetBox(visionTrace?.mappedFinal)}</dd>
               </div>
             </dl>
             <div className="debug-result-review">
@@ -4519,9 +4712,7 @@ function DebugWindowApp() {
               <div>
                 <span>Coordinates</span>
                 <strong>
-                  {target
-                    ? `${target.x}, ${target.y}, ${target.width} x ${target.height}`
-                    : "None"}
+                  {formatTargetBox(target)}
                 </strong>
               </div>
               <div>
