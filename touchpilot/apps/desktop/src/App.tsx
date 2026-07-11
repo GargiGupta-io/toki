@@ -87,6 +87,7 @@ import type {
   ViewportMetrics,
 } from "./overlayGeometry";
 import { requestOllamaVisionGuidance } from "./ollamaVisionProvider";
+import { verifyGuidanceTarget } from "./targetVerification";
 import {
   createProviderImagePreparationPlan,
   type ProviderImagePreparationPlan,
@@ -2058,6 +2059,11 @@ function OverlayWindowApp() {
           });
         }
 
+        providerResponse = verifyGuidanceTarget(
+          providerResponse,
+          nextGuidanceRequest,
+        );
+
         providerResponse = {
           ...providerResponse,
           traceId: trace.id,
@@ -2120,6 +2126,14 @@ function OverlayWindowApp() {
             valid: providerValidationPassed,
             issueCount: providerResponse.validation?.issues.length ?? 0,
             safetyAction: nextSafetyDecision.action,
+            targetVerification:
+              providerResponse.debug?.targetVerification?.status ?? "not_run",
+            evidenceSource:
+              providerResponse.debug?.targetVerification?.source ?? "none",
+            clickPoint:
+              providerResponse.debug?.targetVerification?.clickPoint == null
+                ? "none"
+                : `${providerResponse.debug.targetVerification.clickPoint.x},${providerResponse.debug.targetVerification.clickPoint.y}`,
           },
         });
 
@@ -3594,6 +3608,8 @@ function DebugWindowApp() {
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
   const visionTrace = snapshot.guidanceProviderDebug?.vision ?? null;
+  const targetVerificationTrace =
+    snapshot.guidanceProviderDebug?.targetVerification ?? null;
   const guidanceTraceEvents = snapshot.guidanceTrace?.events ?? [];
   const guidanceGoal =
     snapshot.guidanceRequest?.goal ??
@@ -5086,6 +5102,34 @@ function DebugWindowApp() {
               <div>
                 <dt>Mapped final</dt>
                 <dd>{formatTargetBox(visionTrace?.mappedFinal)}</dd>
+              </div>
+              <div>
+                <dt>Target verification</dt>
+                <dd>{targetVerificationTrace?.status ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Evidence source</dt>
+                <dd>{targetVerificationTrace?.source ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Evidence match</dt>
+                <dd>{targetVerificationTrace?.match ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Verified candidate</dt>
+                <dd>{targetVerificationTrace?.candidateId ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Click point</dt>
+                <dd>
+                  {targetVerificationTrace?.clickPoint
+                    ? `${targetVerificationTrace.clickPoint.x}, ${targetVerificationTrace.clickPoint.y}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Verification reasons</dt>
+                <dd>{targetVerificationTrace?.reasons.join(", ") ?? "None"}</dd>
               </div>
             </dl>
             {guidanceTraceEvents.length > 0 ? (
