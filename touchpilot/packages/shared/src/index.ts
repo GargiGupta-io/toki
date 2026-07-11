@@ -110,6 +110,34 @@ export type GuidanceSessionStatus =
   | "completed"
   | "error";
 
+export type GuidanceTaskPlanSource =
+  | "single_step_fallback"
+  | "planner"
+  | "workflow";
+
+export type GuidanceTaskPlanStep = {
+  id: string;
+  index: number;
+  objective: string;
+};
+
+export type GuidanceTaskPlan = {
+  id: string;
+  originalGoal: string;
+  source: GuidanceTaskPlanSource;
+  steps: GuidanceTaskPlanStep[];
+  createdAt: string;
+};
+
+export type GuidanceLocalizationContext = {
+  planId: string;
+  originalGoal: string;
+  currentStepId: string;
+  currentStepIndex: number;
+  totalSteps: number;
+  objective: string;
+};
+
 export type GuidanceSessionTargetRecord = {
   stepIndex: number;
   recordedAt: string;
@@ -138,6 +166,7 @@ export type GuidanceSessionVerification = {
 export type GuidanceSession = {
   id: string;
   originalGoal: string;
+  taskPlan: GuidanceTaskPlan;
   currentStepIndex: number;
   steps: GuidanceStep[];
   lastScreenshot?: ScreenshotMetadata | null;
@@ -207,6 +236,7 @@ export type GuidanceScreenContext = {
 export type GuidanceRequest = {
   traceId?: string;
   goal: string;
+  localization?: GuidanceLocalizationContext;
   screen: GuidanceScreenContext;
   previousStep?: GuidanceStep | null;
   session?: GuidanceSessionContext;
