@@ -50,6 +50,20 @@ export type ScreenCandidate = TargetBox & {
   metadata?: Record<string, string | number | boolean | null>;
 };
 
+export type ScreenCandidateEvidence = {
+  rawCount: number;
+  validCount: number;
+  fusedCount: number;
+  returnedCount: number;
+  sourceCounts: {
+    accessibility: number;
+    ocr: number;
+    dom: number;
+    manual: number;
+    unknown: number;
+  };
+};
+
 export type BrowserCandidatePayload = {
   schemaVersion: 1;
   source: "browser-extension";
@@ -182,9 +196,11 @@ export type GuidanceScreenContext = {
     | "macos-accessibility"
     | "macos-vision-ocr"
     | "browser-extension"
+    | "fused"
     | "none"
     | "unsupported"
     | "unavailable";
+  candidateEvidence?: ScreenCandidateEvidence;
   candidateError?: string;
 };
 
