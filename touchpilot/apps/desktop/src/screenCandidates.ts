@@ -4,11 +4,12 @@ import type {
   GuidanceScreenContext,
   ScreenshotCapture,
 } from "@toki/shared";
+import { fuseCandidateEvidence } from "./candidateFusion";
 import { rankScreenCandidates } from "./candidateRanking";
 
 type ScreenCandidateResult = Pick<
   GuidanceScreenContext,
-  "candidates" | "candidateSource" | "candidateError"
+  "candidates" | "candidateSource" | "candidateEvidence" | "candidateError"
 >;
 
 const MAX_LIVE_GUIDANCE_CANDIDATES = 20;
@@ -31,14 +32,25 @@ export async function collectScreenCandidatesForGuidance(
         appName: appName ?? screenshot.activeWindow?.appName,
       },
     });
+    const fused = fuseCandidateEvidence(
+      result.candidates,
+      result.candidateSource ?? "none",
+      screenshot.capturedAt,
+    );
+    const rankedCandidates = rankScreenCandidates(
+      fused.candidates,
+      goal,
+      MAX_LIVE_GUIDANCE_CANDIDATES,
+    );
 
     return {
       ...result,
-      candidates: rankScreenCandidates(
-        result.candidates,
-        goal,
-        MAX_LIVE_GUIDANCE_CANDIDATES,
-      ),
+      ...fused,
+      candidates: rankedCandidates,
+      candidateEvidence: {
+        ...fused.candidateEvidence,
+        returnedCount: rankedCandidates.length,
+      },
     };
   } catch (error) {
     return {
