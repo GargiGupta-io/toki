@@ -18,6 +18,8 @@ use toki_capture::{
     CaptureMetadata, ScreenshotCapture,
 };
 
+mod macos_overlay;
+
 static VOICE_SHORTCUT_HELD: AtomicBool = AtomicBool::new(false);
 static OVERLAY_GUIDANCE_SURFACE: AtomicBool = AtomicBool::new(false);
 const NATIVE_VOICE_KEY_POLL_MS: u64 = 35;
@@ -1541,67 +1543,61 @@ fn fit_overlay_to_monitor<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
 }
 
 #[cfg(target_os = "macos")]
-fn prepare_macos_overlay_window<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
-    use std::ffi::{c_char, c_void};
+fn prepare_macos_overlay_on_main_thread<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Result<(), String> {
+    let overlay = window.clone();
+    window
+        .run_on_main_thread(move || match macos_overlay::prepare(&overlay) {
+            Ok(status) if status.ready => {
+                eprintln!("toki macOS overlay ready on active Space");
+            }
+            Ok(status) => {
+                eprintln!(
+                    "toki macOS overlay contract incomplete: visible={}, on_active_space={}, flags_ready={}",
+                    status.visible, status.on_active_space, status.contract_ready
+                );
+            }
+            Err(error) => eprintln!("failed to prepare Toki macOS overlay: {error}"),
+        })
+        .map_err(|error| error.to_string())
+}
 
-    extern "C" {
-        fn sel_registerName(name: *const c_char) -> *mut c_void;
-        fn objc_msgSend();
-    }
+fn show_overlay_window<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> Result<(), String> {
+    window.set_title(" ").map_err(|error| error.to_string())?;
+    window
+        .set_decorations(false)
+        .map_err(|error| error.to_string())?;
+    fit_overlay_to_monitor(window);
+    window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_ignore_cursor_events(true)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_focusable(false)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_skip_taskbar(true)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_visible_on_all_workspaces(true)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_shadow(false)
+        .map_err(|error| error.to_string())?;
 
-    let Ok(ns_window_ptr) = window.ns_window() else {
-        return;
-    };
+    #[cfg(windows)]
+    prepare_windows_utility_window(window, true);
 
-    if ns_window_ptr.is_null() {
-        return;
-    }
+    #[cfg(not(target_os = "macos"))]
+    window.show().map_err(|error| error.to_string())?;
 
-    // Mirror Clicky's overlay contract: a non-activating utility layer that joins
-    // fullscreen Spaces and never catches normal user clicks.
-    unsafe {
-        let set_level: extern "C" fn(*mut c_void, *mut c_void, isize) =
-            std::mem::transmute(objc_msgSend as *const ());
-        let set_collection_behavior: extern "C" fn(*mut c_void, *mut c_void, usize) =
-            std::mem::transmute(objc_msgSend as *const ());
-        let set_bool: extern "C" fn(*mut c_void, *mut c_void, bool) =
-            std::mem::transmute(objc_msgSend as *const ());
-        let send_void: extern "C" fn(*mut c_void, *mut c_void) =
-            std::mem::transmute(objc_msgSend as *const ());
+    #[cfg(target_os = "macos")]
+    prepare_macos_overlay_on_main_thread(window)?;
 
-        let set_level_sel = sel_registerName(b"setLevel:\0".as_ptr().cast());
-        let set_collection_behavior_sel =
-            sel_registerName(b"setCollectionBehavior:\0".as_ptr().cast());
-        let set_ignores_mouse_events_sel =
-            sel_registerName(b"setIgnoresMouseEvents:\0".as_ptr().cast());
-        let set_hides_on_deactivate_sel =
-            sel_registerName(b"setHidesOnDeactivate:\0".as_ptr().cast());
-        let set_can_hide_sel = sel_registerName(b"setCanHide:\0".as_ptr().cast());
-        let set_opaque_sel = sel_registerName(b"setOpaque:\0".as_ptr().cast());
-        let set_has_shadow_sel = sel_registerName(b"setHasShadow:\0".as_ptr().cast());
-        let order_front_regardless_sel =
-            sel_registerName(b"orderFrontRegardless\0".as_ptr().cast());
-
-        let can_join_all_spaces = 1_usize << 0;
-        let stationary = 1_usize << 4;
-        let ignores_cycle = 1_usize << 6;
-        let fullscreen_auxiliary = 1_usize << 8;
-        let collection_behavior =
-            can_join_all_spaces | stationary | ignores_cycle | fullscreen_auxiliary;
-
-        set_level(ns_window_ptr, set_level_sel, 1000);
-        set_collection_behavior(
-            ns_window_ptr,
-            set_collection_behavior_sel,
-            collection_behavior,
-        );
-        set_bool(ns_window_ptr, set_ignores_mouse_events_sel, true);
-        set_bool(ns_window_ptr, set_hides_on_deactivate_sel, false);
-        set_bool(ns_window_ptr, set_can_hide_sel, false);
-        set_bool(ns_window_ptr, set_opaque_sel, false);
-        set_bool(ns_window_ptr, set_has_shadow_sel, false);
-        send_void(ns_window_ptr, order_front_regardless_sel);
-    }
+    Ok(())
 }
 
 fn position_top_utility<R: tauri::Runtime>(
@@ -2447,6 +2443,23 @@ fn native_cursor_position() -> Result<NativeCursorPosition, String> {
 }
 
 #[tauri::command]
+fn macos_overlay_window_status(
+    app: tauri::AppHandle,
+) -> Result<Option<macos_overlay::WindowStatus>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        return Ok(macos_overlay::latest_status());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(Some(macos_overlay::unsupported_status()))
+    }
+}
+
+#[tauri::command]
 fn set_overlay_surface_mode(
     app: tauri::AppHandle,
     request: OverlaySurfaceModeRequest,
@@ -2458,19 +2471,11 @@ fn set_overlay_surface_mode(
     match request.mode.as_str() {
         "guidance" => {
             OVERLAY_GUIDANCE_SURFACE.store(true, Ordering::SeqCst);
-            fit_overlay_to_monitor(&overlay);
-            #[cfg(target_os = "macos")]
-            prepare_macos_overlay_window(&overlay);
-            let _ = overlay.show();
-            Ok(())
+            show_overlay_window(&overlay)
         }
         "puck" => {
             OVERLAY_GUIDANCE_SURFACE.store(false, Ordering::SeqCst);
-            fit_overlay_to_monitor(&overlay);
-            #[cfg(target_os = "macos")]
-            prepare_macos_overlay_window(&overlay);
-            let _ = overlay.show();
-            Ok(())
+            show_overlay_window(&overlay)
         }
         other => Err(format!(
             "unsupported overlay surface mode: {other}. Use puck or guidance."
@@ -2487,22 +2492,17 @@ pub fn run() {
         .manage(Mutex::new(VoiceCaptureStore::default()))
         .manage(native_click_monitor_state.clone())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             start_native_voice_key_monitor(app.handle().clone());
             start_native_cursor_monitor(app.handle().clone());
             start_native_click_monitor(app.handle().clone(), native_click_monitor_state);
 
             if let Some(overlay) = app.get_webview_window("overlay") {
-                let _ = overlay.set_title(" ");
-                let _ = overlay.set_decorations(false);
-                fit_overlay_to_monitor(&overlay);
-                let _ = overlay.set_ignore_cursor_events(true);
-                let _ = overlay.set_focusable(false);
-                let _ = overlay.set_skip_taskbar(true);
-                let _ = overlay.set_visible_on_all_workspaces(true);
-                #[cfg(target_os = "macos")]
-                prepare_macos_overlay_window(&overlay);
-                #[cfg(windows)]
-                prepare_windows_utility_window(&overlay, true);
+                if let Err(error) = show_overlay_window(&overlay) {
+                    eprintln!("failed to prepare Toki overlay: {error}");
+                }
             }
 
             if let Some(settings) = app.get_webview_window("settings") {
@@ -2608,6 +2608,7 @@ pub fn run() {
             frontmost_window_bounds,
             screen_capture_access_status,
             hide_settings_window,
+            macos_overlay_window_status,
             native_click_monitor_set_armed,
             native_cursor_position,
             native_voice_capture_status,
