@@ -1860,13 +1860,17 @@ fn collect_screen_candidates(
                 }
             }
         } else {
+            let has_vision_candidates = !vision_result.candidates.is_empty();
             let mut candidates = accessibility_result.candidates;
             candidates.extend(vision_result.candidates);
-            candidates.truncate(70);
 
             ScreenCandidateResult {
                 candidates,
-                candidate_source: "macos-accessibility",
+                candidate_source: if has_vision_candidates {
+                    "fused"
+                } else {
+                    "macos-accessibility"
+                },
                 candidate_error: vision_result.candidate_error,
             }
         };
