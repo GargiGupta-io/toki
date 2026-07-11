@@ -61,6 +61,11 @@ import {
   getGuidanceTraceEvent,
 } from "./guidanceTrace";
 import {
+  createSingleStepGuidanceTaskPlan,
+  getGuidanceLocalizationContext,
+  getGuidanceLocalizationObjective,
+} from "./guidanceTaskPlanning";
+import {
   initialGestureSmoothingState,
   smoothGestureCandidate,
 } from "./gestureSmoothing";
@@ -1032,9 +1037,12 @@ function createDefaultVoiceRuntimeState(): VoiceRuntimeState {
 }
 
 function createGuidanceSession(goal: string, now = new Date().toISOString()): GuidanceSession {
+  const id = `guidance-${Date.now().toString(36)}`;
+
   return {
-    id: `guidance-${Date.now().toString(36)}`,
+    id,
     originalGoal: goal,
+    taskPlan: createSingleStepGuidanceTaskPlan(`${id}-plan`, goal, now),
     currentStepIndex: 0,
     steps: [],
     lastScreenshot: null,
@@ -1173,7 +1181,7 @@ function createLocalCandidateGuidance(
   );
   const result: GuidanceResult = {
     mode: "guide",
-    summary: `Local screen candidate selected for: ${request.goal}`,
+    summary: `Local screen candidate selected for: ${getGuidanceLocalizationObjective(request)}`,
     step: {
       instruction: `Click ${candidate.label}.`,
       target: {
@@ -1957,6 +1965,15 @@ function OverlayWindowApp() {
         setGuidanceSession(nextSession);
       }
 
+      const localizationContext =
+        nextSession == null
+          ? null
+          : getGuidanceLocalizationContext(
+              nextSession.taskPlan,
+              nextSession.currentStepIndex,
+            );
+      const localizationObjective = localizationContext?.objective ?? goal;
+
       const screenshotPayload =
         isLiveGuidanceProvider
           ? await getProviderScreenshotPayload(screenshot, windowBounds)
@@ -1977,7 +1994,7 @@ function OverlayWindowApp() {
           ? await collectScreenCandidatesForGuidance(
               screenshot,
               metadata.display,
-              goal,
+              localizationObjective,
               windowBounds?.appName ?? preferredAppName ?? screenshot.activeWindow?.appName,
             )
           : {
@@ -1996,11 +2013,14 @@ function OverlayWindowApp() {
           fusedCount: candidateContext.candidateEvidence?.fusedCount ?? 0,
           source: candidateContext.candidateSource ?? "none",
           hadError: candidateContext.candidateError != null,
+          planId: localizationContext?.planId ?? "none",
+          objective: localizationObjective,
         },
       });
       const nextGuidanceRequest: GuidanceRequest = {
         traceId: trace.id,
         goal,
+        localization: localizationContext ?? undefined,
         screen: {
           display: metadata.display,
           capture: metadata,
@@ -4972,6 +4992,26 @@ function DebugWindowApp() {
               <div>
                 <dt>Request</dt>
                 <dd>{guidanceGoal}</dd>
+              </div>
+              <div>
+                <dt>Plan source</dt>
+                <dd>{snapshot.guidanceSession?.taskPlan.source ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Original task</dt>
+                <dd>{snapshot.guidanceRequest?.localization?.originalGoal ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Localization step</dt>
+                <dd>
+                  {snapshot.guidanceRequest?.localization
+                    ? `${snapshot.guidanceRequest.localization.currentStepIndex + 1} / ${snapshot.guidanceRequest.localization.totalSteps}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Current objective</dt>
+                <dd>{snapshot.guidanceRequest?.localization?.objective ?? "None"}</dd>
               </div>
               <div>
                 <dt>Session</dt>
