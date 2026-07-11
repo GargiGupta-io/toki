@@ -12,6 +12,7 @@ import {
   mapDisplayRectToProviderImage,
   mapProviderTargetToDisplay,
 } from "./coordinateTransforms";
+import { getGuidanceLocalizationObjective } from "./guidanceTaskPlanning";
 
 type OllamaGenerateResponse = {
   response?: string;
@@ -139,7 +140,7 @@ function isMediaIntent(goal: string) {
 }
 
 function getIntentMismatch(target: TargetBox, request: GuidanceRequest, reason?: string) {
-  const goal = normalizeText(request.goal);
+  const goal = normalizeText(getGuidanceLocalizationObjective(request));
   const targetText = normalizeText(`${target.label} ${reason ?? ""}`);
   const targetLooksAdditive = includesAny(targetText, [
     "plus",
@@ -175,7 +176,7 @@ function getIntentMismatch(target: TargetBox, request: GuidanceRequest, reason?:
 }
 
 function shouldTightenToClickCenter(target: TargetBox, request: GuidanceRequest) {
-  const goal = normalizeText(request.goal);
+  const goal = normalizeText(getGuidanceLocalizationObjective(request));
   const label = normalizeText(target.label);
   const targetIsLarge = Math.max(target.width, target.height) > 56;
   const targetIsThin = Math.min(target.width, target.height) < 24;
@@ -358,7 +359,7 @@ function isLikelySystemMenuTarget(target: TargetBox, request: GuidanceRequest) {
     return false;
   }
 
-  const goal = request.goal.toLowerCase();
+  const goal = getGuidanceLocalizationObjective(request).toLowerCase();
   const explicitlyMenuRelated =
     goal.includes("menu") ||
     goal.includes("menubar") ||
@@ -371,13 +372,15 @@ function isLikelySystemMenuTarget(target: TargetBox, request: GuidanceRequest) {
   return !explicitlyMenuRelated && target.y < 88;
 }
 
-function createPrompt(request: GuidanceRequest) {
+export function createOllamaLocalizationPrompt(request: GuidanceRequest) {
   const payload = request.screen.screenshotPayload;
   const screenshotSize = payload
     ? `${payload.imageWidth}x${payload.imageHeight}`
     : "missing";
   const displaySize = `${request.screen.display.width}x${request.screen.display.height}`;
   const crop = payload?.crop;
+  const originalGoal = request.localization?.originalGoal ?? request.goal;
+  const localizationObjective = getGuidanceLocalizationObjective(request);
   const regionInstruction =
     crop == null
       ? "The image is the full display. Ignore the macOS menu bar, dock, desktop icons, browser tabs/address bar, and app chrome unless the user explicitly asks for those controls. Prefer the largest active app content area."
@@ -385,10 +388,13 @@ function createPrompt(request: GuidanceRequest) {
 
   return [
     "You are the visual targeting brain for Toki, a cursor guidance assistant.",
-    "Look at the screenshot and the user command. Pick the exact UI target the user should click next.",
+    "You are a target localizer, not a task planner.",
+    "Use the original task only as context. Locate one control for the current step objective and do not invent or jump to a later step.",
+    "Look at the screenshot and pick the exact UI target the user should click for the current step.",
     "Return only one JSON object. Do not include markdown, commentary, or extra text.",
     "",
-    `User command: ${request.goal}`,
+    `Original task: ${originalGoal}`,
+    `Current step objective: ${localizationObjective}`,
     `Screenshot image size: ${screenshotSize}`,
     `Toki display coordinate size: ${displaySize}`,
     regionInstruction,
@@ -458,7 +464,7 @@ export async function requestOllamaVisionGuidance(
       signal: controller.signal,
       body: JSON.stringify({
         model,
-        prompt: createPrompt(request),
+        prompt: createOllamaLocalizationPrompt(request),
         images: [payload.imageBase64],
         stream: false,
         format: "json",
