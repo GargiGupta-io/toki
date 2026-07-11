@@ -25,6 +25,7 @@
         "shadow": false,
         "skipTaskbar": true,
         "fullscreen": false,
+        "visible": false,
         "focus": false,
         "focusable": false
       },
