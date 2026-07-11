@@ -698,7 +698,7 @@ function getScreenshotPayload(screenshot: ScreenshotCapture): ScreenshotPayload 
 type ScreenshotPayload = NonNullable<GuidanceScreenContext["screenshotPayload"]>;
 type ScreenCandidateContext = Pick<
   GuidanceScreenContext,
-  "candidates" | "candidateSource" | "candidateError"
+  "candidates" | "candidateSource" | "candidateEvidence" | "candidateError"
 >;
 
 function getPreferredAppNameFromGoal(goal: string) {
@@ -953,6 +953,12 @@ function filterCandidateContextForPayload(
   return {
     ...context,
     candidates: filteredCandidates,
+    candidateEvidence: context.candidateEvidence
+      ? {
+          ...context.candidateEvidence,
+          returnedCount: filteredCandidates.length,
+        }
+      : undefined,
     candidateError: context.candidateError
       ? `${context.candidateError} | ${filteredMessage}`
       : filteredCandidates.length === 0
@@ -1986,6 +1992,8 @@ function OverlayWindowApp() {
         summary: "Candidate collection completed.",
         details: {
           count: candidateContext.candidates?.length ?? 0,
+          rawCount: candidateContext.candidateEvidence?.rawCount ?? 0,
+          fusedCount: candidateContext.candidateEvidence?.fusedCount ?? 0,
           source: candidateContext.candidateSource ?? "none",
           hadError: candidateContext.candidateError != null,
         },
@@ -3575,6 +3583,7 @@ function DebugWindowApp() {
   const guidancePayload = guidanceScreen?.screenshotPayload ?? null;
   const guidanceCandidateCount = guidanceScreen?.candidates?.length ?? 0;
   const guidanceCandidateSource = guidanceScreen?.candidateSource ?? "none";
+  const guidanceCandidateEvidence = guidanceScreen?.candidateEvidence ?? null;
   const guidanceCandidates = guidanceScreen?.candidates?.slice(0, 8) ?? [];
   const guidancePayloadSize = guidancePayload
     ? `${(guidancePayload.byteLength / 1024 / 1024).toFixed(2)} MB`
@@ -5154,6 +5163,22 @@ function DebugWindowApp() {
                 <dt>Candidates</dt>
                 <dd>
                   {guidanceCandidateCount} from {guidanceCandidateSource}
+                </dd>
+              </div>
+              <div>
+                <dt>Candidate Fusion</dt>
+                <dd>
+                  {guidanceCandidateEvidence
+                    ? `${guidanceCandidateEvidence.rawCount} raw / ${guidanceCandidateEvidence.validCount} valid / ${guidanceCandidateEvidence.fusedCount} fused / ${guidanceCandidateEvidence.returnedCount} returned`
+                    : "Not recorded"}
+                </dd>
+              </div>
+              <div>
+                <dt>Evidence Sources</dt>
+                <dd>
+                  {guidanceCandidateEvidence
+                    ? `AX ${guidanceCandidateEvidence.sourceCounts.accessibility}, OCR ${guidanceCandidateEvidence.sourceCounts.ocr}, DOM ${guidanceCandidateEvidence.sourceCounts.dom}, manual ${guidanceCandidateEvidence.sourceCounts.manual}, unknown ${guidanceCandidateEvidence.sourceCounts.unknown}`
+                    : "Not recorded"}
                 </dd>
               </div>
               <div>
