@@ -1,4 +1,5 @@
 import type { ScreenCandidate } from "@toki/shared";
+import { scoreCandidateIntent } from "./candidateIntent";
 
 const MAX_RANKED_CANDIDATES = 20;
 const RISK_WORDS = new Set([
@@ -24,43 +25,6 @@ const SOURCE_TRUST = new Map<string, number>([
   ["accessibility", 18],
   ["ocr", 4],
 ]);
-const ACTION_SYNONYMS: Array<{
-  goal: string[];
-  label: string[];
-  reason: string;
-}> = [
-  {
-    goal: ["new", "make", "create", "add"],
-    label: ["new", "make", "create", "add", "plus", "button"],
-    reason: "create-action",
-  },
-  {
-    goal: ["new", "make", "create", "add", "playlist", "list"],
-    label: ["playlist", "library", "collection", "folder", "queue"],
-    reason: "playlist-context",
-  },
-  {
-    goal: ["open", "view", "show"],
-    label: ["open", "view", "show"],
-    reason: "open-action",
-  },
-  {
-    goal: ["download", "save"],
-    label: ["download", "save"],
-    reason: "download-action",
-  },
-  {
-    goal: ["search", "find"],
-    label: ["search", "find"],
-    reason: "search-action",
-  },
-  {
-    goal: ["settings", "permission", "permissions"],
-    label: ["settings", "permission", "permissions", "privacy"],
-    reason: "settings-action",
-  },
-];
-
 type RankedCandidate = ScreenCandidate & {
   rank?: {
     score: number;
@@ -86,71 +50,27 @@ function tokenize(value: string): string[] {
 }
 
 function countMatchingTokens(label: string, goalTokens: string[]): number {
-  const labelText = normalizeText(label);
+  const labelTokens = new Set(tokenize(label));
 
-  return goalTokens.filter((token) => labelText.includes(token)).length;
+  return goalTokens.filter((token) => labelTokens.has(token)).length;
 }
 
 function hasExactLabelMatch(label: string, goal: string): boolean {
   const labelText = normalizeText(label);
   const goalText = normalizeText(goal);
+  const goalTokens = tokenize(goalText);
 
-  return labelText.length >= 3 && goalText.includes(labelText);
+  if (labelText.length < 3) {
+    return false;
+  }
+
+  return labelText.includes(" ")
+    ? ` ${goalText} `.includes(` ${labelText} `)
+    : goalTokens.includes(labelText);
 }
 
 function hasRiskWord(label: string): boolean {
   return tokenize(label).some((token) => RISK_WORDS.has(token));
-}
-
-function getActionSynonymScore(
-  labelTokens: string[],
-  goalTokens: string[],
-): { score: number; reasons: string[] } {
-  let score = 0;
-  const reasons: string[] = [];
-
-  for (const synonym of ACTION_SYNONYMS) {
-    const goalMatches = synonym.goal.some((token) => goalTokens.includes(token));
-    const labelMatches = synonym.label.some((token) => labelTokens.includes(token));
-
-    if (goalMatches && labelMatches) {
-      score += 10;
-      reasons.push(synonym.reason);
-    }
-  }
-
-  return { score, reasons };
-}
-
-function getIconActionScore(
-  labelTokens: string[],
-  goalTokens: string[],
-  role: string,
-): { score: number; reasons: string[] } {
-  const reasons: string[] = [];
-  let score = 0;
-  const wantsCreate = ["new", "make", "create", "add"].some((token) =>
-    goalTokens.includes(token),
-  );
-  const wantsCollection = ["playlist", "list", "collection", "library"].some(
-    (token) => goalTokens.includes(token),
-  );
-  const looksLikeCreateControl = ["add", "create", "new", "plus"].some((token) =>
-    labelTokens.includes(token),
-  );
-  const isButtonLike = CLICKABLE_ROLE_RE.test(role);
-
-  if (wantsCreate && looksLikeCreateControl && isButtonLike) {
-    score += 16;
-    reasons.push("icon-create-control");
-  }
-
-  if (wantsCreate && wantsCollection && looksLikeCreateControl && isButtonLike) {
-    score += 12;
-    reasons.push("collection-create-target");
-  }
-
-  return { score, reasons };
 }
 
 function sourceTrust(candidate: ScreenCandidate): number {
@@ -199,7 +119,6 @@ export function rankScreenCandidates(
   return candidates
     .map((candidate, index) => {
       const matchCount = countMatchingTokens(candidate.label, goalTokens);
-      const labelTokens = tokenize(candidate.label);
       const role = normalizeText(candidate.role);
       const area = candidate.width * candidate.height;
       const duplicateCount = labelCounts.get(normalizeText(candidate.label)) ?? 1;
@@ -222,19 +141,10 @@ export function rankScreenCandidates(
         reasons.push(`goal-text:${matchCount}`);
       }
 
-      const synonymScore = getActionSynonymScore(labelTokens, goalTokens);
+      const intentScore = scoreCandidateIntent(candidate, goal);
 
-      if (synonymScore.score > 0) {
-        score += synonymScore.score;
-        reasons.push(...synonymScore.reasons);
-      }
-
-      const iconActionScore = getIconActionScore(labelTokens, goalTokens, role);
-
-      if (iconActionScore.score > 0) {
-        score += iconActionScore.score;
-        reasons.push(...iconActionScore.reasons);
-      }
+      score += intentScore.score;
+      reasons.push(...intentScore.reasons);
 
       if (CLICKABLE_ROLE_RE.test(role)) {
         score += 10;
