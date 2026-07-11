@@ -50,6 +50,28 @@ export type ScreenCandidate = TargetBox & {
   metadata?: Record<string, string | number | boolean | null>;
 };
 
+export type TargetEvidenceSource =
+  | "dom"
+  | "accessibility"
+  | "ocr"
+  | "manual"
+  | "vision";
+
+export type TargetVerificationTrace = {
+  status: "accepted" | "rejected";
+  source: TargetEvidenceSource;
+  match: "candidate_id" | "spatial_candidate" | "vision_only";
+  candidateId?: string;
+  candidateRole?: ScreenCandidate["role"];
+  clickPoint?: {
+    x: number;
+    y: number;
+  };
+  inputTarget: TargetBox;
+  verifiedTarget?: TargetBox;
+  reasons: string[];
+};
+
 export type ScreenCandidateEvidence = {
   rawCount: number;
   validCount: number;
@@ -305,6 +327,7 @@ export type GuidanceProviderResponse = {
   validation?: GuidanceValidationResult;
   providerName?: string;
   debug?: {
+    targetVerification?: TargetVerificationTrace;
     vision?: {
       coordinateMode: "center" | "top_left";
       rawTarget?: {
