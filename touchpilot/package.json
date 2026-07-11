@@ -35,6 +35,7 @@
     "test:candidate-fusion": "node --import tsx --test scripts/candidate-fusion.test.mjs",
     "test:candidate-intent": "node --import tsx --test scripts/candidate-intent-ranking.test.mjs",
     "test:guidance-planning": "node --import tsx --test scripts/guidance-task-planning.test.mjs",
+    "test:target-verification": "node --import tsx --test scripts/target-verification.test.mjs",
     "desktop:dev:guidance-smoke": "VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev:guidance-auto-smoke": "TOKI_AUTO_REAL_SMOKE=true VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev": "npm --workspace @toki/desktop run tauri dev",
