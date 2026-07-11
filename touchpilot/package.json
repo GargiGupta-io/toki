@@ -33,6 +33,7 @@
     "test:coordinates": "node --import tsx --test scripts/coordinate-transforms.test.mjs",
     "test:provider-image": "node --import tsx --test scripts/provider-image-preparation.test.mjs",
     "test:candidate-fusion": "node --import tsx --test scripts/candidate-fusion.test.mjs",
+    "test:candidate-intent": "node --import tsx --test scripts/candidate-intent-ranking.test.mjs",
     "desktop:dev:guidance-smoke": "VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev:guidance-auto-smoke": "TOKI_AUTO_REAL_SMOKE=true VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev": "npm --workspace @toki/desktop run tauri dev",
