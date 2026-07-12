@@ -21,6 +21,7 @@ type OllamaGenerateResponse = {
 
 type OllamaTargetResponse = {
   target?: {
+    candidateId?: string;
     x?: number;
     y?: number;
     centerX?: number;
@@ -245,7 +246,7 @@ function getTopCandidateSummary(request: GuidanceRequest) {
         imageBox == null
           ? "outside provided image"
           : `image ${imageBox.x},${imageBox.y},${imageBox.width}x${imageBox.height}`;
-      return `${index + 1}. "${candidate.label}" ${candidate.role}/${candidate.source ?? "unknown"} at ${imageBoxText} (${score})`;
+      return `${index + 1}. id ${JSON.stringify(candidate.id)}: "${candidate.label}" ${candidate.role}/${candidate.source ?? "unknown"} at ${imageBoxText} (${score})`;
     })
     .join("\n");
 }
@@ -264,7 +265,7 @@ function parseJsonObject(text: string): OllamaTargetResponse {
   return JSON.parse(candidate.slice(start, end + 1)) as OllamaTargetResponse;
 }
 
-function mapTargetToDisplay(
+export function resolveOllamaTargetToDisplay(
   target: NonNullable<OllamaTargetResponse["target"]>,
   request: GuidanceRequest,
 ): { target: TargetBox; debug: VisionDebugTrace } {
@@ -279,6 +280,65 @@ function mapTargetToDisplay(
   }
 
   const crop = payload.crop;
+  const candidateId = target.candidateId?.trim();
+  const candidate = candidateId
+    ? request.screen.candidates?.find((item) => item.id === candidateId)
+    : undefined;
+
+  if (candidateId && candidate == null) {
+    throw new Error(
+      `vision model selected candidate ${candidateId}, but that candidate is not present in the current screen evidence`,
+    );
+  }
+
+  if (candidate != null) {
+    const mappedBeforeTighten: TargetBox = {
+      candidateId: candidate.id,
+      label: candidate.label,
+      x: candidate.x,
+      y: candidate.y,
+      width: candidate.width,
+      height: candidate.height,
+    };
+    const mappedFinal = tightenTargetToClickCenter(mappedBeforeTighten, request);
+
+    return {
+      target: mappedFinal,
+      debug: {
+        coordinateMode: "candidate",
+        rawTarget: {
+          candidateId,
+          label: target.label,
+        },
+        payload: {
+          imageWidth: payload.imageWidth,
+          imageHeight: payload.imageHeight,
+          crop:
+            crop == null
+              ? undefined
+              : {
+                  x: crop.x,
+                  y: crop.y,
+                  width: crop.width,
+                  height: crop.height,
+                  appName: crop.appName,
+                  title: crop.title,
+                },
+        },
+        screenshot: {
+          imageWidth: request.screen.screenshot.imageWidth,
+          imageHeight: request.screen.screenshot.imageHeight,
+        },
+        display: {
+          width: request.screen.display.width,
+          height: request.screen.display.height,
+        },
+        mappedBeforeTighten,
+        mappedFinal,
+      },
+    };
+  }
+
   const mapping = mapProviderTargetToDisplay(
     target,
     {
@@ -311,6 +371,7 @@ function mapTargetToDisplay(
     debug: {
       coordinateMode: mapping.coordinateMode,
       rawTarget: {
+        candidateId: target.candidateId,
         x: target.x,
         y: target.y,
         centerX: target.centerX,
@@ -416,9 +477,14 @@ export function createOllamaLocalizationPrompt(request: GuidanceRequest) {
     "Available supporting OCR/accessibility candidates:",
     getTopCandidateSummary(request),
     "",
+    "If one candidate is the exact control, copy its candidate id into target.candidateId exactly. Toki will use that candidate's verified display geometry instead of guessed coordinates.",
+    "Do not invent a candidate id. If no candidate is an exact match, leave candidateId empty and use screenshot-image coordinates for a visual-only target.",
+    "Candidate-backed targets are preferred for labeled controls. Coordinate-only targets remain valid for icon-only controls that are missing from the candidate list.",
+    "",
     "Return exactly this JSON shape, replacing every placeholder value with the actual target:",
     JSON.stringify({
       target: {
+        candidateId: "",
         centerX: 0,
         centerY: 0,
         width: 0,
@@ -495,7 +561,12 @@ export async function requestOllamaVisionGuidance(
     }
 
     const parsed = parseJsonObject(body.response ?? "");
-    if (parsed.target != null && isPlaceholderTargetLabel(parsed.target.label)) {
+    const claimedCandidateId = parsed.target?.candidateId?.trim();
+    if (
+      parsed.target != null &&
+      !claimedCandidateId &&
+      isPlaceholderTargetLabel(parsed.target.label)
+    ) {
       return {
         mode: "unavailable",
         error: `Ollama vision returned a placeholder target label (${parsed.target.label}); rejected instead of drawing a fake target.`,
@@ -503,7 +574,10 @@ export async function requestOllamaVisionGuidance(
       };
     }
     const confidence = clamp(Number(parsed.confidence), 0, 1);
-    const mapped = parsed.target == null ? undefined : mapTargetToDisplay(parsed.target, request);
+    const mapped =
+      parsed.target == null
+        ? undefined
+        : resolveOllamaTargetToDisplay(parsed.target, request);
     const target = mapped?.target;
     const debug = mapped == null ? undefined : { vision: mapped.debug };
     if (target != null && isLikelySystemMenuTarget(target, request)) {
