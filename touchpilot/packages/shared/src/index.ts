@@ -329,8 +329,9 @@ export type GuidanceProviderResponse = {
   debug?: {
     targetVerification?: TargetVerificationTrace;
     vision?: {
-      coordinateMode: "center" | "top_left";
+      coordinateMode: "candidate" | "center" | "top_left";
       rawTarget?: {
+        candidateId?: string;
         x?: number;
         y?: number;
         centerX?: number;
