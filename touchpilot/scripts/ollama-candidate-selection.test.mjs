@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createOllamaLocalizationPrompt,
+  requestOllamaVisionGuidance,
   resolveOllamaTargetToDisplay,
 } from "../apps/desktop/src/ollamaVisionProvider.ts";
 import { verifyGuidanceTarget } from "../apps/desktop/src/targetVerification.ts";
@@ -161,4 +162,69 @@ test("visual-only targets retain coordinate mapping fallback", () => {
   assert.equal(result.debug.coordinateMode, "center");
   assert.equal(result.target.x + result.target.width / 2, 600);
   assert.equal(result.target.y + result.target.height / 2, 400);
+});
+
+test("Ollama requests reserve enough context for production-shaped prompts", async () => {
+  let capturedBody;
+
+  const result = await requestOllamaVisionGuidance(createRequest(), {
+    model: "test-model",
+    timeoutMs: 1_000,
+    fetchImpl: async (_url, init) => {
+      assert.ok(init?.body);
+      capturedBody = JSON.parse(String(init.body));
+
+      return new Response(
+        JSON.stringify({
+          response: JSON.stringify({
+            target: {
+              candidateId: "ax-create-playlist",
+              centerX: 0,
+              centerY: 0,
+              width: 0,
+              height: 0,
+              label: "Create playlist",
+            },
+            confidence: 0.9,
+            reason: "Create playlist control",
+            risk: "safe_navigation",
+          }),
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    },
+  });
+
+  assert.equal(capturedBody.options.num_ctx, 8_192);
+  assert.equal(capturedBody.options.num_predict, 512);
+  assert.equal(result.mode, "ollama-vision");
+});
+
+test("Ollama errors retain the provider response detail", async () => {
+  const result = await requestOllamaVisionGuidance(createRequest(), {
+    model: "test-model",
+    timeoutMs: 1_000,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          error: JSON.stringify({
+            error: {
+              type: "exceed_context_size_error",
+              message: "request exceeds the available context size",
+            },
+          }),
+        }),
+        { status: 400, statusText: "Bad Request" },
+      ),
+  });
+
+  assert.equal(result.mode, "unavailable");
+  assert.match(
+    result.error,
+    /exceed_context_size_error|exceeds the available context size/,
+  );
+  assert.doesNotMatch(result.error, /Install\/start Ollama/);
 });
