@@ -42,12 +42,25 @@ export type OllamaVisionOptions = {
   model?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  contextTokens?: number;
 };
 
 const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate";
 const DEFAULT_OLLAMA_MODEL = "qwen2.5vl:3b";
 const DEFAULT_TARGET_SIZE = 44;
 const DEFAULT_TIMEOUT_MS = 20_000;
+const DEFAULT_CONTEXT_TOKENS = 8192;
+const MAX_ERROR_DETAIL_LENGTH = 600;
+
+async function readOllamaErrorDetail(response: Response): Promise<string> {
+  const detail = (await response.text()).trim();
+
+  if (detail.length <= MAX_ERROR_DETAIL_LENGTH) {
+    return detail;
+  }
+
+  return `${detail.slice(0, MAX_ERROR_DETAIL_LENGTH)}...`;
+}
 const CLICK_CENTER_TARGET_SIZE = 44;
 
 const PLACEHOLDER_LABELS = new Set([
@@ -515,8 +528,12 @@ export async function requestOllamaVisionGuidance(
   const endpoint = options.endpoint?.trim() || DEFAULT_OLLAMA_ENDPOINT;
   const model = options.model?.trim() || DEFAULT_OLLAMA_MODEL;
   const fetcher = options.fetchImpl ?? fetch;
+  const contextTokens = Math.max(
+    4096,
+    Math.floor(options.contextTokens ?? DEFAULT_CONTEXT_TOKENS),
+  );
   const controller = new AbortController();
-  const timeout = window.setTimeout(
+  const timeout = globalThis.setTimeout(
     () => controller.abort(),
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   );
@@ -536,16 +553,20 @@ export async function requestOllamaVisionGuidance(
         format: "json",
         options: {
           temperature: 0,
+          num_ctx: contextTokens,
           num_predict: 512,
         },
       }),
     });
-    window.clearTimeout(timeout);
 
     if (!response.ok) {
+      const detail = await readOllamaErrorDetail(response);
+
       return {
         mode: "unavailable",
-        error: `Ollama returned ${response.status} ${response.statusText}. Install/start Ollama and pull ${model}.`,
+        error: detail
+          ? `Ollama returned ${response.status} ${response.statusText}: ${detail}`
+          : `Ollama returned ${response.status} ${response.statusText}.`,
         providerName: `ollama-vision:${model}`,
       };
     }
@@ -640,7 +661,6 @@ export async function requestOllamaVisionGuidance(
       debug,
     };
   } catch (error) {
-    window.clearTimeout(timeout);
     return {
       mode: "unavailable",
       error:
@@ -653,5 +673,7 @@ export async function requestOllamaVisionGuidance(
             : String(error),
       providerName: `ollama-vision:${model}`,
     };
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
 }
