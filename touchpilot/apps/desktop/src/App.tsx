@@ -9,7 +9,7 @@ import {
   createMockWorkflowPlan,
   createRiskyMockGuidance,
   evaluateSafetyPolicy,
-  requestRealGuidance,
+  requiresTargetRevealAcknowledgment,
   validateGuidanceResult,
 } from "@toki/ai";
 import type {
@@ -42,6 +42,7 @@ import type {
   ScreenshotMetadata,
   ScreenCandidate,
   SafetyPolicyDecision,
+  RawProviderTarget,
   TargetBox,
   VoiceActivationSource,
   VoiceCommandRequest,
@@ -53,6 +54,10 @@ import type {
 import { probeCameraDevices } from "./cameraDevices";
 import { createScreenshotCropFromDisplayRect } from "./coordinateTransforms";
 import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
+import {
+  canRevealGuidanceTarget,
+  getAcceptedGuidanceResult,
+} from "./guidanceAcceptance";
 import {
   beginGuidanceTraceStage,
   createGuidanceTrace,
@@ -86,8 +91,9 @@ import type {
   PointerShadowPosition,
   ViewportMetrics,
 } from "./overlayGeometry";
-import { requestOllamaVisionGuidance } from "./ollamaVisionProvider";
+import { createGuidanceProviderAdapter } from "./guidanceProvider";
 import { verifyGuidanceTarget } from "./targetVerification";
+import { requireScreenCaptureAccess } from "./captureAccess";
 import {
   createProviderImagePreparationPlan,
   type ProviderImagePreparationPlan,
@@ -97,6 +103,10 @@ import { collectScreenCandidatesForGuidance } from "./screenCandidates";
 import { getTokiCreatureState } from "./tokiCreatureState";
 import { probeVoiceCapabilities } from "./voiceCapabilities";
 import type { VoiceCapabilityProbe } from "./voiceCapabilities";
+import {
+  createIdleVoiceHoldState,
+  transitionVoiceHold,
+} from "./voiceHoldController";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
@@ -180,6 +190,7 @@ type OverlayCommand =
     }
   | { type: "run-real-guidance-smoke" }
   | { type: "toggle-pause" }
+  | { type: "reveal-risky-target" }
   | { type: "request-state" }
   | { type: "set-state"; state: OverlayState }
   | { type: "set-guidance-fixture"; fixture: GuidanceFixture }
@@ -359,6 +370,27 @@ function formatVisionRawTarget(
   return "Unknown";
 }
 
+function formatRawProviderTarget(
+  target: RawProviderTarget | null | undefined,
+): string {
+  if (target == null) {
+    return "None";
+  }
+
+  const label = target.label?.trim() || "blank label";
+  const candidate = target.candidateId ? ` candidate=${target.candidateId}` : "";
+
+  if (target.centerX != null && target.centerY != null) {
+    return `${label}: ${Math.round(target.centerX)}, ${Math.round(target.centerY)} center; ${target.width ?? "?"} x ${target.height ?? "?"}${candidate}`;
+  }
+
+  if (target.x != null && target.y != null) {
+    return `${label}: ${Math.round(target.x)}, ${Math.round(target.y)} top-left; ${target.width ?? "?"} x ${target.height ?? "?"}${candidate}`;
+  }
+
+  return `${label}:${candidate || " no rectangle"}`;
+}
+
 function isCapturePermissionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalizedMessage = message.toLowerCase();
@@ -474,7 +506,7 @@ function getTokiTopStatusModel({
   hasAcceptedGuidance,
   targetLabel,
   instruction,
-  confirmationMessage,
+  safetyDecision,
   gestureClassification,
 }: {
   voiceRuntime: VoiceRuntimeState;
@@ -484,7 +516,7 @@ function getTokiTopStatusModel({
   hasAcceptedGuidance: boolean;
   targetLabel: string;
   instruction: string;
-  confirmationMessage: string | null;
+  safetyDecision: SafetyPolicyDecision | null;
   gestureClassification: GestureClassification;
 }): TokiTopStatusModel | null {
   if (overlayState === "paused") {
@@ -495,11 +527,13 @@ function getTokiTopStatusModel({
     };
   }
 
-  if (overlayState === "confirmation_required" && hasAcceptedGuidance) {
+  if (overlayState === "confirmation_required") {
     return {
       mode: "confirming",
-      label: "Confirmation needed",
-      message: confirmationMessage ?? instruction,
+      label: "Sensitive target hidden",
+      message:
+        safetyDecision?.message ??
+        "Choose Show target to reveal the guidance marker. Toki will not click it.",
     };
   }
 
@@ -563,6 +597,22 @@ function getTokiTopStatusModel({
   }
 
   if (hasAcceptedGuidance) {
+    if (safetyDecision?.action === "confirm") {
+      return {
+        mode: "warning",
+        label: "Sensitive target shown",
+        message: "Toki is only pointing. Review the action before you click.",
+      };
+    }
+
+    if (safetyDecision?.reason === "sensitive_guidance_warning") {
+      return {
+        mode: "warning",
+        label: targetLabel,
+        message: safetyDecision.message,
+      };
+    }
+
     return {
       mode: "guiding",
       label: targetLabel,
@@ -579,24 +629,6 @@ function getTokiTopStatusModel({
   }
 
   return null;
-}
-
-function PointerRing({ target }: { target: TargetBox }) {
-  return (
-    <div
-      className="pointer-target"
-      style={{
-        left: target.x,
-        top: target.y,
-        width: target.width,
-        height: target.height,
-      }}
-      aria-label={`Target marker for ${target.label}`}
-    >
-      <span className="pointer-pulse" aria-hidden="true" />
-      <span className="pointer-crosshair" aria-hidden="true" />
-    </div>
-  );
 }
 
 function getViewportMetrics(): ViewportMetrics {
@@ -1180,6 +1212,7 @@ function createLocalCandidateGuidance(
     0.55,
     Math.min(0.92, getCandidateScore(candidate) / 70),
   );
+  const risk = inferCandidateRisk(candidate);
   const result: GuidanceResult = {
     mode: "guide",
     summary: `Local screen candidate selected for: ${getGuidanceLocalizationObjective(request)}`,
@@ -1194,8 +1227,8 @@ function createLocalCandidateGuidance(
         height: candidate.height,
       },
       confidence,
-      risk: inferCandidateRisk(candidate),
-      requiresConfirmation: false,
+      risk,
+      requiresConfirmation: requiresTargetRevealAcknowledgment(risk),
     },
   };
   const validation = validateGuidanceResult(result);
@@ -1463,6 +1496,7 @@ function OverlayWindowApp() {
   const [safetyDecision, setSafetyDecision] = useState<SafetyPolicyDecision | null>(
     null,
   );
+  const [riskTargetRevealed, setRiskTargetRevealed] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
@@ -1483,6 +1517,10 @@ function OverlayWindowApp() {
   const voiceRuntimeRef = useRef<VoiceRuntimeState>(voiceRuntime);
   const voiceCaptureTimeoutRef = useRef<number | null>(null);
   const voiceSubmitInFlightRef = useRef(false);
+  const voiceCapturePhaseRef = useRef<
+    "idle" | "starting" | "capturing" | "submitting"
+  >("idle");
+  const voiceHoldStateRef = useRef(createIdleVoiceHoldState());
   const routedVoiceCommandRef = useRef<string | null>(null);
   const guidanceTraceRef = useRef<GuidanceTrace | null>(null);
   const activeGuidanceTraceStageRef = useRef<GuidanceTraceStage | null>(null);
@@ -1506,7 +1544,11 @@ function OverlayWindowApp() {
   const topUtilityLeaveTimerRef = useRef<number | null>(null);
 
   const activeStep = guidanceResult?.step ?? null;
-  const acceptedStep = activeStep?.target != null ? activeStep : null;
+  const acceptedStep =
+    activeStep?.target != null &&
+    canRevealGuidanceTarget(safetyDecision, riskTargetRevealed)
+      ? activeStep
+      : null;
   const acceptedTarget = acceptedStep?.target ?? null;
   const currentWorkflowStep =
     workflowRuntime.plan?.steps[workflowRuntime.currentStepIndex] ?? null;
@@ -1543,7 +1585,7 @@ function OverlayWindowApp() {
   const puckMotion = getPuckMotionModel({
     overlayState,
     hasAcceptedGuidance,
-    hasActiveTarget: acceptedTarget != null,
+    hasActiveTarget: acceptedTarget != null || workflowTarget != null,
     isRefreshingCapture,
     hasCaptureError: captureError != null,
     guidanceIssueCount: guidanceIssues.length,
@@ -1571,7 +1613,7 @@ function OverlayWindowApp() {
     targetLabel: activeTarget.label,
     instruction:
       activeStep?.instruction ?? currentWorkflowStep?.instruction ?? activeTarget.instruction,
-    confirmationMessage: safetyDecision?.message ?? null,
+    safetyDecision,
     gestureClassification: gestureRuntime.currentGesture,
   });
 
@@ -1582,13 +1624,16 @@ function OverlayWindowApp() {
     }
   }
 
-  function requestTopUtilityMode(mode: TopUtilityMode) {
-    if (topUtilityModeRef.current === mode) {
+  function requestTopUtilityMode(
+    mode: TopUtilityMode,
+    options: { focus?: boolean } = {},
+  ) {
+    if (topUtilityModeRef.current === mode && !options.focus) {
       return;
     }
 
     topUtilityModeRef.current = mode;
-    void setTopUtilityWindowMode(mode).catch(() => undefined);
+    void setTopUtilityWindowMode(mode, options).catch(() => undefined);
   }
 
   const calibration = useMemo(
@@ -1745,13 +1790,23 @@ function OverlayWindowApp() {
       cachedPreflight != null && Date.now() - cachedPreflight.checkedAt < preflightCacheMs;
 
     if (!hasFreshPreflight) {
-      const hasScreenCaptureAccess = await invoke<boolean>(
-        "screen_capture_access_status",
-      ).catch(() => true);
+      const hasScreenCaptureAccess = await invoke<boolean>("screen_capture_access_status");
       captureAccessPreflightRef.current = {
         allowed: hasScreenCaptureAccess,
         checkedAt: Date.now(),
       };
+    }
+
+    try {
+      requireScreenCaptureAccess(captureAccessPreflightRef.current?.allowed === true);
+    } catch (error) {
+      const message = formatCaptureError(error);
+      capturePermissionBlockRef.current = {
+        message,
+        blockedAt: Date.now(),
+      };
+      setCaptureError(message);
+      throw error;
     }
   }
 
@@ -1865,7 +1920,7 @@ function OverlayWindowApp() {
     } = {},
   ) {
     const isLiveGuidanceProvider =
-      providerMode === "real" || providerMode === "ollama-vision";
+      providerMode === "real" || providerMode === "codex-subscription";
 
     if (guidanceRefreshInFlightRef.current) {
       setGuidanceProviderError(
@@ -1884,6 +1939,7 @@ function OverlayWindowApp() {
     setGuidanceProviderDebug(null);
     setGuidanceIssues([]);
     setSafetyDecision(null);
+    setRiskTargetRevealed(false);
     setGuidanceRequest(null);
     setGuidanceResult(null);
     setCaptureMetadata(null);
@@ -2040,24 +2096,22 @@ function OverlayWindowApp() {
         let providerResponse: GuidanceProviderResponse;
 
         beginTraceStage("provider", "Requesting a guidance decision.");
-        if (providerMode === "ollama-vision") {
-          providerResponse = await requestOllamaVisionGuidance(nextGuidanceRequest, {
-            endpoint: import.meta.env.VITE_TOKI_OLLAMA_ENDPOINT,
-            model: import.meta.env.VITE_TOKI_OLLAMA_MODEL,
-          });
-        } else {
-          providerResponse = createLocalCandidateGuidance(nextGuidanceRequest);
-        }
-
-        if (
-          providerMode === "real" &&
-          providerResponse.mode === "unavailable" &&
-          endpoint
-        ) {
-          providerResponse = await requestRealGuidance(nextGuidanceRequest, {
-            endpoint,
-          });
-        }
+        const configuredCodexTimeoutMs = Number(
+          import.meta.env.VITE_TOKI_CODEX_TIMEOUT_MS,
+        );
+        const provider = createGuidanceProviderAdapter(providerMode, {
+          endpoint,
+          localCandidateProvider: createLocalCandidateGuidance,
+          codex: {
+            model: import.meta.env.VITE_TOKI_CODEX_MODEL,
+            timeoutMs:
+              Number.isFinite(configuredCodexTimeoutMs) &&
+              configuredCodexTimeoutMs > 0
+                ? configuredCodexTimeoutMs
+                : undefined,
+          },
+        });
+        providerResponse = await provider.request(nextGuidanceRequest);
 
         providerResponse = verifyGuidanceTarget(
           providerResponse,
@@ -2115,9 +2169,11 @@ function OverlayWindowApp() {
           minConfidence: 0.7,
         });
         const providerValidationPassed = providerResponse.validation?.valid ?? false;
-        const guidanceAllowed =
-          nextSafetyDecision.action === "allow" ||
-          nextSafetyDecision.action === "confirm";
+        const acceptedGuidanceResult = getAcceptedGuidanceResult(
+          providerResponse,
+          nextSafetyDecision,
+        );
+        const guidanceAllowed = acceptedGuidanceResult != null;
 
         finishTraceStage("validation", {
           status: providerValidationPassed && guidanceAllowed ? "completed" : "failed",
@@ -2143,7 +2199,7 @@ function OverlayWindowApp() {
           setGuidanceSession(
             recordGuidanceSessionResult({
               session: nextSession,
-              result: providerResponse.result,
+              result: acceptedGuidanceResult,
               screenshot: screenshotMetadata,
               providerMode: providerResponse.mode,
               allowed: guidanceAllowed,
@@ -2160,18 +2216,23 @@ function OverlayWindowApp() {
           } else {
             beginTraceStage("render", "Committing the accepted target to overlay state.");
           }
-          setGuidanceResult(providerResponse.result ?? null);
+          setGuidanceResult(acceptedGuidanceResult);
+          setRiskTargetRevealed(nextSafetyDecision.action !== "confirm");
           setOverlayState(
             nextSafetyDecision.action === "confirm"
               ? "confirmation_required"
               : "guiding",
           );
+          if (nextSafetyDecision.action === "confirm") {
+            requestTopUtilityMode("expanded", { focus: true });
+          }
         } else {
           finishTraceStage("render", {
             status: "skipped",
             summary: "Guidance was refused before target rendering.",
           });
           setGuidanceResult(null);
+          setRiskTargetRevealed(false);
           setGuidanceProviderError(nextSafetyDecision.message);
           setOverlayState(nextSafetyDecision.action === "clarify" ? "idle" : "error");
         }
@@ -2204,6 +2265,7 @@ function OverlayWindowApp() {
         setGuidanceIssues([]);
         setSafetyDecision(null);
         setGuidanceResult(null);
+        setRiskTargetRevealed(false);
         setOverlayState("idle");
         return;
       }
@@ -2300,17 +2362,22 @@ function OverlayWindowApp() {
           beginTraceStage("render", "Committing the mock target to overlay state.");
         }
         setGuidanceResult(nextGuidance);
+        setRiskTargetRevealed(nextSafetyDecision.action !== "confirm");
         setOverlayState(
           nextSafetyDecision.action === "confirm"
             ? "confirmation_required"
             : "guiding",
         );
+        if (nextSafetyDecision.action === "confirm") {
+          requestTopUtilityMode("expanded", { focus: true });
+        }
       } else {
         finishTraceStage("render", {
           status: "skipped",
           summary: "Mock guidance was refused before target rendering.",
         });
         setGuidanceResult(null);
+        setRiskTargetRevealed(false);
         setOverlayState(nextSafetyDecision.action === "clarify" ? "idle" : "error");
       }
     } catch (error) {
@@ -2359,6 +2426,7 @@ function OverlayWindowApp() {
       setGuidanceIssues([]);
       setSafetyDecision(null);
       setGuidanceResult(null);
+      setRiskTargetRevealed(false);
       setOverlayState("error");
     } finally {
       setIsRefreshingCapture(false);
@@ -2502,7 +2570,7 @@ function OverlayWindowApp() {
       setIsRefreshingCapture(false);
     }
 
-    await refreshCaptureMetadata(guidanceSession.originalGoal, "ollama-vision", {
+    await refreshCaptureMetadata(guidanceSession.originalGoal, "codex-subscription", {
       source: "session",
     });
   }
@@ -2550,12 +2618,19 @@ function OverlayWindowApp() {
   function cancelVoiceRuntime() {
     clearVoiceCaptureTimeout();
     voiceSubmitInFlightRef.current = false;
+    voiceCapturePhaseRef.current = "idle";
+    voiceHoldStateRef.current = transitionVoiceHold(
+      voiceHoldStateRef.current,
+      "cancel",
+    ).state;
     routedVoiceCommandRef.current = null;
     void resetNativeVoiceCapture().catch(() => undefined);
-    setVoiceRuntime({
+    const nextVoiceRuntime: VoiceRuntimeState = {
       ...createDefaultVoiceRuntimeState(),
       status: "cancelled",
-    });
+    };
+    voiceRuntimeRef.current = nextVoiceRuntime;
+    setVoiceRuntime(nextVoiceRuntime);
   }
 
   function clearVoiceCaptureTimeout() {
@@ -2580,6 +2655,121 @@ function OverlayWindowApp() {
         type: "submit-voice-listening",
       } satisfies OverlayCommand).catch(() => undefined);
     }, 10_000);
+  }
+
+  async function submitActiveVoiceCapture() {
+    if (voiceCapturePhaseRef.current === "starting") {
+      return;
+    }
+
+    if (
+      voiceCapturePhaseRef.current !== "capturing" ||
+      voiceSubmitInFlightRef.current
+    ) {
+      return;
+    }
+
+    const activeVoiceRuntime = voiceRuntimeRef.current;
+    clearVoiceCaptureTimeout();
+    voiceSubmitInFlightRef.current = true;
+    voiceCapturePhaseRef.current = "submitting";
+
+    const transcribingVoiceRuntime: VoiceRuntimeState = {
+      ...activeVoiceRuntime,
+      status: "transcribing",
+    };
+    voiceRuntimeRef.current = transcribingVoiceRuntime;
+    setVoiceRuntime(transcribingVoiceRuntime);
+
+    try {
+      const captureStatus = await getNativeVoiceCaptureStatus().catch(() => null);
+
+      if (captureStatus?.status !== "capturing") {
+        const idleVoiceRuntime: VoiceRuntimeState = {
+          ...voiceRuntimeRef.current,
+          enabled: false,
+          permission:
+            voiceRuntimeRef.current.permission === "unknown"
+              ? "granted"
+              : voiceRuntimeRef.current.permission,
+          status: "idle",
+          error: undefined,
+        };
+        voiceRuntimeRef.current = idleVoiceRuntime;
+        setVoiceRuntime(idleVoiceRuntime);
+        setOverlayState((currentState) =>
+          currentState === "listening" ? "idle" : currentState,
+        );
+        return;
+      }
+
+      const capture = await stopNativeVoiceCapture();
+      const transcription = await transcribeNativeVoiceCapture(capture);
+
+      if (transcription.status === "ready") {
+        const traceId = createGuidanceTraceId();
+        const tracedTranscript = {
+          ...transcription.transcript,
+          traceId,
+        };
+        const pendingCommand: VoiceCommandRequest = {
+          text: tracedTranscript.text,
+          source: activeVoiceRuntime.activationSource ?? "settings",
+          createdAt: new Date().toISOString(),
+          traceId,
+        };
+        const readyVoiceRuntime: VoiceRuntimeState = {
+          ...voiceRuntimeRef.current,
+          enabled: false,
+          permission: "granted",
+          status: "command_ready",
+          transcript: tracedTranscript,
+          pendingCommand,
+          error: undefined,
+        };
+        voiceRuntimeRef.current = readyVoiceRuntime;
+        setVoiceRuntime(readyVoiceRuntime);
+      } else {
+        const isRetryable = isRecoverableVoiceTranscriptionError(
+          transcription.error,
+        );
+        const failedVoiceRuntime: VoiceRuntimeState = {
+          ...voiceRuntimeRef.current,
+          enabled: false,
+          permission: isRetryable
+            ? "granted"
+            : voiceRuntimeRef.current.permission,
+          status: isRetryable ? "no_speech" : "error",
+          error: isRetryable ? getVoiceRetryMessage() : transcription.error,
+        };
+        voiceRuntimeRef.current = failedVoiceRuntime;
+        setVoiceRuntime(failedVoiceRuntime);
+      }
+    } catch (error) {
+      const message = formatErrorMessage(error);
+      const isRetryable = isRecoverableVoiceTranscriptionError(message);
+      const failedVoiceRuntime: VoiceRuntimeState = {
+        ...voiceRuntimeRef.current,
+        enabled: false,
+        permission: isRetryable ? "granted" : "error",
+        status: isRetryable ? "no_speech" : "error",
+        error: isRetryable ? getVoiceRetryMessage() : message,
+      };
+      voiceRuntimeRef.current = failedVoiceRuntime;
+      setVoiceRuntime(failedVoiceRuntime);
+    } finally {
+      clearVoiceCaptureTimeout();
+      await resetNativeVoiceCapture().catch(() => undefined);
+      voiceSubmitInFlightRef.current = false;
+      voiceCapturePhaseRef.current = "idle";
+      voiceHoldStateRef.current = transitionVoiceHold(
+        voiceHoldStateRef.current,
+        "submission_finished",
+      ).state;
+      setOverlayState((currentState) =>
+        currentState === "listening" ? "idle" : currentState,
+      );
+    }
   }
 
   useEffect(() => {
@@ -2868,7 +3058,7 @@ function OverlayWindowApp() {
 
   useEffect(() => {
     window.__tokiRunRealGuidanceSmoke = (goal = "Show me what to click next.") => {
-      void refreshCaptureMetadata(goal, "ollama-vision", { source: "debug" });
+      void refreshCaptureMetadata(goal, "codex-subscription", { source: "debug" });
     };
 
     return () => {
@@ -2900,6 +3090,20 @@ function OverlayWindowApp() {
         setOverlayState((currentState) =>
           currentState === "paused" ? "guiding" : "paused",
         );
+        return;
+      }
+
+      if (event.payload.type === "reveal-risky-target") {
+        if (
+          safetyDecision?.action !== "confirm" ||
+          guidanceResult?.step?.target == null
+        ) {
+          return;
+        }
+
+        setRiskTargetRevealed(true);
+        setOverlayState("guiding");
+        requestTopUtilityMode("peek");
         return;
       }
 
@@ -3122,39 +3326,102 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "start-voice-listening") {
+        if (voiceCapturePhaseRef.current !== "idle") {
+          return;
+        }
+
         clearVoiceCaptureTimeout();
         voiceSubmitInFlightRef.current = false;
+        voiceCapturePhaseRef.current = "starting";
+        if (event.payload.source === "hotkey") {
+          const holdTransition = transitionVoiceHold(
+            voiceHoldStateRef.current,
+            "press",
+          );
+          if (holdTransition.effect !== "start_capture") {
+            voiceCapturePhaseRef.current = "idle";
+            return;
+          }
+          voiceHoldStateRef.current = holdTransition.state;
+        }
         routedVoiceCommandRef.current = null;
-        setVoiceRuntime({
+        const requestingVoiceRuntime: VoiceRuntimeState = {
           enabled: true,
           permission: "unknown",
           status: "requesting_microphone",
           activationSource: event.payload.source,
-        });
+        };
+        voiceRuntimeRef.current = requestingVoiceRuntime;
+        setVoiceRuntime(requestingVoiceRuntime);
         setOverlayState("listening");
 
         try {
           await resetNativeVoiceCapture().catch(() => undefined);
+
+          if (
+            event.payload.source === "hotkey" &&
+            (!voiceHoldStateRef.current.held ||
+              voiceHoldStateRef.current.releasePending)
+          ) {
+            voiceCapturePhaseRef.current = "idle";
+            voiceHoldStateRef.current = transitionVoiceHold(
+              voiceHoldStateRef.current,
+              "capture_aborted",
+            ).state;
+            const idleVoiceRuntime: VoiceRuntimeState = {
+              ...requestingVoiceRuntime,
+              enabled: false,
+              permission: "granted",
+              status: "idle",
+            };
+            voiceRuntimeRef.current = idleVoiceRuntime;
+            setVoiceRuntime(idleVoiceRuntime);
+            setOverlayState("idle");
+            return;
+          }
+
           await startNativeVoiceCapture();
-          setVoiceRuntime((currentState) => ({
-            ...currentState,
+          voiceCapturePhaseRef.current = "capturing";
+          const listeningVoiceRuntime: VoiceRuntimeState = {
+            ...voiceRuntimeRef.current,
             permission: "granted",
             status: "listening",
             transcript: undefined,
             pendingCommand: undefined,
             error: undefined,
-          }));
-          scheduleVoiceCaptureTimeout();
+          };
+          voiceRuntimeRef.current = listeningVoiceRuntime;
+          setVoiceRuntime(listeningVoiceRuntime);
+
+          if (event.payload.source === "hotkey") {
+            const holdTransition = transitionVoiceHold(
+              voiceHoldStateRef.current,
+              "capture_started",
+            );
+            voiceHoldStateRef.current = holdTransition.state;
+            if (holdTransition.effect === "submit_capture") {
+              await submitActiveVoiceCapture();
+            }
+          } else {
+            scheduleVoiceCaptureTimeout();
+          }
         } catch (error) {
           clearVoiceCaptureTimeout();
           await resetNativeVoiceCapture().catch(() => undefined);
-          setVoiceRuntime((currentState) => ({
-            ...currentState,
+          voiceCapturePhaseRef.current = "idle";
+          voiceHoldStateRef.current = transitionVoiceHold(
+            voiceHoldStateRef.current,
+            "capture_failed",
+          ).state;
+          const failedVoiceRuntime: VoiceRuntimeState = {
+            ...voiceRuntimeRef.current,
             enabled: false,
             permission: "error",
             status: "error",
             error: formatErrorMessage(error),
-          }));
+          };
+          voiceRuntimeRef.current = failedVoiceRuntime;
+          setVoiceRuntime(failedVoiceRuntime);
           setOverlayState((currentState) =>
             currentState === "listening" ? "idle" : currentState,
           );
@@ -3172,90 +3439,17 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "submit-voice-listening") {
-        const activeVoiceRuntime = voiceRuntimeRef.current;
-        if (!activeVoiceRuntime.enabled || voiceSubmitInFlightRef.current) {
-          return;
-        }
-
-        clearVoiceCaptureTimeout();
-        voiceSubmitInFlightRef.current = true;
-
-        setVoiceRuntime((currentState) => ({
-          ...currentState,
-          status: "transcribing",
-        }));
-
-        try {
-          const captureStatus = await getNativeVoiceCaptureStatus().catch(() => null);
-
-          if (captureStatus?.status !== "capturing") {
-            setVoiceRuntime((currentState) => ({
-              ...currentState,
-              enabled: false,
-              permission:
-                currentState.permission === "unknown" ? "granted" : currentState.permission,
-              status: "idle",
-              error: undefined,
-            }));
-            setOverlayState((currentState) =>
-              currentState === "listening" ? "idle" : currentState,
-            );
+        if (voiceHoldStateRef.current.phase !== "idle") {
+          const holdTransition = transitionVoiceHold(
+            voiceHoldStateRef.current,
+            "release",
+          );
+          voiceHoldStateRef.current = holdTransition.state;
+          if (holdTransition.effect !== "submit_capture") {
             return;
           }
-
-          const capture = await stopNativeVoiceCapture();
-          const transcription = await transcribeNativeVoiceCapture(capture);
-
-          if (transcription.status === "ready") {
-            const traceId = createGuidanceTraceId();
-            const tracedTranscript = {
-              ...transcription.transcript,
-              traceId,
-            };
-            const pendingCommand: VoiceCommandRequest = {
-              text: tracedTranscript.text,
-              source: activeVoiceRuntime.activationSource ?? "settings",
-              createdAt: new Date().toISOString(),
-              traceId,
-            };
-
-            setVoiceRuntime((currentState) => ({
-              ...currentState,
-              enabled: false,
-              permission: "granted",
-              status: "command_ready",
-              transcript: tracedTranscript,
-              pendingCommand,
-              error: undefined,
-            }));
-          } else {
-            const isRetryable = isRecoverableVoiceTranscriptionError(transcription.error);
-            setVoiceRuntime((currentState) => ({
-              ...currentState,
-              enabled: false,
-              permission: isRetryable ? "granted" : currentState.permission,
-              status: isRetryable ? "no_speech" : "error",
-              error: isRetryable ? getVoiceRetryMessage() : transcription.error,
-            }));
-          }
-        } catch (error) {
-          const message = formatErrorMessage(error);
-          const isRetryable = isRecoverableVoiceTranscriptionError(message);
-          setVoiceRuntime((currentState) => ({
-            ...currentState,
-            enabled: false,
-            permission: isRetryable ? "granted" : "error",
-            status: isRetryable ? "no_speech" : "error",
-            error: isRetryable ? getVoiceRetryMessage() : message,
-          }));
-        } finally {
-          clearVoiceCaptureTimeout();
-          await resetNativeVoiceCapture().catch(() => undefined);
-          voiceSubmitInFlightRef.current = false;
-          setOverlayState((currentState) =>
-            currentState === "listening" ? "idle" : currentState,
-          );
         }
+        await submitActiveVoiceCapture();
 
         return;
       }
@@ -3270,7 +3464,14 @@ function OverlayWindowApp() {
     return () => {
       unlistenCommand?.();
     };
-  }, [overlaySnapshot, debugSnapshot, viewport, guidanceResult, workflowRuntime]);
+  }, [
+    overlaySnapshot,
+    debugSnapshot,
+    viewport,
+    guidanceResult,
+    workflowRuntime,
+    safetyDecision,
+  ]);
 
   useEffect(() => {
     const command = voiceRuntime.pendingCommand;
@@ -3290,7 +3491,7 @@ function OverlayWindowApp() {
       ...currentState,
       status: "transcribing",
     }));
-    void refreshCaptureMetadata(command.text, "ollama-vision", {
+    void refreshCaptureMetadata(command.text, "codex-subscription", {
       traceId: command.traceId,
       source: "voice",
       transcript: command.text,
@@ -3323,9 +3524,6 @@ function OverlayWindowApp() {
       aria-label="Toki overlay"
     >
       <TokiTaskProgress runtime={workflowRuntime} />
-      {overlayState !== "idle" && hasAcceptedGuidance && (
-        <PointerRing target={activeTarget} />
-      )}
       <TokiCreatureLayer
         state={tokiCreatureState}
         target={hasAcceptedGuidance ? activeTarget : null}
@@ -3334,6 +3532,7 @@ function OverlayWindowApp() {
           creatureState={tokiCreatureState}
           motion={puckMotion}
           pointerShadow={pointerShadow}
+          target={hasAcceptedGuidance ? activeTarget : null}
         />
       </TokiCreatureLayer>
     </main>
@@ -3520,6 +3719,11 @@ function SettingsWindowApp() {
               type: "toggle-pause",
             } satisfies OverlayCommand).catch(() => undefined);
           }}
+          onRevealTarget={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "reveal-risky-target",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
           onVoicePressStart={() => {
             emitTo("overlay", "toki://overlay-command", {
               type: "start-voice-listening",
@@ -3608,6 +3812,7 @@ function DebugWindowApp() {
   const guidanceStep = snapshot.guidanceResult?.step ?? null;
   const target = guidanceStep?.target ?? null;
   const visionTrace = snapshot.guidanceProviderDebug?.vision ?? null;
+  const providerOutput = snapshot.guidanceProviderDebug?.providerOutput ?? null;
   const targetVerificationTrace =
     snapshot.guidanceProviderDebug?.targetVerification ?? null;
   const guidanceTraceEvents = snapshot.guidanceTrace?.events ?? [];
@@ -3686,12 +3891,12 @@ function DebugWindowApp() {
     sendOverlayCommand({ type: "run-real-guidance-smoke" });
   }
 
-  function testOllamaVisionGuidance() {
+  function testCodexVisionGuidance() {
     setGuidanceTesterVerdict("untested");
     sendOverlayCommand({
       type: "refresh-capture",
       goal: "Show me what to click next.",
-      providerMode: "ollama-vision",
+      providerMode: "codex-subscription",
     });
   }
 
@@ -4946,10 +5151,10 @@ function DebugWindowApp() {
               </button>
               <button
                 type="button"
-                onClick={testOllamaVisionGuidance}
+                onClick={testCodexVisionGuidance}
                 disabled={snapshot.isRefreshingCapture}
               >
-                Ollama vision
+                Codex vision
               </button>
               <button
                 type="button"
@@ -5096,16 +5301,44 @@ function DebugWindowApp() {
                 <dd>{formatVisionRawTarget(visionTrace)}</dd>
               </div>
               <div>
+                <dt>Raw provider answer</dt>
+                <dd>{providerOutput?.rawAnswer ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Raw provider target</dt>
+                <dd>{formatRawProviderTarget(providerOutput?.target)}</dd>
+              </div>
+              <div>
+                <dt>Raw provider reason</dt>
+                <dd>{providerOutput?.reason ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Raw provider confidence</dt>
+                <dd>
+                  {providerOutput?.confidence == null
+                    ? "None"
+                    : `${Math.round(providerOutput.confidence * 100)}%`}
+                </dd>
+              </div>
+              <div>
                 <dt>Mapped raw</dt>
                 <dd>{formatTargetBox(visionTrace?.mappedBeforeTighten)}</dd>
               </div>
               <div>
-                <dt>Mapped final</dt>
-                <dd>{formatTargetBox(visionTrace?.mappedFinal)}</dd>
+                <dt>Original rectangle</dt>
+                <dd>{formatTargetBox(targetVerificationTrace?.inputTarget)}</dd>
               </div>
               <div>
                 <dt>Target verification</dt>
                 <dd>{targetVerificationTrace?.status ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Interpreted action</dt>
+                <dd>{targetVerificationTrace?.commandIntent.action ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Interpreted object</dt>
+                <dd>{targetVerificationTrace?.commandIntent.object ?? "None"}</dd>
               </div>
               <div>
                 <dt>Evidence source</dt>
@@ -5120,6 +5353,22 @@ function DebugWindowApp() {
                 <dd>{targetVerificationTrace?.candidateId ?? "None"}</dd>
               </div>
               <div>
+                <dt>Supporting evidence</dt>
+                <dd>
+                  {targetVerificationTrace?.supportingEvidence
+                    ? `${targetVerificationTrace.supportingEvidence.source}:${targetVerificationTrace.supportingEvidence.candidateId} “${targetVerificationTrace.supportingEvidence.resolvedLabel}”; actions=${targetVerificationTrace.supportingEvidence.matchedActions.join("+") || "none"}; objects=${targetVerificationTrace.supportingEvidence.matchedObjects.join("+") || "none"}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Grounding</dt>
+                <dd>
+                  {targetVerificationTrace
+                    ? `${targetVerificationTrace.groundingVerdict}: ${targetVerificationTrace.groundingScore} / ${targetVerificationTrace.groundingThreshold}`
+                    : "None"}
+                </dd>
+              </div>
+              <div>
                 <dt>Click point</dt>
                 <dd>
                   {targetVerificationTrace?.clickPoint
@@ -5130,6 +5379,20 @@ function DebugWindowApp() {
               <div>
                 <dt>Verification reasons</dt>
                 <dd>{targetVerificationTrace?.reasons.join(", ") ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Final rectangle</dt>
+                <dd>{formatTargetBox(targetVerificationTrace?.verifiedTarget)}</dd>
+              </div>
+              <div>
+                <dt>Exact rejection</dt>
+                <dd>
+                  {targetVerificationTrace?.status === "rejected"
+                    ? targetVerificationTrace.reasons[
+                        targetVerificationTrace.reasons.length - 1
+                      ] ?? snapshot.guidanceProviderError ?? "Rejected"
+                    : snapshot.guidanceProviderError ?? "None"}
+                </dd>
               </div>
             </dl>
             {guidanceTraceEvents.length > 0 ? (
