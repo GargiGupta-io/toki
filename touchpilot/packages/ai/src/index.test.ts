@@ -275,14 +275,12 @@ test("validateGuidanceResult rejects unknown risk classes", () => {
   ]);
 });
 
-test("validateGuidanceResult requires confirmation for risky guidance", () => {
+test("validateGuidanceResult requires acknowledgment for strong-risk guidance", () => {
   const riskyClasses: RiskClass[] = [
     "external_send",
     "delete",
     "payment",
     "security_change",
-    "account_change",
-    "permission_change",
     "unknown_risky",
   ];
 
@@ -300,6 +298,20 @@ test("validateGuidanceResult requires confirmation for risky guidance", () => {
     assert.ok(
       validation.issues.some((issue) => issue.path === "step.requiresConfirmation"),
     );
+  }
+});
+
+test("validateGuidanceResult accepts warning-only account and permission guidance", () => {
+  for (const risk of ["account_change", "permission_change"] as RiskClass[]) {
+    const result = cloneResult({
+      step: {
+        ...validResult.step!,
+        risk,
+        requiresConfirmation: false,
+      },
+    });
+
+    assert.equal(validateGuidanceResult(result).valid, true);
   }
 });
 
@@ -477,14 +489,12 @@ test("evaluateSafetyPolicy allows form entry with a notice", () => {
   assert.equal(decision.reason, "form_entry_notice");
 });
 
-test("evaluateSafetyPolicy requires confirmation for risky actions", () => {
+test("evaluateSafetyPolicy requires target reveal for strong-risk actions", () => {
   const riskyClasses: RiskClass[] = [
     "external_send",
     "delete",
     "payment",
     "security_change",
-    "account_change",
-    "permission_change",
   ];
 
   for (const risk of riskyClasses) {
@@ -507,6 +517,30 @@ test("evaluateSafetyPolicy requires confirmation for risky actions", () => {
     assert.equal(decision.reason, "risky_action");
     assert.equal(decision.risk, risk);
     assert.equal(decision.requiresConfirmation, true);
+  }
+});
+
+test("evaluateSafetyPolicy allows account and permission targets with a warning", () => {
+  for (const risk of ["account_change", "permission_change"] as RiskClass[]) {
+    const decision = evaluateSafetyPolicy({
+      provider: {
+        mode: "real",
+        result: cloneResult({
+          step: {
+            ...validResult.step!,
+            risk,
+            requiresConfirmation: false,
+          },
+        }),
+        validation: { valid: true, issues: [] },
+      },
+      minConfidence: 0.7,
+    });
+
+    assert.equal(decision.action, "allow");
+    assert.equal(decision.reason, "sensitive_guidance_warning");
+    assert.equal(decision.requiresConfirmation, false);
+    assert.match(decision.message, /may change/i);
   }
 });
 

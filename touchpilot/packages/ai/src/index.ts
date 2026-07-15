@@ -31,15 +31,19 @@ const validRiskClasses: RiskClass[] = [
   "unknown_risky",
 ];
 
-const confirmationRequiredRisks: RiskClass[] = [
+const targetRevealRequiredRisks: RiskClass[] = [
   "external_send",
   "delete",
   "payment",
   "security_change",
-  "account_change",
-  "permission_change",
   "unknown_risky",
 ];
+
+const warningOnlyRisks: RiskClass[] = ["account_change", "permission_change"];
+
+export function requiresTargetRevealAcknowledgment(risk: RiskClass): boolean {
+  return targetRevealRequiredRisks.includes(risk);
+}
 
 const sourceTrust: Record<UiElementSource, number> = {
   "browser-dom": 6,
@@ -481,7 +485,7 @@ function isProviderResponse(value: unknown): value is GuidanceProviderResponse {
     value != null &&
     typeof value === "object" &&
     "mode" in value &&
-      ["mock", "real", "ollama-vision", "unavailable"].includes(
+      ["mock", "real", "codex-subscription", "unavailable"].includes(
       String((value as GuidanceProviderResponse).mode),
     )
   );
@@ -525,10 +529,10 @@ export function validateGuidanceResult(
       issues.push({ path: "step.risk", message: "Risk class is not recognized." });
     }
 
-    if (confirmationRequiredRisks.includes(risk) && !requiresConfirmation) {
+    if (requiresTargetRevealAcknowledgment(risk) && !requiresConfirmation) {
       issues.push({
         path: "step.requiresConfirmation",
-        message: "Risky guidance must require confirmation.",
+        message: "Strong-risk guidance must require target-reveal acknowledgment.",
       });
     }
 
@@ -559,7 +563,8 @@ export function validateGuidanceResult(
   };
 }
 
-const riskyRisks = new Set<RiskClass>(confirmationRequiredRisks);
+const targetRevealRisks = new Set<RiskClass>(targetRevealRequiredRisks);
+const warningRisks = new Set<RiskClass>(warningOnlyRisks);
 
 export function evaluateSafetyPolicy(input: SafetyPolicyInput): SafetyPolicyDecision {
   const { provider, minConfidence } = input;
@@ -634,13 +639,26 @@ export function evaluateSafetyPolicy(input: SafetyPolicyInput): SafetyPolicyDeci
     };
   }
 
-  if (riskyRisks.has(step.risk) || step.requiresConfirmation) {
+  if (targetRevealRisks.has(step.risk) || step.requiresConfirmation) {
     return {
       action: "confirm",
       reason: step.risk === "unknown_risky" ? "unknown_risk" : "risky_action",
       risk: step.risk,
       requiresConfirmation: true,
-      message: `Confirm before Toki guides you to "${step.target.label}".`,
+      message: `This is a sensitive action. Choose Show target to reveal "${step.target.label}". Toki will not click it.`,
+    };
+  }
+
+  if (warningRisks.has(step.risk)) {
+    return {
+      action: "allow",
+      reason: "sensitive_guidance_warning",
+      risk: step.risk,
+      requiresConfirmation: false,
+      message:
+        step.risk === "permission_change"
+          ? "Heads up: this option may change who can access or edit this item."
+          : "Heads up: this option may change account settings.",
     };
   }
 
@@ -697,7 +715,7 @@ function createWorkflowStep(input: {
     status: input.index === 0 ? "active" : "pending",
     risk,
     requiresConfirmation:
-      input.requiresConfirmation ?? confirmationRequiredRisks.includes(risk),
+      input.requiresConfirmation ?? requiresTargetRevealAcknowledgment(risk),
     expected: input.expectedLabel
       ? [
           {

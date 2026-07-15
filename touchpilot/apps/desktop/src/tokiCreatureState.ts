@@ -144,9 +144,9 @@ export function getTokiCreatureState(input: TokiCreatureInput): TokiCreatureStat
   if (input.overlayState === "confirmation_required") {
     return {
       mode: "confirming",
-      anchor: "target",
+      anchor: "cursor",
       tone: "focused",
-      statusLabel: "CONFIRM",
+      statusLabel: "REVIEW",
       energy: 0.65,
       shouldPulse: true,
       shouldStretchTowardTarget: false,

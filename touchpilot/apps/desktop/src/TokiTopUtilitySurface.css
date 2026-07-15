@@ -244,6 +244,42 @@
   cursor: wait;
 }
 
+.toki-top-utility__reveal-panel {
+  min-height: 146px;
+  display: grid;
+  align-content: center;
+  gap: 14px;
+}
+
+.toki-top-utility__reveal-panel p {
+  margin: 0;
+  color: rgba(236, 240, 245, 0.7);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.toki-top-utility__reveal-panel button {
+  min-height: 38px;
+  border: 1px solid color-mix(in srgb, var(--toki-warning) 58%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--toki-warning) 16%, transparent);
+  color: rgba(255, 244, 224, 0.96);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.toki-top-utility__reveal-panel button:focus-visible {
+  outline: 2px solid var(--toki-warning);
+  outline-offset: 2px;
+}
+
+.toki-top-utility[data-status="warning"] .toki-top-utility__signal,
+.toki-top-utility[data-status="confirming"] .toki-top-utility__signal {
+  color: var(--toki-warning);
+}
+
 .toki-top-utility[data-status="error"] .toki-top-utility__signal {
   color: var(--toki-danger);
 }

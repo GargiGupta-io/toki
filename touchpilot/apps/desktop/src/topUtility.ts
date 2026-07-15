@@ -9,6 +9,7 @@ export type TokiTopStatusMode =
   | "gesture"
   | "ready"
   | "guiding"
+  | "warning"
   | "confirming"
   | "paused"
   | "error";

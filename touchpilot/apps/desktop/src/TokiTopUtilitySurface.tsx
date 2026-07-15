@@ -20,6 +20,7 @@ export function TokiTopUtilitySurface({
   onVoicePressEnd,
   onRefreshCapture,
   onPauseToggle,
+  onRevealTarget,
   onStartDrag,
   onClose,
 }: {
@@ -35,6 +36,7 @@ export function TokiTopUtilitySurface({
   onVoicePressEnd: () => void;
   onRefreshCapture: () => void;
   onPauseToggle: () => void;
+  onRevealTarget: () => void;
   onStartDrag: () => void;
   onClose: () => void;
 }) {
@@ -89,7 +91,19 @@ export function TokiTopUtilitySurface({
         )}
       </header>
 
-      {expanded && (
+      {expanded && visibleStatus.mode === "confirming" ? (
+        <div className="toki-top-utility__expanded">
+          <div className="toki-top-utility__reveal-panel">
+            <p>
+              Review the warning above. Toki will only reveal the guidance marker;
+              it will not click or change anything.
+            </p>
+            <button type="button" onClick={onRevealTarget} autoFocus>
+              Show target
+            </button>
+          </div>
+        </div>
+      ) : expanded ? (
         <div className="toki-top-utility__expanded">
           <nav className="toki-top-utility__tabs" role="tablist" aria-label="Toki controls">
             <button
@@ -175,7 +189,7 @@ export function TokiTopUtilitySurface({
             </div>
           )}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }
