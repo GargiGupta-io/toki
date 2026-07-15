@@ -100,7 +100,7 @@ Result: candidate ranking now weighs source trust, exact label matches, clickabl
 
 Run known-screen tests on browser pages using browser DOM candidates.
 
-Result: added `npm run qa:browser:known-screen`, a deterministic browser known-screen QA script that reads a browser-extension payload, ranks DOM candidates, and verifies that known commands choose the expected browser target. The controlled fixture now carries six realistic DOM candidates from an HTTP page: `Create project`, `Delete project`, `Open settings`, `Project name`, `Environment selector`, and `Add notes`. This proves the browser candidate and ranking path without depending on FreeLLMAPI, Ollama, screenshots, or a live browser session.
+Result: added `npm run qa:browser:known-screen`, a deterministic browser known-screen QA script that reads a browser-extension payload, ranks DOM candidates, and verifies that known commands choose the expected browser target. The controlled fixture now carries six realistic DOM candidates from an HTTP page: `Create project`, `Delete project`, `Open settings`, `Project name`, `Environment selector`, and `Add notes`. This proves the browser candidate and ranking path without depending on FreeLLMAPI, retired local vision runtime, screenshots, or a live browser session.
 
 ### Step 12.7: OCR/AX Fallback QA
 
@@ -113,6 +113,10 @@ Result: added `npm run qa:fallback:known-screen`, a deterministic fallback QA sc
 Make providers choose candidate IDs where possible instead of inventing raw coordinates.
 
 Result: provider prompts now make candidate selection the primary path when candidates exist. When Toki sends ranked candidates, the model is told to return a `candidateId` instead of raw coordinates, and the adapter copies the chosen candidate's exact label and box after validation. `TargetBox` now includes optional `candidateId`, so this link can travel with guidance results.
+
+Current repair: a candidate ID still owns source provenance and geometry, but a generic or symbolic candidate label such as `+` may now be supplemented by the current-image provider label and reason for semantic verification. This combined-evidence path requires a current vision trace, at least 72% provider confidence, a specific provider label and reason, and no explicit action or object conflict in the structured candidate. It fixes the Spotify case where OCR found the correct `+` rectangle but could not express that the control means `Create playlist`.
+
+Trace-driven semantic repair: read-only words such as `see`, `show`, and `view` normalize to the shared `open` action. Narrow contextual rules recognize navigable UI nouns such as `tab` and specific media-history phrases such as `recently played`, allowing a correct current-image “Recently played tab” target to satisfy `open + media`. Generic `history` does not imply media, unrelated recent-profile targets fail, and no Spotify-specific rule exists.
 
 ### Step 12.9: Debug Screen Intelligence View
 
@@ -155,6 +159,8 @@ This is the current accuracy state after Step 12.10.
 | Browser fixture candidates | `npm run qa:browser:known-screen` passes for `Create project`, `Open settings`, `Add notes`, and `Delete project` | Browser DOM candidates and ranking can pick the intended target on a controlled page | Real SaaS dashboards still need manual bridge tests |
 | OCR/AX fallback | `npm run qa:fallback:known-screen` passes for `Download`, `Invite`, and `Search` | Ranking can use Accessibility controls and OCR text when browser DOM is absent | macOS permissions and app-specific trees can still fail live |
 | Candidate-id provider prompts | Provider prompts now require `candidateId` when candidates exist | The provider should choose from real candidates instead of inventing boxes | A weak provider can still choose the wrong candidate id |
+| Combined semantic evidence | Generic OCR/AX symbols can borrow specific meaning from a high-confidence current-image answer while retaining candidate geometry | The same current-frame observations can complement one another instead of forcing a correct symbolic target to fail | Provider semantics never override an explicit structured action or object conflict |
+| Contextual read-only intent | `see recently played songs` and `Recently played tab` independently resolve to `open + media` | Natural command wording and UI control wording can meet at a shared semantic family | Context rules remain narrow; unrelated history/profile targets are rejected |
 | Debug explanation | Guidance tab shows target id, ranked candidates, scores, and reasons | Wrong targets can be inspected instead of guessed about | Debug does not improve accuracy by itself |
 | Raw screenshot-only guidance | Still allowed only when no candidates exist | Keeps a fallback path for unknown screens | This remains the weakest and least trusted path |
 
@@ -170,6 +176,7 @@ Known misses and risks:
 
 - Browser Accessibility can expose only coarse browser/window regions instead of page controls.
 - OCR can read visible text but cannot always tell whether the text is a button, label, paragraph, or tooltip.
+- Combined evidence must remain complementary: provider text can fill missing semantics for a generic candidate, but must never relabel structured evidence that explicitly contradicts the requested action or object.
 - Ranking is still heuristic; it does not yet merge nearby DOM/OCR/AX observations into one final fused element inside the desktop runtime.
 - Provider selection is now safer because it chooses candidate ids, but model choice can still be wrong if the candidate list is noisy or missing the correct element.
 - Real dashboard QA still needs live extension payloads from Chrome/Edge/Safari-like browser flows, not only deterministic fixtures.

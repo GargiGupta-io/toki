@@ -163,13 +163,13 @@ Result: completed. `@toki/evals` now exports workflow scoring helpers for verifi
 Optional provider runs:
 
 - mock
-- local Ollama
+- local retired local vision runtime
 - FreeLLMAPI dev
 - unavailable
 
 Provider evals should be skippable when local servers or credentials are missing.
 
-Result: completed. `@toki/evals` now exports provider comparison helpers for mock, local Ollama, FreeLLMAPI dev, and unavailable modes. Provider results can be marked `passed`, `failed`, or `skipped`, so missing local servers or credentials do not break deterministic eval runs.
+Result: completed. `@toki/evals` now exports provider comparison helpers for mock, local retired local vision runtime, FreeLLMAPI dev, and unavailable modes. Provider results can be marked `passed`, `failed`, or `skipped`, so missing local servers or credentials do not break deterministic eval runs.
 
 ### Step 15.9: Regression Report
 

@@ -43,7 +43,7 @@ Allowed:
 Not allowed:
 
 - guidance provider routing
-- Ollama or provider prompts
+- retired local vision runtime or provider prompts
 - candidate ranking
 - screen capture permission logic
 - active-window crop logic
@@ -262,7 +262,7 @@ Phase 13A passes only if all are true:
 ## Non-Goals
 
 - solving target accuracy
-- changing Ollama/provider behavior
+- changing retired local vision runtime/provider behavior
 - fixing macOS screen-recording permissions
 - changing keyboard shortcuts
 - rewriting settings

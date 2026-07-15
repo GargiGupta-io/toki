@@ -238,7 +238,7 @@ Updated Step 10.5 direction:
 
 1. The local smoke bridge is already proven: Debug `Real smoke` can reach `dev-smoke-server`, show `unavailable`, and avoid rendering a fake target.
 2. The remaining Phase 10.5 work is real target accuracy, not voice wiring.
-3. The next provider path should stay behind the smoke endpoint and use server-side provider mode config such as `local-ollama` or `unavailable`.
+3. The next provider path should stay behind the smoke endpoint and use server-side provider mode config such as `local-retired-local-vision-runtime` or `unavailable`.
 4. The provider must return strict `GuidanceResult` JSON and invalid coordinates must be rejected before rendering.
 5. Phase 11 Safety should wait until one real known-screen target has been tested, or until we explicitly decide OCR/accessibility is required first.
 

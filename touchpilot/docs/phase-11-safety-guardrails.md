@@ -1,6 +1,6 @@
 # Phase 11: Safety And Guardrails
 
-Phase 11 makes sure Toki does not confidently guide the user into risky actions without slowing down, explaining the risk, and asking for confirmation.
+Phase 11 makes sure Toki explains sensitive guidance and keeps strong-risk targets hidden until the user explicitly asks to see them.
 
 ## Goal
 
@@ -16,8 +16,8 @@ Once guidance can be real, safety has to sit between the provider result and the
 
 1. Safe navigation can show guidance immediately.
 2. Form entry can show guidance, but should explain what will change.
-3. Delete, send, pay, security, account, and permission actions require confirmation.
-4. Unknown risky actions require confirmation.
+3. Account and permission actions show the target immediately with a warning about possible setting, access, or editing changes.
+4. Delete, send, pay, security, and unknown risky actions require target-reveal acknowledgment.
 5. Low-confidence guidance should ask for clarification instead of drawing a confident target.
 6. Toki must never silently click for the user in this phase.
 7. Toki must never hide that a target is risky.
@@ -39,17 +39,18 @@ permission_change
 unknown_risky
 ```
 
-## Confirmation Gate
+## Warning And Target-Reveal Gate
 
-Before a risky step is allowed through, the user should see:
+Warning-only account and permission guidance renders immediately with a clear notice.
 
-1. the target/action Toki is about to guide toward,
+Before a strong-risk target is revealed, the user should see:
+
+1. the target/action class Toki is about to guide toward,
 2. why it might be risky,
-3. what the user should verify manually,
-4. a clear confirm action,
-5. a clear cancel action.
+3. a clear `Show target` action,
+4. an explicit statement that Toki will not click or change anything.
 
-For now, confirmation means "allow Toki to show the risky guidance target." It does not mean Toki clicks the target.
+`Show target` means only "reveal the guidance marker." It does not mean Toki clicks, submits, confirms, or changes the target application.
 
 ## Phase 11 Steps
 
@@ -74,25 +75,25 @@ These types define the contract for the later policy engine without changing run
 
 Add a pure safety policy engine that evaluates guidance result risk, confidence, target quality, and candidate metadata.
 
-Result: `evaluateSafetyPolicy()` now lives in `@toki/ai`. It blocks unavailable or invalid provider results, asks for clarification when guidance is missing a target or below the confidence threshold, asks for confirmation for risky actions, and allows safe navigation or form-entry guidance.
+Result: `evaluateSafetyPolicy()` now lives in `@toki/ai`. It blocks unavailable or invalid provider results, asks for clarification when guidance is missing a target or below the confidence threshold, allows account/permission guidance with warnings, requires target reveal for strong-risk actions, and allows safe navigation or form-entry guidance.
 
 ### Step 11.4: Policy Tests
 
 Add focused tests for safe navigation, form entry, delete/payment/security risks, unknown risks, and low-confidence outputs.
 
-Result: `@toki/ai` tests now cover allow, confirm, clarify, and block outcomes for safe navigation, form entry, risky classes, unknown risk, low confidence, provider unavailability, validation failure, missing targets, invalid targets, missing steps, and clarify-mode responses.
+Result: `@toki/ai` tests now cover allow, warning, target reveal, clarify, and block outcomes for safe navigation, form entry, account/permission warnings, strong-risk classes, unknown risk, low confidence, provider unavailability, validation failure, missing targets, invalid targets, missing steps, and clarify-mode responses.
 
 ### Step 11.5: Provider Integration
 
 Run provider results through the safety policy before the overlay accepts them.
 
-Result: real-provider guidance now runs through `evaluateSafetyPolicy()` before the overlay accepts the result. `allow` shows normal guidance, `confirm` enters `confirmation_required`, `clarify` hides the target and returns to idle, and `block` hides the target and enters error. Debug also receives the safety action and reason.
+Result: real-provider guidance now runs through `evaluateSafetyPolicy()` before the overlay accepts the result. Warning-only `allow` shows the target with an amber notice, `confirm` stores the accepted target for Debug but excludes it from overlay state until acknowledgment, `clarify` hides the target and returns to idle, and `block` hides the target and enters error. Debug also receives the safety action and reason.
 
 ### Step 11.6: Confirmation UI
 
 Add a small confirmation state in the user-facing overlay for risky guidance.
 
-Result: the overlay now renders a compact confirmation cue when safety returns `confirm`. The target marker can remain visible for review, but the normal step cue is replaced with a "Confirm first" message and the puck does not send normal guidance droplets.
+Result: the focused top utility now renders `Show target` when safety returns `confirm`. The target marker remains absent before acknowledgment. Clicking the control reveals only the ring, collapses the utility back to its status peek, and leaves the underlying application untouched.
 
 ### Step 11.7: Debug Safety Review
 
@@ -110,13 +111,13 @@ Result: Debug fixture QA now covers all four safety outcomes. `Safe` should allo
 
 Update safety docs, roadmap, and learning notes with what was actually built.
 
-Result: safety documentation now summarizes the actual Phase 11 runtime behavior: provider results and mock fixtures both pass through the same policy gate, safe guidance can render normally, risky guidance enters confirmation, weak guidance clarifies, and invalid/unavailable guidance blocks.
+Result: safety documentation now summarizes the actual Phase 11 runtime behavior: provider results and mock fixtures both pass through the same policy gate, account/permission guidance warns, strong-risk guidance requires target reveal, weak guidance clarifies, and invalid/unavailable guidance blocks.
 
 ### Step 11.10: Close Phase 11 Or Escalate
 
-Close Phase 11 if risky guidance is confirmation-gated and unsafe results do not render as confident targets. If the policy cannot reliably classify browser actions, escalate browser candidate metadata before continuing.
+Close Phase 11 if warning-only risks remain visible with clear notices, strong-risk targets are reveal-gated, and unsafe results do not render as confident targets. If the policy cannot reliably classify browser actions, escalate browser candidate metadata before continuing.
 
-Result: Phase 11 is closed. Risky guidance is confirmation-gated, low-confidence guidance clarifies, invalid or unavailable guidance blocks, Debug explains the decision, and Toki still does not click automatically. Browser target accuracy and richer candidate metadata remain important, but they are Phase 12 screen-intelligence work rather than a blocker for the safety gate.
+Result: Phase 11 is closed. Warning-only risks render with notices, strong-risk targets are acknowledgment-gated, low-confidence guidance clarifies, invalid or unavailable guidance blocks, Debug explains the decision, and Toki still does not click automatically. Browser target accuracy and richer candidate metadata remain important, but they are Phase 12 screen-intelligence work rather than a blocker for the safety gate.
 
 ## Closure Decision
 
@@ -127,7 +128,8 @@ What is done:
 - one shared policy vocabulary exists: `allow`, `confirm`, `clarify`, and `block`,
 - provider guidance passes through the policy gate before the overlay accepts it,
 - mock fixtures also pass through the same gate for repeatable QA,
-- risky guidance renders as a confirmation state instead of normal guidance,
+- account/permission guidance renders with a warning instead of an unnecessary blocking gate,
+- strong-risk guidance renders as a hidden-target review state until `Show target`,
 - low-confidence guidance does not show a confident target,
 - invalid and unavailable provider results remain blocked,
 - Debug exposes the policy action, reason, risk, message, and details,
@@ -144,7 +146,9 @@ What is intentionally not solved here:
 
 Phase 11 is done when:
 
-- risky guidance requires confirmation before rendering as a normal target,
+- warning-only account/permission guidance renders immediately with a clear notice,
+- strong-risk guidance requires `Show target` before rendering a target ring,
+- acknowledging target visibility never executes an application action,
 - low-confidence guidance asks for clarification or blocks,
 - invalid/offscreen targets remain rejected,
 - debug shows the safety decision clearly,

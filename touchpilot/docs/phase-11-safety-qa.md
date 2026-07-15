@@ -28,12 +28,14 @@ Expected:
 
 Expected:
 
-- Overlay shows the target marker and a `Confirm first` cue.
+- Overlay does not show the target marker before acknowledgment.
+- The focused top utility shows the warning and a `Show target` button.
 - Overlay state is `Confirm`.
 - Safety Review `Action` is `confirm`.
 - Safety Review `Reason` is `risky_action`.
 - `Risk` is `payment`.
 - `Confirm` is `Required`.
+- Clicking `Show target` reveals only the target ring and does not click or change the underlying app.
 
 ## QA 3: Invalid Guidance Blocks
 
@@ -69,14 +71,16 @@ Expected:
 
 - Safety Review shows `allow`, `confirm`, `clarify`, or `block`.
 - If provider output is invalid or unavailable, no confident target is shown.
-- If provider output is risky, the confirmation cue appears instead of the normal step bubble.
+- If provider output is strongly risky, the `Show target` gate appears and no marker is visible before acknowledgment.
+- If provider output is an account or permission change, the marker appears immediately with a warning.
 
 ## Pass Criteria
 
 Phase 11 safety QA passes when:
 
 - safe guidance renders normally,
-- risky guidance enters confirmation state,
+- account/permission guidance warns without blocking the marker,
+- strong-risk guidance enters confirmation state with the marker hidden until `Show target`,
 - invalid guidance is blocked,
 - low-confidence guidance clarifies instead of rendering,
 - Debug clearly explains every safety decision.

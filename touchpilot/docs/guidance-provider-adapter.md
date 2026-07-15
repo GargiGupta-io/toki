@@ -268,8 +268,8 @@ Step 10.5.7 adds explicit server-side provider mode config:
 | Env var | Default | Meaning |
 | --- | --- | --- |
 | `TOKI_GUIDANCE_PROVIDER` | `unavailable` | Chooses the server-side provider mode |
-| `TOKI_OLLAMA_ENDPOINT` | `http://127.0.0.1:11434/api/generate` | Local Ollama generate endpoint for the next adapter step |
-| `TOKI_OLLAMA_MODEL` | `llava:latest` | Local Ollama vision model name for the next adapter step |
+| `TOKI_CODEX_BIN` | `http://127.0.0.1:11434/api/generate` | Local retired local vision runtime generate endpoint for the next adapter step |
+| `VITE_TOKI_CODEX_MODEL` | `llava:latest` | Local retired local vision runtime vision model name for the next adapter step |
 | `TOKI_FREELLMAPI_ENDPOINT` | `http://127.0.0.1:3001/v1/chat/completions` | OpenAI-compatible FreeLLMAPI dev endpoint |
 | `TOKI_FREELLMAPI_MODEL` | `auto` | FreeLLMAPI dev model name |
 | `TOKI_FREELLMAPI_API_KEY` | empty | Optional local FreeLLMAPI bearer token |
@@ -279,7 +279,7 @@ Supported provider modes:
 | Mode | Current behavior |
 | --- | --- |
 | `unavailable` | Safe default. Returns unavailable and no target. |
-| `local-ollama` | Sends screenshot + goal to a local Ollama vision model and returns the provider JSON. |
+| `local-retired-local-vision-runtime` | Sends screenshot + goal to a local retired local vision runtime vision model and returns the provider JSON. |
 | `freellmapi-dev` | Sends screenshot + goal to an OpenAI-compatible FreeLLMAPI dev endpoint and validates the returned JSON. Development only, not a production provider path. |
 
 Run the default safe server:
@@ -288,10 +288,10 @@ Run the default safe server:
 npm run guidance:smoke:dev
 ```
 
-Run the server in local Ollama mode:
+Run the server in local retired local vision runtime mode:
 
 ```bash
-npm run guidance:smoke:ollama
+npm run guidance:smoke:retired-local-vision-runtime
 ```
 
 Run the server in FreeLLMAPI dev mode:
@@ -300,11 +300,11 @@ Run the server in FreeLLMAPI dev mode:
 npm run guidance:smoke:freellmapi
 ```
 
-Step 10.5.8 wires the local Ollama adapter:
+Step 10.5.8 wires the local retired local vision runtime adapter:
 
-- the server builds an Ollama `/api/generate` request
+- the server builds an retired local vision runtime `/api/generate` request
 - the prompt includes the user goal, display dimensions, scale factor, and calibration status
-- the screenshot payload is sent in Ollama's `images` array
+- the screenshot payload is sent in retired local vision runtime's `images` array
 - the request uses `format: "json"` and `stream: false`
 - provider HTTP failures return `unavailable`
 - parse failures return `unavailable`
@@ -317,7 +317,7 @@ Step 10.5.9 adds strict provider response validation:
 - guide results must include `summary`, `step.instruction`, and a target box
 - confidence must be a number from `0` to `1`
 - risk must be one of the known safety classes
-- risky actions must set `requiresConfirmation: true`
+- strong-risk actions (`external_send`, `delete`, `payment`, `security_change`, and `unknown_risky`) must set `requiresConfirmation: true`; account and permission changes remain valid with `false` and receive a user-facing warning
 - target boxes must be finite, positive, and inside the display bounds
 - invalid provider output returns `unavailable` with validation issues instead of rendering a target
 
@@ -352,9 +352,9 @@ npm run guidance:provider:check
 
 The readiness check verifies:
 
-- local Ollama HTTP availability
-- configured endpoint from `TOKI_OLLAMA_ENDPOINT`
-- configured model from `TOKI_OLLAMA_MODEL`
+- local retired local vision runtime HTTP availability
+- configured endpoint from `TOKI_CODEX_BIN`
+- configured model from `VITE_TOKI_CODEX_MODEL`
 - whether the next step should be provider setup or known-screen accuracy
 
 Required environment:
@@ -375,7 +375,7 @@ Example:
 
 ```bash
 # Terminal A
-npm run guidance:smoke:ollama
+npm run guidance:smoke:retired-local-vision-runtime
 
 # Terminal B
 TOKI_KNOWN_SCREEN_IMAGE=/tmp/toki-known-screen.png \
@@ -402,9 +402,9 @@ Manual acceptance:
 
 Current local note:
 
-- Ollama was installed from the official macOS app path and is available at `/Applications/Ollama.app`.
+- retired local vision runtime was installed from the official macOS app path and is available at `/Applications/retired local vision runtime.app`.
 - `llava:latest` was pulled successfully.
-- `npm run guidance:provider:check` reports `[READY] local Ollama provider is reachable`.
+- `npm run guidance:provider:check` reports `[READY] local retired local vision runtime provider is reachable`.
 - The Codex sandbox can still block local `127.0.0.1:11434` checks, so provider readiness should be checked outside the sandbox when needed.
 - the repeatable runner is ready, but the first useful/wrong known-screen verdict is still pending
 
@@ -414,11 +414,11 @@ Step 10.5.11 records the current target-accuracy state honestly:
 
 | Check | Result | Meaning |
 | --- | --- | --- |
-| Provider mode config | Done | The server can choose `unavailable` or `local-ollama`. |
-| Local vision adapter | Done | The server can send screenshot + goal to Ollama. |
+| Provider mode config | Done | The server can choose `unavailable` or `local-retired-local-vision-runtime`. |
+| Local vision adapter | Done | The server can send screenshot + goal to retired local vision runtime. |
 | Response validation | Done | Bad model output is rejected before reaching the overlay. |
 | Known-screen runner | Done | A repeatable screenshot + goal test path exists. |
-| Local provider availability | Ready outside sandbox | Ollama is reachable at `127.0.0.1:11434` with `llava:latest`. |
+| Local provider availability | Ready outside sandbox | retired local vision runtime is reachable at `127.0.0.1:11434` with `llava:latest`. |
 | First useful/wrong verdict | Unavailable | The first reachable run failed strict provider response validation before returning a target. |
 
 This means Phase 10.5 has the provider pipeline, but not the product proof. A validated `GuidanceResult` only proves the response has the right shape. It does not prove the target is actually useful.
@@ -443,7 +443,7 @@ Current known-screen run:
 | Screenshot | `/tmp/toki-known-screen.png` |
 | Goal | `Click the message input box at the bottom.` |
 | Scale | `2` |
-| Provider | `local-ollama` / `llava:latest` |
+| Provider | `local-retired-local-vision-runtime` / `llava:latest` |
 | Returned target | Rejected: `Message input box` at normalized `0.389,0.781 0.520x0.412` |
 | Verdict | `unavailable` |
 | Failure type | coordinate issue: provider returned normalized `0..1` values instead of CSS pixels |
@@ -453,15 +453,15 @@ Step 10.6.4 update:
 
 - invalid provider responses now include capped `providerRawText`
 - the known-screen CLI prints validation issues and raw provider output
-- the Ollama prompt now explicitly forbids normalized coordinates and explains screenshot-pixel-to-CSS-pixel conversion
+- the retired local vision runtime prompt now explicitly forbids normalized coordinates and explains screenshot-pixel-to-CSS-pixel conversion
 - target widths/heights smaller than practical CSS-pixel sizes are rejected as likely normalized output
-- the retest reached `local-ollama`, but `llava:latest` still returned normalized coordinates, so the result correctly stayed `unavailable`
+- the retest reached `local-retired-local-vision-runtime`, but `llava:latest` still returned normalized coordinates, so the result correctly stayed `unavailable`
 
 Step 10.6.5 candidate-assisted update:
 
 - requests may now include `screen.candidates`
 - each candidate carries `id`, `label`, `role`, and a trusted CSS-pixel box
-- the Ollama prompt lists candidates and asks the provider to choose one instead of inventing coordinates
+- the retired local vision runtime prompt lists candidates and asks the provider to choose one instead of inventing coordinates
 - if the provider returns a matching `candidateId` or label, Toki anchors the target to the trusted candidate box before validation
 - `TOKI_KNOWN_SCREEN_CANDIDATES` lets the known-screen runner attach candidate evidence during manual smoke tests
 
@@ -472,7 +472,7 @@ Candidate-assisted known-screen run:
 | Screenshot | `/tmp/toki-known-screen.png` |
 | Goal | `Click the message input box at the bottom.` |
 | Candidate | `message-input`, `Message input box`, `textbox`, `20,790 1430x60` |
-| Provider | `local-ollama` / `llava:latest` |
+| Provider | `local-retired-local-vision-runtime` / `llava:latest` |
 | Returned target | `Message input box at 20,790 1430x60` |
 | Verdict | `real` / candidate-assisted useful smoke |
 | Caveat | This proves candidate selection and anchoring, not automatic OCR/accessibility candidate generation yet. |
@@ -559,7 +559,7 @@ Result:
 | --- | --- |
 | Candidate source | `macos-vision-ocr` |
 | Candidate count | `14` |
-| Provider | `local-ollama` / `llava:latest` |
+| Provider | `local-retired-local-vision-runtime` / `llava:latest` |
 | Mode | `real` |
 | Returned target | `> Find and fix a bug in @filename at 9,809 235x17` |
 | Confidence | `0.9` |
@@ -624,7 +624,7 @@ The remaining Phase 10.5 target-accuracy extension is complete when:
 
 ## Phase 10.7 FreeLLMAPI Dev Run
 
-Phase 10.7 adds `freellmapi-dev` only as a development comparison provider. It should help compare target accuracy against local Ollama, but it does not change the production rule: production provider calls need a backend/proxy.
+Phase 10.7 adds `freellmapi-dev` only as a development comparison provider. It should help compare target accuracy against local retired local vision runtime, but it does not change the production rule: production provider calls need a backend/proxy.
 
 Step 10.7.2 attempted a known-screen run with `/tmp/toki-known-screen.png`.
 
@@ -647,7 +647,7 @@ The next blocker is upstream vision capacity, not the local server. A known-scre
 - most free/anonymous routes reported `no vision support`
 - vision-capable models such as Gemini reported `no enabled+healthy key for platform`
 
-So FreeLLMAPI is installed and reachable, but it still needs at least one enabled vision-capable upstream provider key before it can be compared against Ollama for screenshot target accuracy.
+So FreeLLMAPI is installed and reachable, but it still needs at least one enabled vision-capable upstream provider key before it can be compared against retired local vision runtime for screenshot target accuracy.
 
 After adding a Google/Gemini provider key, FreeLLMAPI exposed available Gemini models and the known-screen run reached a real provider result:
 
@@ -661,14 +661,14 @@ After adding a Google/Gemini provider key, FreeLLMAPI exposed available Gemini m
 | Confidence | `0.9` |
 | Verdict | Provider reachability proved; target usefulness still needs browser/candidate comparison. |
 
-Step 10.7.3 compared FreeLLMAPI/Gemini against local Ollama on the same known-screen fixture with automatic candidates disabled:
+Step 10.7.3 compared FreeLLMAPI/Gemini against local retired local vision runtime on the same known-screen fixture with automatic candidates disabled:
 
 | Provider | Model | Result | Target | Verdict |
 | --- | --- | --- | --- | --- |
 | `freellmapi-dev` | `gemini-2.5-flash` | `real` | `next at 50,390 50x20` | Validated provider result. Needs manual usefulness review. |
-| `local-ollama` | `llava:latest` | `unavailable` | rejected normalized box around `Hello World` | Failed strict validation because it returned `0..1` coordinates instead of CSS pixels. |
+| `local-retired-local-vision-runtime` | `llava:latest` | `unavailable` | rejected normalized box around `Hello World` | Failed strict validation because it returned `0..1` coordinates instead of CSS pixels. |
 
-Conclusion: FreeLLMAPI/Gemini is the stronger development provider for raw screenshot testing right now. Local Ollama remains useful as an offline fallback, especially when candidate IDs are supplied, but it should not be trusted for raw coordinate generation.
+Conclusion: FreeLLMAPI/Gemini is the stronger development provider for raw screenshot testing right now. Local retired local vision runtime remains useful as an offline fallback, especially when candidate IDs are supplied, but it should not be trusted for raw coordinate generation.
 
 ## Phase 10.7 Browser Candidate Strategy
 
@@ -698,7 +698,7 @@ Initial ranking signals:
 
 Tradeoff: OCR is available now and works across browsers, but it does not understand semantics. It sees text, not whether the text is a button, link, tab, or decoration.
 
-Best immediate use: ask FreeLLMAPI/Gemini or Ollama to choose from ranked OCR/accessibility candidate IDs, not raw screenshot coordinates.
+Best immediate use: ask FreeLLMAPI/Gemini or retired local vision runtime to choose from ranked OCR/accessibility candidate IDs, not raw screenshot coordinates.
 
 ### Mid Term: Native macOS AX Bridge
 

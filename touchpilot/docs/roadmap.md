@@ -131,7 +131,7 @@ Status: Closed as a quality gate.
 - Done: Keep paid provider keys out of the desktop app.
 - Done: Connect Debug `Real smoke` to a configured provider endpoint.
 - Done: prove the local smoke bridge reaches `dev-smoke-server` and preserves `unavailable`.
-- Done: add server-side provider mode config such as `local-ollama` or `unavailable`.
+- Done: add server-side provider mode config such as `local-retired-local-vision-runtime` or `unavailable`.
 - Done: wire a local vision provider adapter behind the smoke endpoint.
 - Done: force provider output through strict `GuidanceResult` parsing and validation.
 - Done: add a repeatable known-screen runner.
@@ -144,8 +144,8 @@ Status: Closed as a quality gate.
 
 - Goal: make real guidance point to the correct target before safety policy work.
 - Step 1 result: provider readiness check exists.
-- Step 2 result: local Ollama provider is ready on this machine.
-- Step 3 result: first known-screen run reached `local-ollama`, but returned `unavailable` because provider output failed strict `GuidanceResult` validation.
+- Step 2 result: local retired local vision runtime provider is ready on this machine.
+- Step 3 result: first known-screen run reached `local-retired-local-vision-runtime`, but returned `unavailable` because provider output failed strict `GuidanceResult` validation.
 - Step 4 result: provider raw output is now exposed on invalid responses, and normalized `0..1` target boxes are rejected as invalid CSS-pixel coordinates.
 - Step 5 result: candidate-assisted known-screen guidance returned a real target by anchoring the provider choice to a supplied UI candidate box.
 - Step 6 result: known-screen guidance can now collect candidate boxes automatically from macOS Accessibility when permission is available.
@@ -156,11 +156,11 @@ Status: Closed as a quality gate.
 - Step 11 result: live desktop guidance requests include macOS Vision OCR candidates in the real-provider path.
 - Step 12 result: live desktop real-guidance smoke reaches the local provider from the running app, but the returned target is not accurate enough yet.
 - Step 13 result: native cursor tracking is implemented for macOS. The overlay now prefers the Rust `native_cursor_position` command and falls back to Tauri cursor polling on unsupported platforms.
-- Done: add `npm run guidance:provider:check` to verify local Ollama readiness.
-- Done: install/start Ollama from the official macOS app path.
+- Done: add `npm run guidance:provider:check` to verify local retired local vision runtime readiness.
+- Done: install/start retired local vision runtime from the official macOS app path.
 - Done: pull `llava:latest`.
-- Done: verify `npm run guidance:provider:check` reports `[READY] local Ollama provider is reachable`.
-- Note: local provider checks may need to run outside the Codex sandbox because sandboxed local network calls to `127.0.0.1:11434` can fail even when Ollama is running.
+- Done: verify `npm run guidance:provider:check` reports `[READY] local retired local vision runtime provider is reachable`.
+- Note: local provider checks may need to run outside the Codex sandbox because sandboxed local network calls to `127.0.0.1:11434` can fail even when retired local vision runtime is running.
 - Raw screenshot-only targeting failed because `llava:latest` returned normalized coordinates.
 - Candidate-assisted targeting works when the request includes a trusted candidate box.
 - macOS Accessibility candidate extraction now provides labels, roles, and boxes without manual `TOKI_KNOWN_SCREEN_CANDIDATES`.
@@ -180,8 +180,8 @@ Status: Closed as a quality gate.
 - Step 1: add `freellmapi-dev` provider mode.
 - Step 2: run known-screen tests through FreeLLMAPI vision models.
 - Step 2 result: FreeLLMAPI is installed locally at `/Users/pumba/tools/freellmapi`, responds on port `3001`, and Gemini became available after adding a provider key. A known-screen request through `freellmapi-dev` returned `real` target `next at 50,390 50x20`; this proves provider reachability, but target usefulness still needs browser/candidate comparison.
-- Step 3: compare accuracy against local Ollama.
-- Step 3 result: with the same known-screen fixture and auto-candidates disabled, FreeLLMAPI/Gemini returned a validated `real` target, while local Ollama returned normalized `0..1` coordinates and was rejected as `unavailable`.
+- Step 3: compare accuracy against local retired local vision runtime.
+- Step 3 result: with the same known-screen fixture and auto-candidates disabled, FreeLLMAPI/Gemini returned a validated `real` target, while local retired local vision runtime returned normalized `0..1` coordinates and was rejected as `unavailable`.
 - Step 4: add browser candidate strategy plan:
   - short term: OCR plus layout heuristics
   - mid term: native macOS AX bridge
@@ -226,25 +226,25 @@ Status: Closed as a quality gate.
 ## Phase 11: Safety And Guardrails
 
 - Step 1: write the safety contract and acceptance criteria.
-- Step 1 result: added `docs/phase-11-safety-guardrails.md` with the policy goal, risk classes, confirmation gate, step plan, acceptance criteria, and non-goals. Phase 11 starts from the rule that Toki may guide, but the user stays in control and risky guidance must be confirmed before it renders as normal guidance.
+- Step 1 result: added `docs/phase-11-safety-guardrails.md` with the policy goal, risk classes, warning/target-reveal gate, step plan, acceptance criteria, and non-goals. Toki may guide, but the user stays in control and target visibility never authorizes execution.
 - Step 2: add shared policy decision types.
 - Step 2 result: added shared safety policy types in `@toki/shared`: `SafetyPolicyAction`, `SafetyPolicyReason`, `SafetyPolicyDecision`, and `SafetyPolicyInput`. The policy vocabulary is now `allow`, `confirm`, `clarify`, and `block`, but runtime behavior has not changed yet.
 - Step 3: add the policy engine.
-- Step 3 result: added `evaluateSafetyPolicy()` in `@toki/ai`. The pure policy gate blocks unavailable/invalid provider results, clarifies missing or low-confidence targets, confirms risky actions, and allows safe navigation/form-entry guidance.
+- Step 3 result: added `evaluateSafetyPolicy()` in `@toki/ai`. The pure policy gate blocks unavailable/invalid provider results, clarifies missing or low-confidence targets, warns for account/permission guidance, requires target reveal for strong-risk actions, and allows safe navigation/form-entry guidance.
 - Step 4: add policy tests.
-- Step 4 result: added `@toki/ai` tests for every policy outcome: safe/form allow, risky/unknown confirm, low-confidence/missing-target clarify, and unavailable/invalid block.
+- Step 4 result: added `@toki/ai` tests for every policy outcome: safe/form allow, account/permission warning allow, strong-risk/unknown target reveal, low-confidence/missing-target clarify, and unavailable/invalid block.
 - Step 5: route provider results through policy.
-- Step 5 result: real-provider responses now run through `evaluateSafetyPolicy()` before the overlay accepts them. Allowed guidance renders normally, confirmation-required guidance enters `confirmation_required`, clarify decisions hide the target, block decisions enter error, and Debug receives the safety action/reason.
+- Step 5 result: real-provider responses now run through `evaluateSafetyPolicy()` before the overlay accepts them. Warning-only guidance renders with a notice, strong-risk guidance enters `confirmation_required` with its accepted target hidden, clarify decisions hide the target, block decisions enter error, and Debug receives the safety action/reason.
 - Step 6: add confirmation UI.
-- Step 6 result: confirmation-required guidance now renders a compact "Confirm first" cue instead of the normal step bubble. The target marker can stay visible for review, but the puck does not animate it as ordinary safe guidance.
+- Step 6 result: confirmation-required guidance now opens a focused `Show target` control. The target ring stays absent until acknowledgment; the control only reveals guidance and never clicks or changes the underlying app.
 - Step 7: show safety decisions in Debug.
 - Step 7 result: Debug now includes a Safety Review section showing policy action, reason, risk, confirmation requirement, message, and details.
 - Step 8: run manual safety QA.
 - Step 8 result: added a low-confidence fixture, routed mock fixtures through the same policy gate, and documented manual safety QA in `docs/phase-11-safety-qa.md`. Debug can now test allow, confirm, clarify, and block without requiring a live provider.
 - Step 9: update docs and learning notes.
-- Step 9 result: updated the active safety docs and learning note with the actual Phase 11 behavior: real provider results and mock fixtures share one policy gate, safe guidance can render, risky guidance confirms, weak guidance clarifies, and invalid/unavailable guidance blocks.
+- Step 9 result: updated the active safety docs and learning note with the actual Phase 11 behavior: real provider results and mock fixtures share one policy gate, account/permission guidance warns, strong-risk guidance requires target reveal, weak guidance clarifies, and invalid/unavailable guidance blocks.
 - Step 10: close Phase 11 or escalate browser metadata.
-- Step 10 result: Phase 11 is closed as the safety-foundation phase. Risky guidance is confirmation-gated, weak guidance clarifies, invalid/unavailable guidance blocks, Debug explains decisions, and Toki still does not click automatically. Browser target accuracy remains Phase 12 screen-intelligence work.
+- Step 10 result: Phase 11 is closed as the safety-foundation phase. Warning-only risks do not block guidance, strong-risk targets are acknowledgment-gated, weak guidance clarifies, invalid/unavailable guidance blocks, Debug explains decisions, and Toki still does not click automatically. Browser target accuracy remains Phase 12 screen-intelligence work.
 
 ## Phase 12: Screen Intelligence Upgrade
 
@@ -332,7 +332,7 @@ Status: Closed as a quality gate.
 - Step 5 result: added safety scoring helpers in `@toki/evals` that run the real `evaluateSafetyPolicy()` gate and compare actual policy action/risk against expected eval annotations.
 - Step 6 result: added `npm run qa:eval:known-screen`, a deterministic eval CLI that loads the known browser fixture, normalizes older candidate roles, scores target/ranking/safety expectations, and reports pass/fail without launching the desktop app.
 - Step 7 result: added workflow scoring helpers in `@toki/evals` for verification status, matched candidates, next/back movement, blocked/completed status, and confirmation-required workflow behavior.
-- Step 8 result: added provider comparison helpers in `@toki/evals` for mock, local Ollama, FreeLLMAPI dev, and unavailable modes, including pass/fail/skipped results so missing local providers do not break deterministic eval runs.
+- Step 8 result: added provider comparison helpers in `@toki/evals` for mock, local retired local vision runtime, FreeLLMAPI dev, and unavailable modes, including pass/fail/skipped results so missing local providers do not break deterministic eval runs.
 - Step 9 result: added eval report helpers in `@toki/evals` for summary counts, case-level status, target/ranking/safety/workflow/provider columns, and failure detail formatting.
 - Step 10 result: Phase 15 is closed as the deterministic eval foundation. Eval package typecheck and known-screen eval pass, covering the baseline for target accuracy, ranking, safety, workflow, optional provider comparison, and readable regression reporting.
 - Screenshot dataset.
