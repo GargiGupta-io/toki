@@ -15,9 +15,6 @@ import {
 import type {
   ActiveWindowBounds,
   ActiveWindowCaptureSnapshot,
-  CameraDeviceSummary,
-  CameraPermissionState,
-  CameraStreamStatus,
   CaptureMetadata,
   ClickAwareNativeClick,
   ClickAwareRuntimeState,
@@ -34,10 +31,8 @@ import type {
   GuidanceTraceSource,
   GuidanceTraceStage,
   GuidanceValidationIssue,
-  GestureActionEvent,
   GestureClassification,
   GestureRuntimeState,
-  HandLandmarkFrame,
   ScreenshotCapture,
   ScreenshotMetadata,
   ScreenCandidate,
@@ -51,9 +46,7 @@ import type {
   WorkflowStep,
   WorkflowVerificationResult,
 } from "@toki/shared";
-import { probeCameraDevices } from "./cameraDevices";
 import { createScreenshotCropFromDisplayRect } from "./coordinateTransforms";
-import { classifyOpenPalmGesture, classifyPinchGesture } from "./gestureClassifier";
 import {
   canRevealGuidanceTarget,
   getAcceptedGuidanceResult,
@@ -71,15 +64,16 @@ import {
   getGuidanceLocalizationObjective,
 } from "./guidanceTaskPlanning";
 import {
-  initialGestureSmoothingState,
-  smoothGestureCandidate,
-} from "./gestureSmoothing";
-import {
-  getGestureVisualAnchor,
   isSameGestureVisualAnchor,
   type GestureVisualAnchor,
 } from "./gestureVisuals";
-import { detectHandLandmarksForVideo, getHandLandmarker } from "./handLandmarker";
+import {
+  createEmptyGestureRuntimeDiagnostics,
+  createInactiveGestureClassification,
+  getGestureActionForClassification,
+  useAlwaysOnGestureRuntime,
+  type GestureRuntimeDiagnostics,
+} from "./gestureRuntime";
 import {
   getNativeVoiceCaptureStatus,
   resetNativeVoiceCapture,
@@ -162,6 +156,7 @@ type OverlaySnapshot = {
 };
 
 type DebugSnapshot = OverlaySnapshot & {
+  gestureDiagnostics: GestureRuntimeDiagnostics;
   guidanceTrace: GuidanceTrace | null;
   guidanceProviderMode: GuidanceProviderMode;
   guidanceProviderName: string | null;
@@ -201,14 +196,7 @@ type OverlayCommand =
   | { type: "retreat-workflow-step" }
   | { type: "stop-workflow" }
   | { type: "set-camera-enabled"; enabled: boolean }
-  | {
-      type: "set-camera-preview-status";
-      status: CameraStreamStatus;
-      permission: CameraPermissionState;
-      error?: string;
-    }
-  | { type: "set-gesture-classification"; classification: GestureClassification }
-  | { type: "set-gesture-visual-anchor"; anchor: GestureVisualAnchor | null }
+  | { type: "refresh-camera-devices" }
   | { type: "set-gestures-enabled"; enabled: boolean }
   | { type: "start-voice-listening"; source: VoiceActivationSource }
   | { type: "submit-voice-listening" }
@@ -1423,10 +1411,6 @@ function verifyWorkflowStepExpectations(
   };
 }
 
-function createInactiveGestureClassification(): GestureClassification {
-  return createDefaultGestureRuntimeState().currentGesture;
-}
-
 function isSameGestureClassification(
   left: GestureClassification | null | undefined,
   right: GestureClassification | null | undefined,
@@ -1446,12 +1430,16 @@ function isSameGestureClassification(
 
 function createEmptyDebugSnapshot(): DebugSnapshot {
   const viewport = getViewportMetrics();
+  const gestureRuntime = createDefaultGestureRuntimeState();
 
   return {
     overlayState: "idle",
     hasAcceptedGuidance: false,
     isRefreshingCapture: false,
-    gestureRuntime: createDefaultGestureRuntimeState(),
+    gestureRuntime,
+    gestureDiagnostics: createEmptyGestureRuntimeDiagnostics(
+      gestureRuntime.thresholds,
+    ),
     voiceRuntime: createDefaultVoiceRuntimeState(),
     topStatus: null,
     guidanceTrace: null,
@@ -1502,6 +1490,7 @@ function OverlayWindowApp() {
   const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
     createDefaultGestureRuntimeState(),
   );
+  const [gestureDeviceRefreshToken, setGestureDeviceRefreshToken] = useState(0);
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
   );
@@ -1542,6 +1531,12 @@ function OverlayWindowApp() {
   const topUtilityFocusedRef = useRef(false);
   const topUtilityRevealTimerRef = useRef<number | null>(null);
   const topUtilityLeaveTimerRef = useRef<number | null>(null);
+  const alwaysOnGestureRuntime = useAlwaysOnGestureRuntime({
+    cameraEnabled: gestureRuntime.camera.enabled,
+    gesturesEnabled: gestureRuntime.enabled,
+    thresholds: gestureRuntime.thresholds,
+    deviceRefreshToken: gestureDeviceRefreshToken,
+  });
 
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep =
@@ -1646,6 +1641,96 @@ function OverlayWindowApp() {
   }, [voiceRuntime]);
 
   useEffect(() => {
+    const nextCamera = alwaysOnGestureRuntime.camera;
+    const runtimeUnavailable =
+      nextCamera.status === "disabled" ||
+      nextCamera.status === "permission_denied" ||
+      nextCamera.status === "no_camera" ||
+      nextCamera.status === "error";
+
+    if (runtimeUnavailable) {
+      setGestureVisualAnchor(null);
+    }
+
+    setGestureRuntime((currentState) => {
+      const nextEnabled = runtimeUnavailable ? false : currentState.enabled;
+      const nextGesture = runtimeUnavailable
+        ? createInactiveGestureClassification()
+        : currentState.currentGesture;
+      const cameraIsCurrent =
+        currentState.camera.enabled === nextCamera.enabled &&
+        currentState.camera.permission === nextCamera.permission &&
+        currentState.camera.status === nextCamera.status &&
+        currentState.camera.devices === nextCamera.devices &&
+        currentState.camera.error === nextCamera.error;
+
+      if (
+        cameraIsCurrent &&
+        nextEnabled === currentState.enabled &&
+        isSameGestureClassification(nextGesture, currentState.currentGesture)
+      ) {
+        return currentState;
+      }
+
+      return {
+        ...currentState,
+        enabled: nextEnabled,
+        currentGesture: nextGesture,
+        camera: nextCamera,
+      };
+    });
+  }, [alwaysOnGestureRuntime.camera]);
+
+  useEffect(() => {
+    const classification = alwaysOnGestureRuntime.classification;
+
+    if (
+      isSameGestureClassification(
+        lastGestureClassificationRef.current,
+        classification,
+      )
+    ) {
+      return;
+    }
+
+    lastGestureClassificationRef.current = classification;
+    const gestureAction = getGestureActionForClassification(
+      classification,
+      new Date().toISOString(),
+    );
+
+    if (gestureAction?.type === "activate_assistant") {
+      setOverlayState("listening");
+    }
+
+    if (gestureAction?.type === "pause_assistant") {
+      cancelVoiceRuntime();
+      setOverlayState("paused");
+    }
+
+    setGestureRuntime((currentState) =>
+      isSameGestureClassification(currentState.currentGesture, classification) &&
+      gestureAction == null
+        ? currentState
+        : {
+            ...currentState,
+            currentGesture: classification,
+            lastAction: gestureAction ?? currentState.lastAction,
+          },
+    );
+  }, [alwaysOnGestureRuntime.classification]);
+
+  useEffect(() => {
+    const nextAnchor = alwaysOnGestureRuntime.visualAnchor;
+
+    setGestureVisualAnchor((currentAnchor) =>
+      isSameGestureVisualAnchor(currentAnchor, nextAnchor)
+        ? currentAnchor
+        : nextAnchor,
+    );
+  }, [alwaysOnGestureRuntime.visualAnchor]);
+
+  useEffect(() => {
     const renderEvent = getGuidanceTraceEvent(guidanceTraceRef.current, "render");
     if (acceptedTarget == null || renderEvent?.status !== "pending") {
       return;
@@ -1693,6 +1778,7 @@ function OverlayWindowApp() {
   const debugSnapshot = useMemo<DebugSnapshot>(
     () => ({
       ...overlaySnapshot,
+      gestureDiagnostics: alwaysOnGestureRuntime.diagnostics,
       guidanceTrace,
       guidanceProviderMode,
       guidanceProviderName,
@@ -1714,6 +1800,7 @@ function OverlayWindowApp() {
     }),
     [
       overlaySnapshot,
+      alwaysOnGestureRuntime.diagnostics,
       guidanceTrace,
       guidanceProviderMode,
       guidanceProviderName,
@@ -3220,89 +3307,8 @@ function OverlayWindowApp() {
         return;
       }
 
-      if (event.payload.type === "set-camera-preview-status") {
-        const { status, permission, error } = event.payload;
-
-        if (status !== "active" && status !== "requesting_permission") {
-          setGestureVisualAnchor(null);
-        }
-
-        setGestureRuntime((currentState) => ({
-          ...currentState,
-          enabled:
-            status === "active" || status === "requesting_permission"
-              ? currentState.enabled
-              : false,
-          currentGesture:
-            status === "active" || status === "requesting_permission"
-              ? currentState.currentGesture
-              : createInactiveGestureClassification(),
-          camera: {
-            ...currentState.camera,
-            permission,
-            status,
-            error,
-          },
-        }));
-        return;
-      }
-
-      if (event.payload.type === "set-gesture-visual-anchor") {
-        setGestureVisualAnchor(event.payload.anchor);
-        return;
-      }
-
-      if (event.payload.type === "set-gesture-classification") {
-        const { classification } = event.payload;
-
-        if (
-          isSameGestureClassification(
-            lastGestureClassificationRef.current,
-            classification,
-          )
-        ) {
-          return;
-        }
-
-        lastGestureClassificationRef.current = classification;
-        let gestureAction: GestureActionEvent | undefined;
-
-        if (classification.phase === "recognized" && classification.label === "pinch") {
-          gestureAction = {
-            type: "activate_assistant",
-            gesture: "pinch",
-            confidence: classification.confidence,
-            firedAt: new Date().toISOString(),
-            sourceFrameId: classification.sourceFrameId,
-          };
-          setOverlayState("listening");
-        }
-
-        if (
-          classification.phase === "recognized" &&
-          classification.label === "open_palm"
-        ) {
-          gestureAction = {
-            type: "pause_assistant",
-            gesture: "open_palm",
-            confidence: classification.confidence,
-            firedAt: new Date().toISOString(),
-            sourceFrameId: classification.sourceFrameId,
-          };
-          cancelVoiceRuntime();
-          setOverlayState("paused");
-        }
-
-        setGestureRuntime((currentState) =>
-          isSameGestureClassification(currentState.currentGesture, classification) &&
-          gestureAction == null
-            ? currentState
-            : {
-                ...currentState,
-                currentGesture: classification,
-                lastAction: gestureAction ?? currentState.lastAction,
-              },
-        );
+      if (event.payload.type === "refresh-camera-devices") {
+        setGestureDeviceRefreshToken((currentToken) => currentToken + 1);
         return;
       }
 
@@ -3751,59 +3757,23 @@ function DebugWindowApp() {
   const [guidanceTesterVerdict, setGuidanceTesterVerdict] = useState<
     "untested" | "useful" | "wrong"
   >("untested");
-  const [cameraDevices, setCameraDevices] = useState<CameraDeviceSummary[]>([]);
-  const [cameraProbeStatus, setCameraProbeStatus] = useState<
-    "idle" | "probing" | "ready" | "unsupported" | "error"
-  >("idle");
-  const [cameraProbeError, setCameraProbeError] = useState<string | null>(null);
   const [voiceProbe, setVoiceProbe] = useState<VoiceCapabilityProbe | null>(null);
   const [voiceProbeStatus, setVoiceProbeStatus] = useState<
     "idle" | "probing" | "requesting" | "ready" | "unsupported" | "error"
   >("idle");
   const [voiceProbeError, setVoiceProbeError] = useState<string | null>(null);
-  const [cameraPreviewStatus, setCameraPreviewStatus] =
-    useState<CameraStreamStatus>("idle");
-  const [cameraPreviewError, setCameraPreviewError] = useState<string | null>(null);
-  const [handLandmarkerStatus, setHandLandmarkerStatus] = useState<
-    "idle" | "loading" | "running" | "no_hand" | "error"
-  >("idle");
-  const [handLandmarkerError, setHandLandmarkerError] = useState<string | null>(null);
-  const [handLandmarkFrame, setHandLandmarkFrame] = useState<HandLandmarkFrame | null>(
-    null,
-  );
-  const [smoothedGesture, setSmoothedGesture] = useState(
-    createDefaultGestureRuntimeState().currentGesture,
-  );
-  const debugGestureVisualAnchor = useMemo(
-    () => getGestureVisualAnchor(handLandmarkFrame, smoothedGesture.label),
-    [handLandmarkFrame, smoothedGesture.label],
-  );
-  const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
-  const handFrameIdRef = useRef(0);
-  const gestureSmoothingStateRef = useRef(initialGestureSmoothingState);
-  const lastReportedGestureRef = useRef<GestureClassification | null>(null);
-  const lastReportedGestureVisualAnchorRef = useRef<GestureVisualAnchor | null>(null);
-  const pinchClassification = useMemo(
-    () =>
-      classifyPinchGesture(
-        handLandmarkFrame,
-        snapshot.gestureRuntime.thresholds,
-      ),
-    [handLandmarkFrame, snapshot.gestureRuntime.thresholds],
-  );
-  const openPalmClassification = useMemo(
-    () =>
-      classifyOpenPalmGesture(
-        handLandmarkFrame,
-        snapshot.gestureRuntime.thresholds,
-      ),
-    [handLandmarkFrame, snapshot.gestureRuntime.thresholds],
-  );
-  const rawGestureCandidate =
-    openPalmClassification.label !== "none" &&
-    openPalmClassification.confidence >= pinchClassification.confidence
-      ? openPalmClassification
-      : pinchClassification;
+  const gestureDiagnostics = snapshot.gestureDiagnostics;
+  const cameraDevices = gestureDiagnostics.cameraDevices;
+  const cameraProbeStatus = gestureDiagnostics.cameraProbeStatus;
+  const cameraProbeError = gestureDiagnostics.cameraProbeError;
+  const cameraRuntimeStatus = gestureDiagnostics.cameraStatus;
+  const cameraRuntimeError = gestureDiagnostics.cameraError;
+  const handLandmarkerStatus = gestureDiagnostics.handLandmarkerStatus;
+  const handLandmarkerError = gestureDiagnostics.handLandmarkerError;
+  const handLandmarkSummary = gestureDiagnostics.hand;
+  const pinchClassification = gestureDiagnostics.pinch;
+  const openPalmClassification = gestureDiagnostics.openPalm;
+  const smoothedGesture = gestureDiagnostics.smoothedGesture;
   const cameraLabelsMayBeHidden =
     cameraProbeStatus === "ready" &&
     cameraDevices.length > 0 &&
@@ -3927,41 +3897,6 @@ function DebugWindowApp() {
       });
   }
 
-  function reportCameraPreviewStatus(
-    status: CameraStreamStatus,
-    permission: CameraPermissionState,
-    error?: string,
-  ) {
-    sendOverlayCommand({
-      type: "set-camera-preview-status",
-      status,
-      permission,
-      error,
-    });
-  }
-
-  async function refreshCameraDevices() {
-    if (!navigator.mediaDevices?.enumerateDevices) {
-      setCameraProbeStatus("unsupported");
-      setCameraProbeError("Camera device enumeration is not available.");
-      setCameraDevices([]);
-      return;
-    }
-
-    setCameraProbeStatus("probing");
-    setCameraProbeError(null);
-
-    try {
-      const devices = await probeCameraDevices();
-      setCameraDevices(devices);
-      setCameraProbeStatus("ready");
-    } catch (error) {
-      setCameraDevices([]);
-      setCameraProbeStatus("error");
-      setCameraProbeError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
 
@@ -3979,246 +3914,11 @@ function DebugWindowApp() {
       type: "request-state",
     } satisfies OverlayCommand).catch(() => undefined);
     refreshVoiceCapabilities();
-    refreshCameraDevices();
 
     return () => {
       unlistenState?.();
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    let stream: MediaStream | null = null;
-    const cameraEnabled = snapshot.gestureRuntime.camera.enabled;
-
-    async function startCameraPreview() {
-      if (!cameraEnabled) {
-        setCameraPreviewStatus("disabled");
-        setCameraPreviewError(null);
-        setHandLandmarkFrame(null);
-        setHandLandmarkerStatus("idle");
-        setHandLandmarkerError(null);
-        gestureSmoothingStateRef.current = initialGestureSmoothingState;
-        setSmoothedGesture(createInactiveGestureClassification());
-        reportCameraPreviewStatus("disabled", "unknown");
-        return;
-      }
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        const message = "Camera preview is not available in this WebView.";
-        setCameraPreviewStatus("error");
-        setCameraPreviewError(message);
-        reportCameraPreviewStatus("error", "unsupported", message);
-        return;
-      }
-
-      setCameraPreviewStatus("requesting_permission");
-      setCameraPreviewError(null);
-      reportCameraPreviewStatus("requesting_permission", "prompt");
-
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
-
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        if (cameraPreviewRef.current) {
-          cameraPreviewRef.current.srcObject = stream;
-          await cameraPreviewRef.current.play().catch(() => undefined);
-        }
-
-        setCameraPreviewStatus("active");
-        reportCameraPreviewStatus("active", "granted");
-      } catch (error) {
-        const errorName = error instanceof DOMException ? error.name : "";
-        const message = error instanceof Error ? error.message : String(error);
-        const nextStatus: CameraStreamStatus =
-          errorName === "NotAllowedError" || errorName === "SecurityError"
-            ? "permission_denied"
-            : errorName === "NotFoundError" || errorName === "DevicesNotFoundError"
-              ? "no_camera"
-              : "error";
-        const nextPermission: CameraPermissionState =
-          nextStatus === "permission_denied" ? "denied" : "error";
-
-        setCameraPreviewStatus(nextStatus);
-        setCameraPreviewError(message);
-        setHandLandmarkFrame(null);
-        setHandLandmarkerStatus("idle");
-        setHandLandmarkerError(null);
-        gestureSmoothingStateRef.current = initialGestureSmoothingState;
-        setSmoothedGesture(createInactiveGestureClassification());
-        reportCameraPreviewStatus(nextStatus, nextPermission, message);
-      }
-    }
-
-    void startCameraPreview();
-
-    return () => {
-      cancelled = true;
-      stream?.getTracks().forEach((track) => track.stop());
-
-      if (cameraPreviewRef.current) {
-        cameraPreviewRef.current.srcObject = null;
-      }
-    };
-  }, [snapshot.gestureRuntime.camera.enabled]);
-
-  useEffect(() => {
-    if (cameraPreviewStatus !== "active" || !snapshot.gestureRuntime.enabled) {
-      setHandLandmarkerStatus(
-        cameraPreviewStatus === "disabled" || !snapshot.gestureRuntime.enabled
-          ? "idle"
-          : "loading",
-      );
-      setHandLandmarkFrame(null);
-      return;
-    }
-
-    let cancelled = false;
-    let animationFrame = 0;
-    let lastDetectionAt = 0;
-    const detectionIntervalMs = 1_000 / 15;
-
-    async function runHandLandmarker() {
-      setHandLandmarkerStatus("loading");
-      setHandLandmarkerError(null);
-
-      try {
-        const landmarker = await getHandLandmarker();
-
-        function detectFrame(now: number) {
-          if (cancelled) {
-            return;
-          }
-
-          if (now - lastDetectionAt >= detectionIntervalMs) {
-            lastDetectionAt = now;
-            const video = cameraPreviewRef.current;
-
-            if (video) {
-              const frame = detectHandLandmarksForVideo(
-                landmarker,
-                video,
-                handFrameIdRef.current + 1,
-              );
-              handFrameIdRef.current += 1;
-
-              if (frame) {
-                setHandLandmarkFrame(frame);
-                setHandLandmarkerStatus("running");
-              } else {
-                setHandLandmarkerStatus("no_hand");
-              }
-            }
-          }
-
-          animationFrame = window.requestAnimationFrame(detectFrame);
-        }
-
-        animationFrame = window.requestAnimationFrame(detectFrame);
-      } catch (error) {
-        if (!cancelled) {
-          setHandLandmarkerStatus("error");
-          setHandLandmarkerError(error instanceof Error ? error.message : String(error));
-        }
-      }
-    }
-
-    void runHandLandmarker();
-
-    return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(animationFrame);
-    };
-  }, [cameraPreviewStatus, snapshot.gestureRuntime.enabled]);
-
-  useEffect(() => {
-    if (!snapshot.gestureRuntime.enabled) {
-      gestureSmoothingStateRef.current = initialGestureSmoothingState;
-      const inactiveGesture = createDefaultGestureRuntimeState().currentGesture;
-      lastReportedGestureRef.current = null;
-      setSmoothedGesture((currentGesture) =>
-        isSameGestureClassification(currentGesture, inactiveGesture)
-          ? currentGesture
-          : inactiveGesture,
-      );
-      return;
-    }
-
-    const result = smoothGestureCandidate(
-      gestureSmoothingStateRef.current,
-      rawGestureCandidate,
-      snapshot.gestureRuntime.thresholds,
-      performance.now(),
-    );
-
-    gestureSmoothingStateRef.current = result.state;
-    setSmoothedGesture((currentGesture) =>
-      isSameGestureClassification(currentGesture, result.classification)
-        ? currentGesture
-        : result.classification,
-    );
-
-    if (
-      isSameGestureClassification(
-        lastReportedGestureRef.current,
-        result.classification,
-      )
-    ) {
-      return;
-    }
-
-    lastReportedGestureRef.current = result.classification;
-    sendOverlayCommand({
-      type: "set-gesture-classification",
-      classification: result.classification,
-    });
-  }, [
-    rawGestureCandidate.label,
-    rawGestureCandidate.confidence,
-    rawGestureCandidate.sourceFrameId,
-    snapshot.gestureRuntime.enabled,
-    snapshot.gestureRuntime.thresholds.minDetectionConfidence,
-    snapshot.gestureRuntime.thresholds.pinchHoldMs,
-    snapshot.gestureRuntime.thresholds.openPalmHoldMs,
-    snapshot.gestureRuntime.thresholds.cooldownMs,
-    snapshot.gestureRuntime.thresholds.maxHands,
-  ]);
-
-  useEffect(() => {
-    const gestureCanAnimate =
-      snapshot.gestureRuntime.enabled &&
-      smoothedGesture.label !== "none" &&
-      smoothedGesture.phase !== "inactive" &&
-      smoothedGesture.phase !== "cooldown";
-    const nextAnchor = gestureCanAnimate ? debugGestureVisualAnchor : null;
-
-    if (
-      isSameGestureVisualAnchor(
-        lastReportedGestureVisualAnchorRef.current,
-        nextAnchor,
-      )
-    ) {
-      return;
-    }
-
-    lastReportedGestureVisualAnchorRef.current = nextAnchor;
-    sendOverlayCommand({
-      type: "set-gesture-visual-anchor",
-      anchor: nextAnchor,
-    });
-  }, [
-    debugGestureVisualAnchor,
-    smoothedGesture.label,
-    smoothedGesture.phase,
-    snapshot.gestureRuntime.enabled,
-  ]);
 
   return (
     <main className="debug-shell" aria-label="Toki debug window">
@@ -4743,7 +4443,7 @@ function DebugWindowApp() {
               <button
                 type="button"
                 onClick={() => {
-                  refreshCameraDevices();
+                  sendOverlayCommand({ type: "refresh-camera-devices" });
                 }}
                 disabled={cameraProbeStatus === "probing"}
               >
@@ -4813,42 +4513,57 @@ function DebugWindowApp() {
           </section>
 
           <section className="debug-section debug-section-wide">
-            <h2>Camera Preview</h2>
+            <h2>Camera Runtime</h2>
             <div className="debug-section-header-row">
-              <span>{cameraPreviewStatus}</span>
+              <span>{cameraRuntimeStatus}</span>
               <span>
                 {snapshot.gestureRuntime.camera.enabled ? "camera enabled" : "camera off"}
               </span>
             </div>
-            <div className="debug-camera-preview">
-              {snapshot.gestureRuntime.camera.enabled ? (
-                <video
-                  ref={cameraPreviewRef}
-                  muted
-                  playsInline
-                  aria-label="Debug camera preview"
-                />
-              ) : (
-                <p>Turn on Camera in settings to preview the local stream.</p>
-              )}
-            </div>
-            {cameraPreviewStatus === "permission_denied" ? (
+            <dl>
+              <div>
+                <dt>Owner</dt>
+                <dd>{gestureDiagnostics.owner}</dd>
+              </div>
+              <div>
+                <dt>Permission</dt>
+                <dd>{gestureDiagnostics.cameraPermission}</dd>
+              </div>
+              <div>
+                <dt>Preview</dt>
+                <dd>{gestureDiagnostics.previewVisible ? "Visible" : "Hidden"}</dd>
+              </div>
+              <div>
+                <dt>Raw frames</dt>
+                <dd>
+                  {gestureDiagnostics.rawCameraFramesShared
+                    ? "Shared with Debug"
+                    : "Local only"}
+                </dd>
+              </div>
+            </dl>
+            <p className="debug-muted">
+              The persistent overlay runtime processes a detached local video stream.
+              Debug receives state snapshots only, so closing this window does not stop
+              gesture recognition.
+            </p>
+            {cameraRuntimeStatus === "permission_denied" ? (
               <p className="debug-muted">
                 Camera permission is denied. On macOS, enable Camera access for
                 Toki or the terminal app in System Settings, then quit and relaunch.
               </p>
-            ) : cameraPreviewStatus === "no_camera" ? (
+            ) : cameraRuntimeStatus === "no_camera" ? (
               <p className="debug-muted">
                 No usable camera was found. Toki remains available through tray and
                 manual controls.
               </p>
-            ) : cameraPreviewStatus === "disabled" ? (
+            ) : cameraRuntimeStatus === "disabled" ? (
               <p className="debug-muted">
                 Camera is off. No camera frames are captured or processed.
               </p>
             ) : null}
-            {cameraPreviewError ? (
-              <p className="debug-muted">{cameraPreviewError}</p>
+            {cameraRuntimeError ? (
+              <p className="debug-muted">{cameraRuntimeError}</p>
             ) : null}
           </section>
 
@@ -4861,23 +4576,23 @@ function DebugWindowApp() {
               </div>
               <div>
                 <dt>Frame</dt>
-                <dd>{handLandmarkFrame?.frameId ?? "None"}</dd>
+                <dd>{handLandmarkSummary?.frameId ?? "None"}</dd>
               </div>
               <div>
                 <dt>Hand</dt>
-                <dd>{handLandmarkFrame?.handedness ?? "None"}</dd>
+                <dd>{handLandmarkSummary?.handedness ?? "None"}</dd>
               </div>
               <div>
                 <dt>Confidence</dt>
                 <dd>
-                  {handLandmarkFrame
-                    ? handLandmarkFrame.confidence.toFixed(2)
+                  {handLandmarkSummary
+                    ? handLandmarkSummary.confidence.toFixed(2)
                     : "None"}
                 </dd>
               </div>
               <div>
                 <dt>Landmarks</dt>
-                <dd>{handLandmarkFrame?.landmarks.length ?? 0}</dd>
+                <dd>{handLandmarkSummary?.landmarkCount ?? 0}</dd>
               </div>
             </dl>
             {handLandmarkerError ? (
@@ -5013,7 +4728,40 @@ function DebugWindowApp() {
 
           <section className="debug-section">
             <h2>Gesture Settings</h2>
+            <div className="debug-section-header-row">
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({
+                    type: "set-camera-enabled",
+                    enabled: !snapshot.gestureRuntime.camera.enabled,
+                  });
+                }}
+              >
+                {snapshot.gestureRuntime.camera.enabled
+                  ? "Turn camera off"
+                  : "Turn camera on"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({
+                    type: "set-gestures-enabled",
+                    enabled: !snapshot.gestureRuntime.enabled,
+                  });
+                }}
+                disabled={!snapshot.gestureRuntime.camera.enabled}
+              >
+                {snapshot.gestureRuntime.enabled
+                  ? "Disable gestures"
+                  : "Enable gestures"}
+              </button>
+            </div>
             <dl>
+              <div>
+                <dt>Runtime owner</dt>
+                <dd>{gestureDiagnostics.owner}</dd>
+              </div>
               <div>
                 <dt>Camera</dt>
                 <dd>
