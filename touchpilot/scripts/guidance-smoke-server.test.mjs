@@ -6,7 +6,6 @@ import {
   resetBrowserCandidateBridge,
   normalizeProviderGuidanceResponse,
   requestFreeLlmApiGuidance,
-  requestLocalOllamaGuidance,
   resolveGuidanceProviderConfig,
   validateProviderGuidanceResult,
   validateGuidanceProviderRequest,
@@ -129,22 +128,6 @@ test("resolveGuidanceProviderConfig defaults to unavailable", () => {
   });
 });
 
-test("resolveGuidanceProviderConfig supports local Ollama", () => {
-  assert.deepEqual(
-    resolveGuidanceProviderConfig({
-      TOKI_GUIDANCE_PROVIDER: "local-ollama",
-      TOKI_OLLAMA_ENDPOINT: "http://localhost:11434/api/generate",
-      TOKI_OLLAMA_MODEL: "llava:13b",
-    }),
-    {
-      provider: "local-ollama",
-      providerName: "local-ollama",
-      endpoint: "http://localhost:11434/api/generate",
-      model: "llava:13b",
-    },
-  );
-});
-
 test("resolveGuidanceProviderConfig supports FreeLLMAPI dev mode", () => {
   assert.deepEqual(
     resolveGuidanceProviderConfig({
@@ -257,122 +240,6 @@ test("guidance smoke server returns unavailable until provider is wired", async 
   assert.match(body.error, /no real provider is wired yet/);
 });
 
-test("requestLocalOllamaGuidance sends screenshot and goal to Ollama", async () => {
-  const calls = [];
-  const response = await requestLocalOllamaGuidance(
-    validRequest,
-    {
-      provider: "local-ollama",
-      providerName: "local-ollama",
-      endpoint: "http://localhost:11434/api/generate",
-      model: "llava:13b",
-    },
-    {
-      fetchImpl: async (url, init) => {
-        calls.push({ url, init });
-
-        return new Response(
-          JSON.stringify({
-            response: JSON.stringify({
-              mode: "real",
-              providerName: "local-ollama",
-              result: {
-                mode: "guide",
-                summary: "Click the search field.",
-                step: {
-                  instruction: "Click Search.",
-                  target: {
-                    label: "Search",
-                    x: 400,
-                    y: 120,
-                    width: 240,
-                    height: 44,
-                  },
-                  confidence: 0.66,
-                  risk: "safe_navigation",
-                  requiresConfirmation: false,
-                },
-              },
-            }),
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      },
-    },
-  );
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "http://localhost:11434/api/generate");
-  assert.equal(calls[0].init.method, "POST");
-
-  const body = JSON.parse(calls[0].init.body);
-
-  assert.equal(body.model, "llava:13b");
-  assert.equal(body.stream, false);
-  assert.equal(body.format, "json");
-  assert.deepEqual(body.images, ["iVBORw0KGgo="]);
-  assert.match(body.prompt, /Show me what to click next/);
-  assert.match(body.prompt, /Display width: 1440/);
-  assert.equal(response.mode, "real");
-  assert.equal(response.providerName, "local-ollama");
-  assert.equal(response.validation.valid, true);
-  assert.equal(response.result.step.target.label, "Search");
-});
-
-test("requestLocalOllamaGuidance sends candidate evidence to Ollama", async () => {
-  const calls = [];
-  await requestLocalOllamaGuidance(
-    withCandidates(validRequest),
-    {
-      provider: "local-ollama",
-      providerName: "local-ollama",
-      endpoint: "http://localhost:11434/api/generate",
-      model: "llava:13b",
-    },
-    {
-      fetchImpl: async (url, init) => {
-        calls.push({ url, init });
-
-        return new Response(
-          JSON.stringify({
-            response: JSON.stringify({
-              mode: "real",
-              providerName: "local-ollama",
-              result: {
-                mode: "guide",
-                summary: "Click the message input.",
-                step: {
-                  instruction: "Click the message input.",
-                  target: {
-                    candidateId: "message-input",
-                    label: "Message input box",
-                    x: 0.36,
-                    y: 0.78,
-                    width: 0.52,
-                    height: 0.41,
-                  },
-                  confidence: 0.8,
-                  risk: "safe_navigation",
-                  requiresConfirmation: false,
-                },
-              },
-            }),
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      },
-    },
-  );
-
-  const body = JSON.parse(calls[0].init.body);
-
-  assert.match(body.prompt, /Candidate UI elements are provided/);
-  assert.match(body.prompt, /must choose from the candidate list/);
-  assert.match(body.prompt, /Return the candidate id, not raw coordinates/);
-  assert.match(body.prompt, /id=message-input/);
-  assert.match(body.prompt, /box=520,790,420x44/);
-});
-
 test("validateProviderGuidanceResult rejects offscreen targets", () => {
   const validation = validateProviderGuidanceResult(
     {
@@ -440,7 +307,7 @@ test("normalizeProviderGuidanceResponse rejects invalid provider output", () => 
   const response = normalizeProviderGuidanceResponse(
     {
       mode: "real",
-      providerName: "local-ollama",
+      providerName: "test-provider",
       result: {
         mode: "guide",
         summary: "Click the search field.",
@@ -460,12 +327,12 @@ test("normalizeProviderGuidanceResponse rejects invalid provider output", () => 
       },
     },
     validRequest,
-    "local-ollama",
+    "test-provider",
     { providerRawText: '{"mode":"real","result":{"step":{"confidence":1.5}}}' },
   );
 
   assert.equal(response.mode, "unavailable");
-  assert.equal(response.providerName, "local-ollama");
+  assert.equal(response.providerName, "test-provider");
   assert.match(response.error, /invalid GuidanceResult/);
   assert.equal(response.validation.valid, false);
   assert.match(response.providerRawText, /confidence/);
@@ -496,11 +363,11 @@ test("normalizeProviderGuidanceResponse accepts direct GuidanceResult output", (
       },
     },
     validRequest,
-    "local-ollama",
+    "test-provider",
   );
 
   assert.equal(response.mode, "real");
-  assert.equal(response.providerName, "local-ollama");
+  assert.equal(response.providerName, "test-provider");
   assert.equal(response.validation.valid, true);
   assert.equal(response.result.step.target.label, "Search");
 });
@@ -540,7 +407,7 @@ test("normalizeProviderGuidanceResponse anchors matching candidate targets", () 
   const response = normalizeProviderGuidanceResponse(
     {
       mode: "real",
-      providerName: "local-ollama",
+      providerName: "test-provider",
       result: {
         mode: "guide",
         summary: "Click the message input.",
@@ -561,7 +428,7 @@ test("normalizeProviderGuidanceResponse anchors matching candidate targets", () 
       },
     },
     withCandidates(validRequest),
-    "local-ollama",
+    "test-provider",
   );
 
   assert.equal(response.mode, "real");
@@ -574,49 +441,6 @@ test("normalizeProviderGuidanceResponse anchors matching candidate targets", () 
     width: 420,
     height: 44,
   });
-});
-
-test("requestLocalOllamaGuidance reports malformed provider JSON", async () => {
-  const response = await requestLocalOllamaGuidance(
-    validRequest,
-    {
-      provider: "local-ollama",
-      providerName: "local-ollama",
-      endpoint: "http://localhost:11434/api/generate",
-      model: "llava:13b",
-    },
-    {
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ response: "not json" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-    },
-  );
-
-  assert.equal(response.mode, "unavailable");
-  assert.equal(response.providerName, "local-ollama");
-  assert.match(response.error, /JSON object|Unexpected token/);
-  assert.equal(response.providerRawText, "not json");
-});
-
-test("requestLocalOllamaGuidance reports provider errors as unavailable", async () => {
-  const response = await requestLocalOllamaGuidance(
-    validRequest,
-    {
-      provider: "local-ollama",
-      providerName: "local-ollama",
-      endpoint: "http://localhost:11434/api/generate",
-      model: "llava:13b",
-    },
-    {
-      fetchImpl: async () => new Response("missing model", { status: 404 }),
-    },
-  );
-
-  assert.equal(response.mode, "unavailable");
-  assert.equal(response.providerName, "local-ollama");
-  assert.match(response.error, /404/);
 });
 
 test("requestFreeLlmApiGuidance sends OpenAI-compatible vision request", async () => {
@@ -701,57 +525,6 @@ test("requestFreeLlmApiGuidance reports provider errors as unavailable", async (
   assert.equal(response.mode, "unavailable");
   assert.equal(response.providerName, "freellmapi-dev");
   assert.match(response.error, /429/);
-});
-
-test("guidance smoke server calls configured local Ollama adapter", async () => {
-  const response = createResponse();
-
-  await handleGuidanceSmokeRequest(
-    createRequest("POST", "/api/guidance/smoke", JSON.stringify(validRequest)),
-    response,
-    {
-      env: {
-        TOKI_GUIDANCE_PROVIDER: "local-ollama",
-        TOKI_OLLAMA_ENDPOINT: "http://localhost:11434/api/generate",
-        TOKI_OLLAMA_MODEL: "llava:13b",
-      },
-      fetchImpl: async () =>
-        new Response(
-          JSON.stringify({
-            response: JSON.stringify({
-              mode: "real",
-              providerName: "local-ollama",
-              result: {
-                mode: "guide",
-                summary: "Click the search field.",
-                step: {
-                  instruction: "Click Search.",
-                  target: {
-                    label: "Search",
-                    x: 400,
-                    y: 120,
-                    width: 240,
-                    height: 44,
-                  },
-                  confidence: 0.66,
-                  risk: "safe_navigation",
-                  requiresConfirmation: false,
-                },
-              },
-            }),
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-    },
-  );
-
-  const body = response.json();
-
-  assert.equal(response.statusCode, 200);
-  assert.equal(body.mode, "real");
-  assert.equal(body.providerName, "local-ollama");
-  assert.equal(body.validation.valid, true);
-  assert.equal(body.result.step.target.label, "Search");
 });
 
 test("guidance smoke server calls configured FreeLLMAPI dev adapter", async () => {

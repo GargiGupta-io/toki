@@ -40,6 +40,7 @@ export type ScreenCandidate = TargetBox & {
     | "dom_select"
     | "dom_textarea"
     | "dom_candidate"
+    | "vision_control"
     | "manual";
   source?: "accessibility" | "ocr" | "dom" | "manual";
   rank?: {
@@ -57,6 +58,27 @@ export type TargetEvidenceSource =
   | "manual"
   | "vision";
 
+export type GuidanceCommandIntent = {
+  objective: string;
+  action: string | null;
+  object: string | null;
+  actions: string[];
+  objects: string[];
+};
+
+export type TargetSupportingEvidence = {
+  candidateId: string;
+  label: string;
+  resolvedLabel: string;
+  role: ScreenCandidate["role"];
+  source: TargetEvidenceSource;
+  semanticText: string;
+  matchedActions: string[];
+  matchedObjects: string[];
+  rankScore?: number;
+  rankReasons: string[];
+};
+
 export type TargetVerificationTrace = {
   status: "accepted" | "rejected";
   source: TargetEvidenceSource;
@@ -69,7 +91,32 @@ export type TargetVerificationTrace = {
   };
   inputTarget: TargetBox;
   verifiedTarget?: TargetBox;
+  commandIntent: GuidanceCommandIntent;
+  supportingEvidence?: TargetSupportingEvidence;
+  groundingScore: number;
+  groundingThreshold: number;
+  groundingVerdict: "grounded" | "rejected";
   reasons: string[];
+};
+
+export type RawProviderTarget = {
+  candidateId?: string;
+  x?: number;
+  y?: number;
+  centerX?: number;
+  centerY?: number;
+  width?: number;
+  height?: number;
+  label?: string;
+};
+
+export type RawProviderOutputTrace = {
+  rawAnswer?: string;
+  label?: string;
+  reason?: string;
+  confidence?: number;
+  risk?: RiskClass;
+  target?: RawProviderTarget;
 };
 
 export type ScreenCandidateEvidence = {
@@ -315,7 +362,11 @@ export type GuidanceTrace = {
   events: GuidanceTraceEvent[];
 };
 
-export type GuidanceProviderMode = "mock" | "real" | "ollama-vision" | "unavailable";
+export type GuidanceProviderMode =
+  | "mock"
+  | "real"
+  | "codex-subscription"
+  | "unavailable";
 
 export type GuidanceProviderRequest = GuidanceRequest;
 
@@ -327,19 +378,11 @@ export type GuidanceProviderResponse = {
   validation?: GuidanceValidationResult;
   providerName?: string;
   debug?: {
+    providerOutput?: RawProviderOutputTrace;
     targetVerification?: TargetVerificationTrace;
     vision?: {
       coordinateMode: "candidate" | "center" | "top_left";
-      rawTarget?: {
-        candidateId?: string;
-        x?: number;
-        y?: number;
-        centerX?: number;
-        centerY?: number;
-        width?: number;
-        height?: number;
-        label?: string;
-      };
+      rawTarget?: RawProviderTarget;
       payload?: {
         imageWidth: number;
         imageHeight: number;
@@ -504,6 +547,7 @@ export type SafetyPolicyAction = "allow" | "confirm" | "clarify" | "block";
 export type SafetyPolicyReason =
   | "safe_navigation"
   | "form_entry_notice"
+  | "sensitive_guidance_warning"
   | "risky_action"
   | "unknown_risk"
   | "low_confidence"

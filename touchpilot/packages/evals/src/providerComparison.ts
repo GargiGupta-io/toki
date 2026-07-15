@@ -12,8 +12,8 @@ import { scoreTargetMatch } from "./targetScoring";
 
 export type ProviderComparisonMode =
   | "mock"
-  | "local-ollama"
   | "freellmapi-dev"
+  | "codex-subscription"
   | "unavailable";
 
 export type ProviderComparisonStatus = "passed" | "failed" | "skipped";

@@ -5,8 +5,6 @@ import { normalizeBrowserCandidatePayload } from "./browser-candidate-payload.mj
 const DEFAULT_PORT = 8787;
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_GUIDANCE_PROVIDER = "unavailable";
-const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate";
-const DEFAULT_OLLAMA_MODEL = "llava:latest";
 const DEFAULT_FREELLMAPI_ENDPOINT = "http://127.0.0.1:3001/v1/chat/completions";
 const DEFAULT_FREELLMAPI_MODEL = "auto";
 const MAX_PROVIDER_RAW_TEXT_CHARS = 2000;
@@ -15,7 +13,6 @@ const MIN_TARGET_SIZE_CSS_PX = 4;
 const MAX_SCREEN_CANDIDATES = 20;
 const SUPPORTED_GUIDANCE_PROVIDERS = new Set([
   "unavailable",
-  "local-ollama",
   "freellmapi-dev",
 ]);
 const VALID_GUIDANCE_MODES = new Set(["guide", "answer", "clarify"]);
@@ -168,15 +165,6 @@ export function resolveGuidanceProviderConfig(env = process.env) {
     };
   }
 
-  if (provider === "local-ollama") {
-    return {
-      provider,
-      providerName: "local-ollama",
-      endpoint: String(env.TOKI_OLLAMA_ENDPOINT ?? DEFAULT_OLLAMA_ENDPOINT).trim(),
-      model: String(env.TOKI_OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL).trim(),
-    };
-  }
-
   if (provider === "freellmapi-dev") {
     return {
       provider,
@@ -197,7 +185,7 @@ export function resolveGuidanceProviderConfig(env = process.env) {
   };
 }
 
-function createOllamaPrompt(request) {
+function createProviderPrompt(request) {
   const display = request.screen.display;
   const screenshot = request.screen.screenshotPayload;
   const calibration = request.screen.calibration;
@@ -236,7 +224,7 @@ function createOllamaPrompt(request) {
     "Required JSON shape:",
     "{",
     '  "mode": "real",',
-    '  "providerName": "local-ollama",',
+    '  "providerName": "configured-provider",',
     '  "result": {',
     '    "mode": "guide",',
     '    "summary": "short explanation",',
@@ -736,73 +724,6 @@ export function normalizeProviderGuidanceResponse(
   };
 }
 
-export async function requestLocalOllamaGuidance(
-  guidanceRequest,
-  providerConfig,
-  options = {},
-) {
-  const fetcher = options.fetchImpl ?? fetch;
-  const timeoutMs = Number(options.timeoutMs ?? resolveProviderTimeoutMs(options.env));
-  const abortController = new AbortController();
-  const timeout = setTimeout(() => {
-    abortController.abort();
-  }, timeoutMs);
-  let responseText = "";
-
-  try {
-    const ollamaRequest = {
-      model: providerConfig.model,
-      stream: false,
-      format: "json",
-      prompt: createOllamaPrompt(guidanceRequest),
-      images: [guidanceRequest.screen.screenshotPayload.imageBase64],
-    };
-
-    const response = await fetcher(providerConfig.endpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(ollamaRequest),
-      signal: abortController.signal,
-    });
-
-    if (!response.ok) {
-      return {
-        mode: "unavailable",
-        error: `local Ollama returned ${response.status} ${response.statusText}`,
-        providerName: providerConfig.providerName,
-      };
-    }
-
-    const body = await response.json();
-    responseText =
-      typeof body.response === "string" ? body.response : JSON.stringify(body);
-    const providerBody = extractJsonObject(responseText);
-
-    return normalizeProviderGuidanceResponse(
-      providerBody,
-      guidanceRequest,
-      providerConfig.providerName,
-      { providerRawText: responseText },
-    );
-  } catch (error) {
-    return {
-      mode: "unavailable",
-      error:
-        error instanceof Error && error.name === "AbortError"
-          ? `local Ollama timed out after ${timeoutMs}ms`
-          : error instanceof Error
-            ? error.message
-            : String(error),
-      providerName: providerConfig.providerName,
-      providerRawText: truncateProviderRawText(responseText),
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 function createFreeLlmApiRequest(guidanceRequest, providerConfig) {
   const screenshot = guidanceRequest.screen.screenshotPayload;
   const imageFormat =
@@ -825,7 +746,7 @@ function createFreeLlmApiRequest(guidanceRequest, providerConfig) {
         content: [
           {
             type: "text",
-            text: createOllamaPrompt(guidanceRequest),
+            text: createProviderPrompt(guidanceRequest),
           },
           {
             type: "image_url",
@@ -1036,20 +957,6 @@ export async function handleGuidanceSmokeRequest(request, response, options = {}
   console.log(
     `[request] goal="${body.goal}" candidates=${candidates.length} source=${body.screen?.candidateSource ?? "none"}`,
   );
-
-  if (providerConfig.provider === "local-ollama") {
-    const providerResponse = await requestLocalOllamaGuidance(body, providerConfig, {
-      fetchImpl: options.fetchImpl,
-      env: options.env,
-    });
-
-    console.log(
-      `[response] mode=${providerResponse.mode} provider=${providerResponse.providerName ?? "unknown"} target=${providerResponse.result?.step?.target?.label ?? "none"} error=${providerResponse.error ?? "none"}`,
-    );
-
-    sendJson(response, 200, providerResponse);
-    return;
-  }
 
   if (providerConfig.provider === "freellmapi-dev") {
     const providerResponse = await requestFreeLlmApiGuidance(body, providerConfig, {
