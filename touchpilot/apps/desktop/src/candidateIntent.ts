@@ -7,6 +7,7 @@ export type CandidateAction =
   | "pause"
   | "next"
   | "previous"
+  | "select"
   | "search"
   | "download"
   | "invite"
@@ -21,6 +22,26 @@ export type CandidateObject =
   | "file"
   | "settings";
 
+export type InterpretedCommandIntent = {
+  objective: string;
+  action: CandidateAction | null;
+  object: CandidateObject | null;
+  actions: CandidateAction[];
+  objects: CandidateObject[];
+};
+
+export type CandidateSemanticMatch = {
+  score: number;
+  accepted: boolean;
+  command: InterpretedCommandIntent;
+  candidateActions: CandidateAction[];
+  candidateObjects: CandidateObject[];
+  matchedActions: CandidateAction[];
+  matchedObjects: CandidateObject[];
+  semanticText: string;
+  reasons: string[];
+};
+
 type IntentLexicon<T extends string> = ReadonlyArray<{
   family: T;
   terms: readonly string[];
@@ -28,11 +49,12 @@ type IntentLexicon<T extends string> = ReadonlyArray<{
 
 const ACTION_LEXICON: IntentLexicon<CandidateAction> = [
   { family: "create", terms: ["create", "add", "new", "make", "plus"] },
-  { family: "open", terms: ["open", "view", "show", "expand"] },
+  { family: "open", terms: ["open", "view", "show", "see", "expand"] },
   { family: "play", terms: ["play", "start", "resume"] },
   { family: "pause", terms: ["pause", "stop"] },
   { family: "next", terms: ["next", "forward", "skip"] },
   { family: "previous", terms: ["previous", "back", "rewind"] },
+  { family: "select", terms: ["select", "choose", "pick"] },
   { family: "search", terms: ["search", "find", "lookup"] },
   { family: "download", terms: ["download", "save", "export"] },
   { family: "invite", terms: ["invite", "share", "collaborate"] },
@@ -125,6 +147,7 @@ const OBJECT_LEXICON: IntentLexicon<CandidateObject> = [
 const PRIMARY_ACTION_PRIORITY: readonly CandidateAction[] = [
   "next",
   "previous",
+  "select",
   "pause",
   "delete",
   "invite",
@@ -135,6 +158,14 @@ const PRIMARY_ACTION_PRIORITY: readonly CandidateAction[] = [
   "create",
   "open",
   "play",
+];
+
+const PRIMARY_OBJECT_PRIORITY: readonly CandidateObject[] = [
+  "person",
+  "collection",
+  "media",
+  "file",
+  "settings",
 ];
 
 const CANDIDATE_METADATA_KEYS = [
@@ -148,6 +179,8 @@ const CANDIDATE_METADATA_KEYS = [
   "placeholder",
   "tagName",
   "testId",
+  "providerLabel",
+  "providerReason",
 ] as const;
 
 function normalizeText(value: unknown): string {
@@ -184,7 +217,27 @@ function matchFamilies<T extends string>(
   return matches;
 }
 
-function candidateSemanticText(candidate: ScreenCandidate): string {
+function addContextualSemantics(
+  text: string,
+  actions: Set<CandidateAction>,
+  objects: Set<CandidateObject>,
+): void {
+  const normalized = normalizeText(text);
+
+  if (/\b(tab|page|panel|section|menu|link)\b/.test(normalized)) {
+    actions.add("open");
+  }
+
+  if (
+    /\b(recently played|listening history|playback history|recent(?:ly)? (?:songs?|tracks?|music|audio|videos?|episodes?|albums?))\b/.test(
+      normalized,
+    )
+  ) {
+    objects.add("media");
+  }
+}
+
+export function getCandidateSemanticText(candidate: ScreenCandidate): string {
   const metadataText = CANDIDATE_METADATA_KEYS.flatMap((key) => {
     const value = candidate.metadata?.[key];
     return typeof value === "string" ? [value] : [];
@@ -202,6 +255,32 @@ function addCompositeActions(
   }
 }
 
+function addImpliedObjects(
+  actions: Set<CandidateAction>,
+  objects: Set<CandidateObject>,
+): void {
+  if (
+    actions.has("play") ||
+    actions.has("pause") ||
+    actions.has("next") ||
+    actions.has("previous")
+  ) {
+    objects.add("media");
+  }
+
+  if (actions.has("invite")) {
+    objects.add("person");
+  }
+
+  if (actions.has("download")) {
+    objects.add("file");
+  }
+
+  if (actions.has("settings")) {
+    objects.add("settings");
+  }
+}
+
 function firstIntersection<T>(left: Set<T>, right: Set<T>): T | null {
   for (const value of left) {
     if (right.has(value)) {
@@ -216,20 +295,112 @@ function primaryGoalAction(actions: Set<CandidateAction>): CandidateAction | nul
   return PRIMARY_ACTION_PRIORITY.find((action) => actions.has(action)) ?? null;
 }
 
+function primaryGoalObject(objects: Set<CandidateObject>): CandidateObject | null {
+  return PRIMARY_OBJECT_PRIORITY.find((object) => objects.has(object)) ?? null;
+}
+
+export function interpretCommandIntent(goal: string): InterpretedCommandIntent {
+  const actions = matchFamilies(goal, ACTION_LEXICON);
+  const objects = matchFamilies(goal, OBJECT_LEXICON);
+
+  addContextualSemantics(goal, actions, objects);
+  addCompositeActions(actions, objects);
+  addImpliedObjects(actions, objects);
+
+  return {
+    objective: normalizeText(goal),
+    action: primaryGoalAction(actions),
+    object: primaryGoalObject(objects),
+    actions: [...actions],
+    objects: [...objects],
+  };
+}
+
+export function evaluateCandidateSemanticMatch(
+  candidate: ScreenCandidate,
+  goal: string,
+): CandidateSemanticMatch {
+  const command = interpretCommandIntent(goal);
+  const semanticText = getCandidateSemanticText(candidate);
+  const candidateActions = matchFamilies(semanticText, ACTION_LEXICON);
+  const candidateObjects = matchFamilies(semanticText, OBJECT_LEXICON);
+
+  addContextualSemantics(semanticText, candidateActions, candidateObjects);
+  addCompositeActions(candidateActions, candidateObjects);
+  addImpliedObjects(candidateActions, candidateObjects);
+
+  const matchedActions = command.actions.filter((action) =>
+    candidateActions.has(action),
+  );
+  const matchedObjects = command.objects.filter((object) =>
+    candidateObjects.has(object),
+  );
+  const reasons: string[] = [];
+  let score = 0;
+  let accepted = true;
+
+  if (command.action == null) {
+    accepted = false;
+    reasons.push("command-action-unrecognized");
+  } else if (candidateActions.has(command.action)) {
+    score += 40;
+    reasons.push(`semantic-action:${command.action}`);
+  } else {
+    accepted = false;
+    reasons.push(`semantic-action-missing:${command.action}`);
+  }
+
+  if (command.object == null) {
+    score += 20;
+    reasons.push("semantic-object:not-required");
+  } else if (candidateObjects.has(command.object)) {
+    score += 30;
+    reasons.push(`semantic-object:${command.object}`);
+  } else {
+    accepted = false;
+    reasons.push(`semantic-object-missing:${command.object}`);
+  }
+
+  if (accepted && command.action != null && command.object != null) {
+    score += 10;
+    reasons.push("semantic-action-object-pair");
+  }
+
+  return {
+    score,
+    accepted,
+    command,
+    candidateActions: [...candidateActions],
+    candidateObjects: [...candidateObjects],
+    matchedActions,
+    matchedObjects,
+    semanticText,
+    reasons,
+  };
+}
+
 export function scoreCandidateIntent(
   candidate: ScreenCandidate,
   goal: string,
 ): { score: number; reasons: string[] } {
   const goalActions = matchFamilies(goal, ACTION_LEXICON);
   const goalObjects = matchFamilies(goal, OBJECT_LEXICON);
-  const semanticText = candidateSemanticText(candidate);
+  const semanticText = getCandidateSemanticText(candidate);
   const candidateActions = matchFamilies(semanticText, ACTION_LEXICON);
   const candidateObjects = matchFamilies(semanticText, OBJECT_LEXICON);
   const reasons: string[] = [];
   let score = 0;
 
+  addContextualSemantics(goal, goalActions, goalObjects);
+  addContextualSemantics(
+    semanticText,
+    candidateActions,
+    candidateObjects,
+  );
   addCompositeActions(goalActions, goalObjects);
   addCompositeActions(candidateActions, candidateObjects);
+  addImpliedObjects(goalActions, goalObjects);
+  addImpliedObjects(candidateActions, candidateObjects);
 
   const matchedAction = firstIntersection(candidateActions, goalActions);
   const matchedObject = firstIntersection(candidateObjects, goalObjects);

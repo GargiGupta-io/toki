@@ -6,7 +6,7 @@ import {
   getGuidanceLocalizationContext,
   getGuidanceLocalizationObjective,
 } from "../apps/desktop/src/guidanceTaskPlanning.ts";
-import { createOllamaLocalizationPrompt } from "../apps/desktop/src/ollamaVisionProvider.ts";
+import { createVisionLocalizationPrompt } from "../apps/desktop/src/visionGuidanceContract.ts";
 
 const createdAt = "2026-07-11T00:00:00.000Z";
 
@@ -52,7 +52,7 @@ test("localization objective falls back for older requests", () => {
   assert.equal(getGuidanceLocalizationObjective(request), "Open settings");
 });
 
-test("Ollama prompt separates the original task from localization", () => {
+test("vision prompt separates the original task from localization", () => {
   const request = {
     goal: "Create and share a report",
     localization: {
@@ -75,7 +75,7 @@ test("Ollama prompt separates the original task from localization", () => {
       },
     },
   };
-  const prompt = createOllamaLocalizationPrompt(request);
+  const prompt = createVisionLocalizationPrompt(request);
 
   assert.match(prompt, /Original task: Create and share a report/);
   assert.match(prompt, /Current step objective: Choose report/);
