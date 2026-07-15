@@ -44,6 +44,7 @@
     "test:gesture-contracts": "node --import tsx --test scripts/gesture-contracts.test.mjs",
     "test:gesture-runtime": "node --import tsx --test scripts/gesture-runtime-ownership.test.mjs",
     "test:gesture-assets": "node --import tsx --test scripts/mediapipe-local-assets.test.mjs",
+    "test:gesture-pointing": "node --import tsx --test scripts/gesture-pointing.test.mjs",
     "desktop:dev:guidance-smoke": "VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev:guidance-auto-smoke": "TOKI_AUTO_REAL_SMOKE=true VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev": "npm --workspace @toki/desktop run tauri dev",
