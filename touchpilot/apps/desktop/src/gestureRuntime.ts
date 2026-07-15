@@ -5,6 +5,7 @@ import type {
   CameraRuntimeState,
   CameraStreamStatus,
   DisplayContext,
+  DoubleAirTapState,
   GestureActionEvent,
   GestureClassification,
   GesturePointerSample,
@@ -33,6 +34,14 @@ import {
   resetGesturePointerTracking,
   type PointPoseClassification,
 } from "./gesturePointing";
+import {
+  advanceDoubleAirTap,
+  classifyAirTapPose,
+  initialDoubleAirTapControllerState,
+  resetDoubleAirTapController,
+  type AirTapPoseClassification,
+  type PointerLockRequest,
+} from "./gestureTargetLock";
 import {
   detectHandLandmarksForVideo,
   getHandLandmarker,
@@ -79,6 +88,9 @@ export type GestureRuntimeDiagnostics = {
   openPalm: OpenPalmClassification;
   pointPose: PointPoseClassification;
   pointer: GesturePointerSample | null;
+  airTapPose: AirTapPoseClassification;
+  doubleAirTap: DoubleAirTapState;
+  lockRequest: PointerLockRequest | null;
   pointerDisplay: DisplayContext;
   pointerCalibration: typeof defaultGesturePointerCalibration;
   smoothedGesture: GestureClassification;
@@ -90,6 +102,8 @@ export type AlwaysOnGestureRuntime = {
   camera: CameraRuntimeState;
   classification: GestureClassification;
   pointer: GesturePointerSample | null;
+  doubleAirTap: DoubleAirTapState;
+  lockRequest: PointerLockRequest | null;
   visualAnchor: GestureVisualAnchor | null;
   diagnostics: GestureRuntimeDiagnostics;
 };
@@ -157,6 +171,13 @@ export function createEmptyGestureRuntimeDiagnostics(
     openPalm: classifyOpenPalmGesture(null, thresholds),
     pointPose: classifyPointPose(null, thresholds.minDetectionConfidence),
     pointer: null,
+    airTapPose: classifyAirTapPose({
+      frame: null,
+      pointPose: classifyPointPose(null, thresholds.minDetectionConfidence),
+      minDetectionConfidence: thresholds.minDetectionConfidence,
+    }),
+    doubleAirTap: { phase: "idle" },
+    lockRequest: null,
     pointerDisplay: {
       id: "overlay-unavailable",
       width: 0,
@@ -203,10 +224,15 @@ export function useAlwaysOnGestureRuntime({
   );
   const [gesturePointer, setGesturePointer] =
     useState<GesturePointerSample | null>(null);
+  const [doubleAirTap, setDoubleAirTap] = useState<DoubleAirTapState>({
+    phase: "idle",
+  });
+  const [lockRequest, setLockRequest] = useState<PointerLockRequest | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const handFrameIdRef = useRef(0);
   const gestureSmoothingStateRef = useRef(initialGestureSmoothingState);
   const pointerTrackingStateRef = useRef(resetGesturePointerTracking());
+  const doubleAirTapStateRef = useRef(initialDoubleAirTapControllerState);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,6 +286,9 @@ export function useAlwaysOnGestureRuntime({
       setSmoothedGesture(createInactiveGestureClassification());
       pointerTrackingStateRef.current = resetGesturePointerTracking();
       setGesturePointer(null);
+      doubleAirTapStateRef.current = resetDoubleAirTapController();
+      setDoubleAirTap({ phase: "idle" });
+      setLockRequest(null);
     }
 
     async function startCameraRuntime() {
@@ -407,6 +436,15 @@ export function useAlwaysOnGestureRuntime({
     () => classifyPointPose(handLandmarkFrame, thresholds.minDetectionConfidence),
     [handLandmarkFrame, thresholds.minDetectionConfidence],
   );
+  const airTapPoseClassification = useMemo(
+    () =>
+      classifyAirTapPose({
+        frame: handLandmarkFrame,
+        pointPose: pointPoseClassification,
+        minDetectionConfidence: thresholds.minDetectionConfidence,
+      }),
+    [handLandmarkFrame, pointPoseClassification, thresholds.minDetectionConfidence],
+  );
   const rawGestureCandidate =
     openPalmClassification.label !== "none" &&
     openPalmClassification.confidence >= pinchClassification.confidence
@@ -502,6 +540,29 @@ export function useAlwaysOnGestureRuntime({
     thresholds.minDetectionConfidence,
   ]);
 
+  useEffect(() => {
+    if (!gesturesEnabled || cameraStatus !== "active") {
+      doubleAirTapStateRef.current = resetDoubleAirTapController();
+      setDoubleAirTap({ phase: "idle" });
+      setLockRequest(null);
+      return;
+    }
+
+    const result = advanceDoubleAirTap({
+      previousState: doubleAirTapStateRef.current,
+      pose: airTapPoseClassification,
+      pointer: pointerTrackingStateRef.current.pointer,
+      nowMs: Date.now(),
+    });
+    doubleAirTapStateRef.current = result.state;
+    setDoubleAirTap((current) =>
+      sameDoubleAirTapState(current, result.state.tap) ? current : result.state.tap,
+    );
+    if (result.lockRequest != null) {
+      setLockRequest(result.lockRequest);
+    }
+  }, [airTapPoseClassification, cameraStatus, gesturesEnabled]);
+
   const gestureVisualAnchor = useMemo(() => {
     const canAnimate =
       gesturesEnabled &&
@@ -552,6 +613,9 @@ export function useAlwaysOnGestureRuntime({
       openPalm: openPalmClassification,
       pointPose: pointPoseClassification,
       pointer: gesturePointer,
+      airTapPose: airTapPoseClassification,
+      doubleAirTap,
+      lockRequest,
       pointerDisplay: display,
       pointerCalibration: defaultGesturePointerCalibration,
       smoothedGesture,
@@ -567,6 +631,9 @@ export function useAlwaysOnGestureRuntime({
       cameraStatus,
       gestureVisualAnchor,
       gesturePointer,
+      airTapPoseClassification,
+      doubleAirTap,
+      lockRequest,
       handLandmarkFrame,
       handLandmarkerError,
       handLandmarkerStatus,
@@ -582,9 +649,23 @@ export function useAlwaysOnGestureRuntime({
     camera,
     classification: smoothedGesture,
     pointer: gesturePointer,
+    doubleAirTap,
+    lockRequest,
     visualAnchor: gestureVisualAnchor,
     diagnostics,
   };
+}
+
+function sameDoubleAirTapState(
+  left: DoubleAirTapState,
+  right: DoubleAirTapState,
+): boolean {
+  return (
+    left.phase === right.phase &&
+    left.firstTap?.id === right.firstTap?.id &&
+    left.secondTap?.id === right.secondTap?.id &&
+    left.graceUntil === right.graceUntil
+  );
 }
 
 function isSameGesturePointer(

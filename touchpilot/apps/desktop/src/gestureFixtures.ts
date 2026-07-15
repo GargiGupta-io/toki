@@ -219,7 +219,10 @@ function poseOffset(
     return [base[0] * 0.6, 0.06];
   }
 
-  if (pose === "point" && ["middle_tip", "ring_tip", "pinky_tip"].includes(name)) {
+  if (
+    (pose === "point" || pose === "tap_flexed") &&
+    ["middle_tip", "ring_tip", "pinky_tip"].includes(name)
+  ) {
     return [base[0], 0.06];
   }
 
