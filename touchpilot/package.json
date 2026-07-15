@@ -41,6 +41,7 @@
     "test:target-cue": "node --import tsx --test scripts/target-cue-geometry.test.mjs",
     "test:target-verification": "node --import tsx --test scripts/target-verification.test.mjs",
     "test:command-corpus": "node --import tsx --test scripts/command-edge-case-corpus.test.mjs",
+    "test:gesture-contracts": "node --import tsx --test scripts/gesture-contracts.test.mjs",
     "desktop:dev:guidance-smoke": "VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev:guidance-auto-smoke": "TOKI_AUTO_REAL_SMOKE=true VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
     "desktop:dev": "npm --workspace @toki/desktop run tauri dev",
