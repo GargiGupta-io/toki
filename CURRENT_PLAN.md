@@ -321,13 +321,13 @@ Evidence: `touchpilot/docs/phase-15-evals.md` records deterministic eval closure
 29. Accepted-target droplet travel — `COMPLETED` implementation/automated gate: one transient droplet can travel only when the existing accepted-guidance motion gate and a visible target are both present.
 30. Living-visual installed-app acceptance — `PENDING`, user-owned: confirm the liquid motion is visible and tasteful, processing does not look idle, the droplet reaches the verified target, and rejected/hidden targets remain invisible.
 
-## Adaptive Gesture Control Plan — READY TO START
+## Adaptive Gesture Control Plan — IN PROGRESS, STEP 2 COMPLETE
 
 The detailed design and rationale are preserved in `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md`. Execution uses one step at a time, with a pause for user review after every completed step.
 
 1. Freeze gesture contracts and deterministic landmark fixtures — `COMPLETED` in Gesture Step 1; 7/7 focused tests and all workspace typechecks pass.
-2. Extract an always-running gesture runtime independent of Debug — `NEXT`.
-3. Package MediaPipe assets locally and preserve camera privacy — `PENDING`.
+2. Extract an always-running gesture runtime independent of Debug — `COMPLETED` in Gesture Step 2; Overlay now owns the camera, hidden video source, MediaPipe loop, smoothing, and legacy action routing while Debug receives sanitized snapshots only.
+3. Package MediaPipe assets locally and preserve camera privacy — `NEXT`.
 4. Build reliable single-hand pointing with calibration, smoothing, and active-display mapping — `PENDING`.
 5. Build double-air-tap target locking with an immutable snapshot and screen-freshness invalidation — `PENDING`.
 6. Add a bounded, resettable local adaptive profile with two-second human grace windows — `PENDING`.
@@ -361,4 +361,4 @@ The command-testing foundation is already committed: `touchpilot/docs/manual-com
 5. Broader verification and release — `COMPLETED`: all workspace TypeScript, Rust check, semantic verifier 23/23, production web build, app release, signing, install, hash match, and launch pass.
 6. Installed-app permission and live behavior acceptance — `PENDING`, user-owned. Grant Screen Recording to the exact current `/Applications/Toki.app` if prompted, relaunch, then run the known commands manually.
 
-Current installed executable SHA-256: `9289d3a776516c88c25ca0d9352d9cb1e6682912832ae615d7ca2522b2a4baf9`. Observed PID at handoff: `90673`.
+Current installed executable SHA-256: `886058098164159939da820778af9d463c21b1634a7ab39c6ba5a5eef9b4ddd5`. Gesture Step 2 installed-app PID at verification: `17506`.
