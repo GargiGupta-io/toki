@@ -1,0 +1,12 @@
+MediaPipe Tasks Vision 0.10.35
+Copyright 2019-2026 The MediaPipe Authors.
+
+Toki bundles the MediaPipe Tasks Vision WebAssembly runtime from the
+@mediapipe/tasks-vision npm package and the official float16 Hand Landmarker
+model bundle. These files are used locally by the installed application.
+
+Upstream project: https://github.com/google-ai-edge/mediapipe
+Model source: https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+
+Licensed under the Apache License, Version 2.0. A copy is included beside this
+notice as LICENSE.txt.
