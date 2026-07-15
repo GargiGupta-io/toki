@@ -678,6 +678,150 @@ export type HandLandmarkFrame = {
   landmarks: HandLandmarkPoint[];
 };
 
+export type HandTrackId = string;
+
+export type GestureHandRole = "unassigned" | "pointer" | "control";
+
+export type TrackedHandLandmarkFrame = HandLandmarkFrame & {
+  trackId: HandTrackId;
+  sequence: number;
+  trackingConfidence: number;
+  lastSeenAt: string;
+};
+
+export type MultiHandLandmarkFrame = {
+  frameId: number;
+  capturedAt: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  mirrored: boolean;
+  hands: TrackedHandLandmarkFrame[];
+};
+
+export type NormalizedGesturePoint = {
+  x: number;
+  y: number;
+};
+
+export type DisplayGesturePoint = {
+  displayId: string;
+  x: number;
+  y: number;
+};
+
+export type PointerPosePhase = "inactive" | "candidate" | "active" | "recovering";
+
+export type GesturePointerSample = {
+  handTrackId: HandTrackId;
+  phase: PointerPosePhase;
+  normalized: NormalizedGesturePoint;
+  display: DisplayGesturePoint;
+  confidence: number;
+  sourceFrameId: number;
+  capturedAt: string;
+};
+
+export type AirTapPhase =
+  | "idle"
+  | "pressing"
+  | "released"
+  | "armed"
+  | "locked"
+  | "cooldown"
+  | "cancelled";
+
+export type AirTapCycle = {
+  id: string;
+  handTrackId: HandTrackId;
+  pressedAt: string;
+  releasedAt: string;
+  sourceFrameIds: number[];
+  confidence: number;
+};
+
+export type DoubleAirTapState = {
+  phase: AirTapPhase;
+  firstTap?: AirTapCycle;
+  secondTap?: AirTapCycle;
+  graceUntil?: string;
+};
+
+export type PointerEvidenceFingerprint = {
+  snapshotId: string;
+  capturedAt: string;
+  activeWindowId?: string;
+  captureId?: string;
+  candidateId?: string;
+  regionHash?: string;
+};
+
+export type PointerLockStatus = "locked" | "stale" | "invalidated";
+
+export type PointerLockSnapshot = {
+  readonly id: string;
+  readonly status: "locked";
+  readonly lockedAt: string;
+  readonly pointer: Readonly<GesturePointerSample>;
+  readonly evidence: Readonly<PointerEvidenceFingerprint>;
+  readonly display: Readonly<{
+    id: string;
+    width: number;
+    height: number;
+    scaleFactor: number;
+  }>;
+};
+
+export type GestureDerivedStatistic = {
+  median: number;
+  medianAbsoluteDeviation: number;
+  sampleCount: number;
+};
+
+export type GestureTimingPolicy = {
+  humanGraceMs: number;
+  doubleTapMaxGapMs: number;
+  trackingLossGraceMs: number;
+  lockFreshnessMaxAgeMs: number;
+};
+
+export type AdaptiveGestureProfile = {
+  version: 1;
+  profileId: string;
+  createdAt: string;
+  updatedAt: string;
+  preferredPointerHand: Handedness;
+  timing: GestureTimingPolicy;
+  pointRangeX: GestureDerivedStatistic;
+  pointRangeY: GestureDerivedStatistic;
+  tapFlexion: GestureDerivedStatistic;
+  pinchDistance: GestureDerivedStatistic;
+};
+
+export type GestureInteractionMode =
+  | "disabled"
+  | "idle"
+  | "pointing"
+  | "tap_armed"
+  | "target_locked"
+  | "voice_held"
+  | "explaining"
+  | "paused"
+  | "recovering"
+  | "error";
+
+export type GestureInteractionState = {
+  version: 1;
+  mode: GestureInteractionMode;
+  handRoles: Partial<Record<HandTrackId, GestureHandRole>>;
+  pointer: GesturePointerSample | null;
+  tap: DoubleAirTapState;
+  lock: PointerLockSnapshot | null;
+  activeProfileId: string | null;
+  lastTransitionAt: string;
+  recoveryDeadline?: string;
+  error?: string;
+};
+
 export type GestureLabel = "none" | "pinch" | "open_palm";
 
 export type GesturePhase =
