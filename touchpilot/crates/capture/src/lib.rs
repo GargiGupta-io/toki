@@ -284,7 +284,8 @@ fn read_macos_screencapture_file(
     path: PathBuf,
     captured_at: String,
 ) -> Result<ScreenshotCapture, CaptureError> {
-    let png_bytes = fs::read(&path).map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    let png_bytes =
+        fs::read(&path).map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
     let _ = fs::remove_file(&path);
     let image = image::load_from_memory_with_format(&png_bytes, ImageFormat::Png)
         .map_err(|error| CaptureError::EncodeFailed(error.to_string()))?;

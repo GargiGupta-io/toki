@@ -3,12 +3,12 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::MenuBuilder, tray::TrayIconBuilder, Emitter, LogicalSize, Manager, PhysicalPosition,
     PhysicalSize, Position, Size, State,
@@ -217,6 +217,25 @@ struct VoiceTranscriptionResponse {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexVisionRequest {
+    image_base64: String,
+    image_format: String,
+    prompt: String,
+    output_schema: String,
+    model: Option<String>,
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexVisionResponse {
+    raw_answer: String,
+    provider_name: String,
+    duration_ms: u128,
+}
+
+#[derive(Deserialize)]
 struct OpenAiTranscriptionResponse {
     text: String,
 }
@@ -326,6 +345,38 @@ fn macos_screen_capture_is_trusted() -> bool {
 }
 
 #[cfg(target_os = "macos")]
+fn macos_listen_event_is_trusted() -> bool {
+    use std::os::raw::c_uchar;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGPreflightListenEventAccess() -> c_uchar;
+    }
+
+    unsafe { CGPreflightListenEventAccess() != 0 }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_request_listen_event_access() -> bool {
+    use std::os::raw::c_uchar;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGRequestListenEventAccess() -> c_uchar;
+    }
+
+    unsafe { CGRequestListenEventAccess() != 0 }
+}
+
+fn is_right_option_pressed(flags: u64, right_key_state: bool) -> bool {
+    // IOLLEvent.h exposes independent device bits for the left and right Alt/Option keys.
+    // Keep the key-state check as a second signal for keyboards that omit device flags.
+    const NX_DEVICE_RIGHT_ALT_KEY_MASK: u64 = 0x0000_0040;
+
+    right_key_state || flags & NX_DEVICE_RIGHT_ALT_KEY_MASK != 0
+}
+
+#[cfg(target_os = "macos")]
 mod native_cursor {
     use std::ffi::c_void;
 
@@ -377,29 +428,20 @@ mod native_cursor {
         }
     }
 
-    pub fn option_down() -> bool {
+    pub fn right_option_down() -> bool {
         const K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: i32 = 0;
-        const K_VK_LEFT_OPTION: u16 = 0x3A;
         const K_VK_RIGHT_OPTION: u16 = 0x3D;
-        const K_CG_EVENT_FLAG_MASK_ALTERNATE: u64 = 1 << 19;
 
         let flags =
             unsafe { CGEventSourceFlagsState(K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE) };
-        let option_flag_down = flags & K_CG_EVENT_FLAG_MASK_ALTERNATE != 0;
-        let left_option_down = unsafe {
-            CGEventSourceKeyState(
-                K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE,
-                K_VK_LEFT_OPTION,
-            )
-        };
-        let right_option_down = unsafe {
+        let right_key_state = unsafe {
             CGEventSourceKeyState(
                 K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE,
                 K_VK_RIGHT_OPTION,
             )
         };
 
-        option_flag_down || left_option_down || right_option_down
+        super::is_right_option_pressed(flags, right_key_state)
     }
 }
 
@@ -1178,7 +1220,10 @@ fn collect_macos_accessibility_candidates(
             candidates: Vec::new(),
             candidate_source: "macos-accessibility",
             candidate_error: Some(if stderr.is_empty() {
-                format!("native macOS Accessibility probe exited with {}", output.status)
+                format!(
+                    "native macOS Accessibility probe exited with {}",
+                    output.status
+                )
             } else {
                 stderr
             }),
@@ -1655,19 +1700,13 @@ fn apply_top_utility_mode<R: tauri::Runtime>(
             window
                 .emit("toki://top-utility-mode", payload.clone())
                 .map_err(|error| error.to_string())?;
-            let _ = window.app_handle().emit_to(
-                "overlay",
-                "toki://top-utility-mode",
-                payload,
-            );
+            let _ = window
+                .app_handle()
+                .emit_to("overlay", "toki://top-utility-mode", payload);
             return window.hide().map_err(|error| error.to_string());
         }
         "peek" => {
-            position_top_utility(
-                window,
-                TOP_UTILITY_PEEK_WIDTH,
-                TOP_UTILITY_PEEK_HEIGHT,
-            )?;
+            position_top_utility(window, TOP_UTILITY_PEEK_WIDTH, TOP_UTILITY_PEEK_HEIGHT)?;
             window
                 .set_focusable(false)
                 .map_err(|error| error.to_string())?;
@@ -1695,11 +1734,9 @@ fn apply_top_utility_mode<R: tauri::Runtime>(
     window
         .emit("toki://top-utility-mode", payload.clone())
         .map_err(|error| error.to_string())?;
-    let _ = window.app_handle().emit_to(
-        "overlay",
-        "toki://top-utility-mode",
-        payload,
-    );
+    let _ = window
+        .app_handle()
+        .emit_to("overlay", "toki://top-utility-mode", payload);
 
     if mode == "expanded" && focus {
         window.set_focus().map_err(|error| error.to_string())?;
@@ -1727,27 +1764,10 @@ fn capture_screenshot_with_permission_context() -> Result<ScreenshotCapture, Str
     #[cfg(target_os = "macos")]
     let preflight_trusted = macos_screen_capture_is_trusted();
 
-    let result = capture_primary_display().map_err(|error| {
-        #[cfg(target_os = "macos")]
-        {
-            if !preflight_trusted {
-                return format!(
-                    "Screen capture failed after macOS preflight reported Screen Recording was not trusted for this Toki build. Grant Screen Recording permission to Toki, quit and relaunch it, then try again. Capture error: {error}"
-                );
-            }
-        }
-
-        error.to_string()
-    });
-
     #[cfg(target_os = "macos")]
-    if result.is_ok() && !preflight_trusted && auto_smoke_logs_enabled() {
-        eprintln!(
-            "toki auto real smoke: capture_screenshot succeeded even though macOS preflight returned false"
-        );
-    }
+    require_macos_screen_capture_trust(preflight_trusted)?;
 
-    result
+    capture_primary_display().map_err(|error| error.to_string())
 }
 
 fn metadata_from_screenshot(screenshot: &ScreenshotCapture) -> CaptureMetadata {
@@ -1758,6 +1778,17 @@ fn metadata_from_screenshot(screenshot: &ScreenshotCapture) -> CaptureMetadata {
         active_window: screenshot.active_window.clone(),
         captured_at: screenshot.captured_at.clone(),
     }
+}
+
+fn require_macos_screen_capture_trust(preflight_trusted: bool) -> Result<(), String> {
+    if preflight_trusted {
+        return Ok(());
+    }
+
+    Err(
+        "Screen Recording is not trusted for this Toki build. Grant Screen Recording permission to Toki, quit and relaunch it, then try again."
+            .to_string(),
+    )
 }
 
 #[tauri::command]
@@ -1931,16 +1962,28 @@ fn emit_overlay_command(app: &tauri::AppHandle, payload: OverlayCommandPayload) 
 
 #[cfg(target_os = "macos")]
 fn start_native_voice_key_monitor(app: tauri::AppHandle) {
+    if !macos_listen_event_is_trusted() {
+        eprintln!(
+            "toki voice shortcut: Input Monitoring is missing; requesting access for Right Option hold-to-talk"
+        );
+        if !macos_request_listen_event_access() {
+            eprintln!(
+                "toki voice shortcut: Input Monitoring remains unavailable; enable Toki in Privacy & Security > Input Monitoring, then relaunch"
+            );
+        }
+    }
+
     thread::spawn(move || {
         let mut was_down = false;
 
         loop {
             thread::sleep(Duration::from_millis(NATIVE_VOICE_KEY_POLL_MS));
 
-            let is_down = native_cursor::option_down();
+            let is_down = native_cursor::right_option_down();
 
             if is_down && !was_down {
                 if !VOICE_SHORTCUT_HELD.swap(true, Ordering::SeqCst) {
+                    eprintln!("toki voice shortcut: Right Option pressed");
                     emit_overlay_command(
                         &app,
                         OverlayCommandPayload::StartVoiceListening { source: "hotkey" },
@@ -1950,6 +1993,7 @@ fn start_native_voice_key_monitor(app: tauri::AppHandle) {
 
             if !is_down && was_down {
                 VOICE_SHORTCUT_HELD.store(false, Ordering::SeqCst);
+                eprintln!("toki voice shortcut: Right Option released");
                 emit_overlay_command(&app, OverlayCommandPayload::SubmitVoiceListening);
             }
 
@@ -1987,9 +2031,7 @@ fn start_native_cursor_monitor(app: tauri::AppHandle) {
 
             let should_emit = match last_position {
                 None => true,
-                Some((last_x, last_y)) => {
-                    (x - last_x).abs() >= 1.5 || (y - last_y).abs() >= 1.5
-                }
+                Some((last_x, last_y)) => (x - last_x).abs() >= 1.5 || (y - last_y).abs() >= 1.5,
             };
 
             if !should_emit {
@@ -2209,8 +2251,219 @@ fn native_voice_capture_reset(store: State<'_, Mutex<VoiceCaptureStore>>) -> Res
         stop_voice_capture_session(session);
     }
 
-    VOICE_SHORTCUT_HELD.store(false, Ordering::SeqCst);
     Ok(())
+}
+
+fn find_codex_binary() -> Result<PathBuf, String> {
+    if let Ok(path) = std::env::var("TOKI_CODEX_BIN") {
+        let candidate = PathBuf::from(path);
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        for relative in [
+            ".local/bin/codex",
+            ".npm-global/bin/codex",
+            "Library/pnpm/codex",
+        ] {
+            let candidate = PathBuf::from(&home).join(relative);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    for candidate in [
+        PathBuf::from("/opt/homebrew/bin/codex"),
+        PathBuf::from("/usr/local/bin/codex"),
+    ] {
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    let output = Command::new("which")
+        .arg("codex")
+        .output()
+        .map_err(|error| format!("failed to search for Codex CLI: {error}"))?;
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    if output.status.success() && !path.is_empty() {
+        return Ok(PathBuf::from(path));
+    }
+
+    Err("Codex CLI was not found. Install Codex and sign in with your ChatGPT account.".to_string())
+}
+
+fn truncate_process_detail(value: &str) -> String {
+    const LIMIT: usize = 1_200;
+    let value = value.trim();
+    if value.chars().count() <= LIMIT {
+        value.to_string()
+    } else {
+        let truncated: String = value.chars().take(LIMIT).collect();
+        format!("{truncated}...")
+    }
+}
+
+fn run_command_with_timeout(
+    command: &mut Command,
+    timeout: Duration,
+    stdout_path: &PathBuf,
+    stderr_path: &PathBuf,
+) -> Result<(ExitStatus, String, String), String> {
+    let stdout_file = fs::File::create(stdout_path)
+        .map_err(|error| format!("failed to create Codex stdout capture: {error}"))?;
+    let stderr_file = fs::File::create(stderr_path)
+        .map_err(|error| format!("failed to create Codex stderr capture: {error}"))?;
+    command
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file));
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("failed to start Codex CLI: {error}"))?;
+    let started = Instant::now();
+
+    let status = loop {
+        match child
+            .try_wait()
+            .map_err(|error| format!("failed while waiting for Codex CLI: {error}"))?
+        {
+            Some(status) => break status,
+            None if started.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "Codex vision timed out after {}s.",
+                    timeout.as_secs()
+                ));
+            }
+            None => thread::sleep(Duration::from_millis(50)),
+        }
+    };
+
+    let stdout = fs::read_to_string(stdout_path)
+        .map_err(|error| format!("failed to read Codex response: {error}"))?;
+    let stderr = fs::read_to_string(stderr_path)
+        .map_err(|error| format!("failed to read Codex diagnostics: {error}"))?;
+    Ok((status, stdout, stderr))
+}
+
+fn run_codex_vision_request(request: CodexVisionRequest) -> Result<CodexVisionResponse, String> {
+    if !matches!(request.image_format.as_str(), "png" | "jpeg") {
+        return Err("Codex vision image format must be png or jpeg.".to_string());
+    }
+    if request.prompt.trim().is_empty() {
+        return Err("Codex vision prompt is empty.".to_string());
+    }
+    if request.output_schema.trim().is_empty() {
+        return Err("Codex vision output schema is empty.".to_string());
+    }
+
+    let image_bytes = general_purpose::STANDARD
+        .decode(&request.image_base64)
+        .map_err(|error| format!("Codex vision image payload is not valid base64: {error}"))?;
+    if image_bytes.is_empty() || image_bytes.len() > 12_000_000 {
+        return Err("Codex vision image payload size is invalid.".to_string());
+    }
+
+    let request_id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let work_dir = std::env::temp_dir().join(format!("toki-codex-guidance-{request_id}"));
+    fs::create_dir(&work_dir)
+        .map_err(|error| format!("failed to create Codex guidance workspace: {error}"))?;
+
+    let image_extension = if request.image_format == "jpeg" {
+        "jpg"
+    } else {
+        "png"
+    };
+    let image_path = work_dir.join(format!("screen.{image_extension}"));
+    let schema_path = work_dir.join("target-schema.json");
+    let stdout_path = work_dir.join("stdout.txt");
+    let stderr_path = work_dir.join("stderr.txt");
+
+    let result = (|| {
+        fs::write(&image_path, image_bytes)
+            .map_err(|error| format!("failed to write Codex screenshot: {error}"))?;
+        fs::write(&schema_path, request.output_schema)
+            .map_err(|error| format!("failed to write Codex output schema: {error}"))?;
+
+        let codex_bin = find_codex_binary()?;
+        let timeout =
+            Duration::from_millis(request.timeout_ms.unwrap_or(25_000).clamp(5_000, 60_000));
+        let mut command = Command::new(codex_bin);
+        command
+            .arg("exec")
+            .arg("--ephemeral")
+            .arg("--ignore-user-config")
+            .arg("--ignore-rules")
+            .arg("--skip-git-repo-check")
+            .arg("--sandbox")
+            .arg("read-only")
+            .arg("--color")
+            .arg("never")
+            .arg("-c")
+            .arg("model_reasoning_effort=\"low\"")
+            .arg("--cd")
+            .arg(&work_dir)
+            .arg("--image")
+            .arg(&image_path)
+            .arg("--output-schema")
+            .arg(&schema_path);
+
+        let model = request
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        if let Some(model) = model {
+            command.arg("--model").arg(model);
+        }
+        command.arg(request.prompt);
+
+        let started = Instant::now();
+        let (status, stdout, stderr) =
+            run_command_with_timeout(&mut command, timeout, &stdout_path, &stderr_path)?;
+        if !status.success() {
+            let detail = truncate_process_detail(&stderr);
+            return Err(if detail.is_empty() {
+                format!("Codex CLI exited with status {status}.")
+            } else {
+                format!("Codex CLI exited with status {status}: {detail}")
+            });
+        }
+
+        let raw_answer = stdout.trim().to_string();
+        if raw_answer.is_empty() {
+            return Err("Codex CLI returned an empty vision response.".to_string());
+        }
+
+        Ok(CodexVisionResponse {
+            raw_answer,
+            provider_name: model
+                .map(|value| format!("codex-subscription:{value}"))
+                .unwrap_or_else(|| "codex-subscription".to_string()),
+            duration_ms: started.elapsed().as_millis(),
+        })
+    })();
+
+    let _ = fs::remove_dir_all(&work_dir);
+    result
+}
+
+#[tauri::command]
+async fn request_codex_vision_guidance(
+    request: CodexVisionRequest,
+) -> Result<CodexVisionResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || run_codex_vision_request(request))
+        .await
+        .map_err(|error| format!("Codex vision worker failed: {error}"))?
 }
 
 fn transcribe_voice_capture_with_openai(
@@ -2615,6 +2868,7 @@ pub fn run() {
             native_voice_capture_reset,
             native_voice_capture_start,
             native_voice_capture_stop,
+            request_codex_vision_guidance,
             set_overlay_surface_mode,
             set_top_utility_mode,
             transcribe_voice_capture
@@ -2625,7 +2879,9 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::metadata_from_screenshot;
+    use super::{
+        is_right_option_pressed, metadata_from_screenshot, require_macos_screen_capture_trust,
+    };
     use toki_capture::{
         ActiveWindowContext, CaptureSource, CursorContext, DisplayContext, ScreenshotCapture,
         ScreenshotFormat,
@@ -2668,5 +2924,34 @@ mod tests {
             Some("Fixture App")
         );
         assert_eq!(metadata.captured_at, screenshot.captured_at);
+    }
+
+    #[test]
+    fn screen_capture_preflight_fails_closed_before_pixels_are_captured() {
+        assert!(require_macos_screen_capture_trust(true).is_ok());
+        let error = require_macos_screen_capture_trust(false).unwrap_err();
+        assert!(error.contains("Screen Recording is not trusted"));
+        assert!(error.contains("quit and relaunch"));
+    }
+
+    #[test]
+    fn right_option_detector_accepts_either_native_right_side_signal() {
+        assert!(is_right_option_pressed(0x0000_0040, false));
+        assert!(is_right_option_pressed(0, true));
+        assert!(is_right_option_pressed(0x0000_0040, true));
+    }
+
+    #[test]
+    fn right_option_detector_rejects_left_and_generic_option_signals() {
+        const LEFT_OPTION_DEVICE_FLAG: u64 = 0x0000_0020;
+        const GENERIC_OPTION_FLAG: u64 = 1 << 19;
+
+        assert!(!is_right_option_pressed(0, false));
+        assert!(!is_right_option_pressed(LEFT_OPTION_DEVICE_FLAG, false));
+        assert!(!is_right_option_pressed(GENERIC_OPTION_FLAG, false));
+        assert!(!is_right_option_pressed(
+            LEFT_OPTION_DEVICE_FLAG | GENERIC_OPTION_FLAG,
+            false,
+        ));
     }
 }
