@@ -33,6 +33,8 @@ import type {
   GuidanceTraceStage,
   GuidanceValidationIssue,
   GestureClassification,
+  PointerEvidenceFingerprint,
+  PointerLockSnapshot,
   GestureRuntimeState,
   ScreenshotCapture,
   ScreenshotMetadata,
@@ -75,6 +77,12 @@ import {
   useAlwaysOnGestureRuntime,
   type GestureRuntimeDiagnostics,
 } from "./gestureRuntime";
+import { createPointerLockSnapshot } from "./gestureContracts";
+import {
+  createScreenStateFingerprint,
+  getPointerLockInvalidationReason,
+  type PointerLockInvalidationReason,
+} from "./gestureTargetLock";
 import {
   getNativeVoiceCaptureStatus,
   resetNativeVoiceCapture,
@@ -108,6 +116,7 @@ import { BlobPuck } from "./BlobPuck";
 import { TokiCreatureLayer } from "./TokiCreatureLayer";
 import { TokiTopUtilitySurface } from "./TokiTopUtilitySurface";
 import { TokiTaskProgress } from "./TokiTaskProgress";
+import { TokiPointerLockCue } from "./TokiPointerLockCue";
 import {
   getPassiveTopUtilityMode,
   isInsideExpandedTopUtility,
@@ -176,6 +185,14 @@ type DebugSnapshot = OverlaySnapshot & {
   captureError: string | null;
   viewport: ViewportMetrics;
   calibration: CoordinateCalibration;
+  gesturePointerLock: PointerLockSnapshot | null;
+  gesturePointerLockFeedback: GesturePointerLockFeedback;
+};
+
+type GesturePointerLockFeedback = {
+  validation: "idle" | "checking" | "locked" | "invalidated";
+  reason: PointerLockInvalidationReason | null;
+  updatedAt: string;
 };
 
 type OverlayCommand =
@@ -1461,6 +1478,12 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     captureError: null,
     viewport,
     calibration: getCalibration(null, viewport),
+    gesturePointerLock: null,
+    gesturePointerLockFeedback: {
+      validation: "idle",
+      reason: null,
+      updatedAt: "1970-01-01T00:00:00.000Z",
+    },
   };
 }
 
@@ -1504,6 +1527,14 @@ function OverlayWindowApp() {
   const [pointerShadow, setPointerShadow] = useState<PointerShadowPosition | null>(null);
   const [gestureVisualAnchor, setGestureVisualAnchor] =
     useState<GestureVisualAnchor | null>(null);
+  const [gesturePointerLock, setGesturePointerLock] =
+    useState<PointerLockSnapshot | null>(null);
+  const [gesturePointerLockFeedback, setGesturePointerLockFeedback] =
+    useState<GesturePointerLockFeedback>({
+      validation: "idle",
+      reason: null,
+      updatedAt: new Date().toISOString(),
+    });
   const voiceRuntimeRef = useRef<VoiceRuntimeState>(voiceRuntime);
   const voiceCaptureTimeoutRef = useRef<number | null>(null);
   const voiceSubmitInFlightRef = useRef(false);
@@ -1527,6 +1558,7 @@ function OverlayWindowApp() {
   const lastPublishedOverlaySnapshotRef = useRef<string | null>(null);
   const lastPublishedDebugSnapshotRef = useRef<string | null>(null);
   const lastGestureClassificationRef = useRef<GestureClassification | null>(null);
+  const handledGestureLockRequestRef = useRef<string | null>(null);
   const topStatusRef = useRef<TokiTopStatusModel | null>(null);
   const topUtilityModeRef = useRef<TopUtilityMode>("hidden");
   const topUtilityFocusedRef = useRef(false);
@@ -1758,6 +1790,201 @@ function OverlayWindowApp() {
   }, [alwaysOnGestureRuntime.visualAnchor]);
 
   useEffect(() => {
+    const request = alwaysOnGestureRuntime.lockRequest;
+    if (
+      request == null ||
+      handledGestureLockRequestRef.current === request.id ||
+      request.pointer.display.displayId !== gesturePointerDisplay.id
+    ) {
+      return;
+    }
+
+    handledGestureLockRequestRef.current = request.id;
+    const evidence: PointerEvidenceFingerprint = {
+      snapshotId: `gesture-screen-${request.id}`,
+      capturedAt: request.lockedAt,
+      regionHash: [
+        gesturePointerDisplay.id,
+        gesturePointerDisplay.width,
+        gesturePointerDisplay.height,
+        gesturePointerDisplay.scaleFactor,
+      ].join(":"),
+    };
+    const lock = createPointerLockSnapshot({
+      id: request.id,
+      lockedAt: request.lockedAt,
+      pointer: request.pointer,
+      evidence,
+      display: gesturePointerDisplay,
+    });
+
+    setGesturePointerLock(lock);
+    setGesturePointerLockFeedback({
+      validation: "checking",
+      reason: null,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [alwaysOnGestureRuntime.lockRequest, gesturePointerDisplay]);
+
+  useEffect(() => {
+    if (gesturePointerLock == null) {
+      return;
+    }
+    const lock: PointerLockSnapshot = gesturePointerLock;
+
+    let cancelled = false;
+    let timer: number | null = null;
+    let expectedActiveWindowId = lock.evidence.activeWindowId ?? null;
+
+    function invalidate(reason: PointerLockInvalidationReason) {
+      if (cancelled) {
+        return;
+      }
+
+      setGesturePointerLock((current) =>
+        current?.id === lock.id ? null : current,
+      );
+      setGesturePointerLockFeedback({
+        validation: "invalidated",
+        reason,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    async function validateCurrentScreenState() {
+      try {
+        const [screenCaptureAvailable, activeWindow] = await Promise.all([
+          invoke<boolean>("screen_capture_access_status"),
+          invoke<ActiveWindowBounds>("frontmost_window_bounds", { appName: null }),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        const activeWindowId = createScreenStateFingerprint(activeWindow);
+        const comparisonLock =
+          expectedActiveWindowId == null
+            ? lock
+            : createPointerLockSnapshot({
+                id: lock.id,
+                lockedAt: lock.lockedAt,
+                pointer: lock.pointer,
+                evidence: {
+                  ...lock.evidence,
+                  activeWindowId: expectedActiveWindowId,
+                },
+                display: lock.display,
+              });
+        const invalidationReason = getPointerLockInvalidationReason({
+          lock: comparisonLock,
+          display: gesturePointerDisplay,
+          screenCaptureAvailable,
+          activeWindowId,
+        });
+
+        if (invalidationReason != null) {
+          invalidate(invalidationReason);
+          return;
+        }
+
+        if (expectedActiveWindowId == null) {
+          expectedActiveWindowId = activeWindowId;
+          setGesturePointerLock((current) =>
+            current?.id === lock.id
+              ? createPointerLockSnapshot({
+                  id: current.id,
+                  lockedAt: current.lockedAt,
+                  pointer: current.pointer,
+                  evidence: {
+                    ...current.evidence,
+                    activeWindowId,
+                    regionHash: activeWindowId,
+                  },
+                  display: current.display,
+                })
+              : current,
+          );
+          setGesturePointerLockFeedback({
+            validation: "locked",
+            reason: null,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        timer = window.setTimeout(validateCurrentScreenState, 2_000);
+      } catch {
+        invalidate("screen_state_unavailable");
+      }
+    }
+
+    void validateCurrentScreenState();
+
+    return () => {
+      cancelled = true;
+      if (timer != null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [gesturePointerLock?.id, gesturePointerDisplay]);
+
+  useEffect(() => {
+    const lock = gesturePointerLock;
+    if (lock == null) {
+      return;
+    }
+
+    const invalidationReason = getPointerLockInvalidationReason({
+      lock,
+      display: gesturePointerDisplay,
+      screenCaptureAvailable: true,
+      activeWindowId: lock.evidence.activeWindowId ?? "screen-check-pending",
+    });
+    if (invalidationReason !== "display_changed") {
+      return;
+    }
+
+    setGesturePointerLock(null);
+    setGesturePointerLockFeedback({
+      validation: "invalidated",
+      reason: invalidationReason,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [
+    gesturePointerDisplay.height,
+    gesturePointerDisplay.id,
+    gesturePointerDisplay.scaleFactor,
+    gesturePointerDisplay.width,
+    gesturePointerLock,
+  ]);
+
+  useEffect(() => {
+    if (gesturePointerLock == null) {
+      return;
+    }
+
+    const cameraUnavailable =
+      !gestureRuntime.enabled ||
+      alwaysOnGestureRuntime.camera.status !== "active" ||
+      alwaysOnGestureRuntime.camera.permission !== "granted";
+    if (!cameraUnavailable) {
+      return;
+    }
+
+    setGesturePointerLock(null);
+    setGesturePointerLockFeedback({
+      validation: "invalidated",
+      reason: "camera_unavailable",
+      updatedAt: new Date().toISOString(),
+    });
+  }, [
+    alwaysOnGestureRuntime.camera.permission,
+    alwaysOnGestureRuntime.camera.status,
+    gesturePointerLock,
+    gestureRuntime.enabled,
+  ]);
+
+  useEffect(() => {
     const renderEvent = getGuidanceTraceEvent(guidanceTraceRef.current, "render");
     if (acceptedTarget == null || renderEvent?.status !== "pending") {
       return;
@@ -1824,6 +2051,8 @@ function OverlayWindowApp() {
       captureError,
       viewport,
       calibration,
+      gesturePointerLock,
+      gesturePointerLockFeedback,
     }),
     [
       overlaySnapshot,
@@ -1846,6 +2075,8 @@ function OverlayWindowApp() {
       captureError,
       viewport,
       calibration,
+      gesturePointerLock,
+      gesturePointerLockFeedback,
     ],
   );
 
@@ -3561,6 +3792,16 @@ function OverlayWindowApp() {
         state={tokiCreatureState}
         target={hasAcceptedGuidance ? activeTarget : null}
       >
+        <TokiPointerLockCue
+          lock={gesturePointerLock}
+          validation={
+            gesturePointerLockFeedback.validation === "checking"
+              ? "checking"
+              : gesturePointerLockFeedback.validation === "locked"
+                ? "locked"
+                : null
+          }
+        />
         <BlobPuck
           creatureState={tokiCreatureState}
           motion={puckMotion}
@@ -3803,6 +4044,10 @@ function DebugWindowApp() {
   const openPalmClassification = gestureDiagnostics.openPalm;
   const pointPoseClassification = gestureDiagnostics.pointPose;
   const gesturePointer = gestureDiagnostics.pointer;
+  const airTapPose = gestureDiagnostics.airTapPose;
+  const doubleAirTap = gestureDiagnostics.doubleAirTap;
+  const gesturePointerLock = snapshot.gesturePointerLock;
+  const gesturePointerLockFeedback = snapshot.gesturePointerLockFeedback;
   const smoothedGesture = gestureDiagnostics.smoothedGesture;
   const cameraLabelsMayBeHidden =
     cameraProbeStatus === "ready" &&
@@ -4761,6 +5006,55 @@ function DebugWindowApp() {
                   Hold one index finger extended with the other three fingers folded.
                   Toki maps the stable fingertip across the active display and keeps the
                   last point for up to two seconds during brief tracking loss.
+                </p>
+              </div>
+
+              <div className="debug-recognition-card">
+                <h3>Air-tap lock</h3>
+                <dl>
+                  <div>
+                    <dt>Pose</dt>
+                    <dd>{airTapPose.label}</dd>
+                  </div>
+                  <div>
+                    <dt>Tap phase</dt>
+                    <dd>{doubleAirTap.phase}</dd>
+                  </div>
+                  <div>
+                    <dt>First tap</dt>
+                    <dd>{doubleAirTap.firstTap?.id ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Second tap</dt>
+                    <dd>{doubleAirTap.secondTap?.id ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Lock state</dt>
+                    <dd>{gesturePointerLockFeedback.validation}</dd>
+                  </div>
+                  <div>
+                    <dt>Locked point</dt>
+                    <dd>
+                      {gesturePointerLock
+                        ? `${Math.round(gesturePointerLock.pointer.display.x)}, ${Math.round(
+                            gesturePointerLock.pointer.display.y,
+                          )}`
+                        : "None"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Screen proof</dt>
+                    <dd>
+                      {gesturePointerLock?.evidence.activeWindowId ??
+                        gesturePointerLockFeedback.reason ??
+                        "None"}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="debug-muted">
+                  Flex and return the pointing index twice within two seconds. The
+                  detached blue drop marks the copied coordinate; it is not a verified
+                  guidance target and never clicks anything.
                 </p>
               </div>
 
