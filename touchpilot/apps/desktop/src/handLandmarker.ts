@@ -7,10 +7,26 @@ import type {
   Handedness,
 } from "@toki/shared";
 
-const mediapipeVersion = "0.10.35";
-const wasmBaseUrl = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${mediapipeVersion}/wasm`;
-const handLandmarkerModelUrl =
-  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+export const handLandmarkerAssetMode = "bundled" as const;
+
+export type HandLandmarkerAssetUrls = {
+  wasmBaseUrl: string;
+  modelAssetUrl: string;
+};
+
+export function resolveHandLandmarkerAssetUrls(
+  applicationBaseUrl: string,
+): HandLandmarkerAssetUrls {
+  const assetRootUrl = new URL("./mediapipe/", applicationBaseUrl);
+
+  return {
+    wasmBaseUrl: new URL("wasm", assetRootUrl).toString(),
+    modelAssetUrl: new URL(
+      "models/hand_landmarker.task",
+      assetRootUrl,
+    ).toString(),
+  };
+}
 
 const handLandmarkNames: HandLandmarkName[] = [
   "wrist",
@@ -44,7 +60,8 @@ export async function getHandLandmarker(): Promise<HandLandmarker> {
 }
 
 async function createHandLandmarker(): Promise<HandLandmarker> {
-  const vision = await FilesetResolver.forVisionTasks(wasmBaseUrl);
+  const assetUrls = resolveHandLandmarkerAssetUrls(document.baseURI);
+  const vision = await FilesetResolver.forVisionTasks(assetUrls.wasmBaseUrl);
 
   const options = {
     runningMode: "VIDEO" as const,
@@ -58,7 +75,7 @@ async function createHandLandmarker(): Promise<HandLandmarker> {
     return await HandLandmarker.createFromOptions(vision, {
       ...options,
       baseOptions: {
-        modelAssetPath: handLandmarkerModelUrl,
+        modelAssetPath: assetUrls.modelAssetUrl,
         delegate: "GPU",
       },
     });
@@ -66,7 +83,7 @@ async function createHandLandmarker(): Promise<HandLandmarker> {
     return HandLandmarker.createFromOptions(vision, {
       ...options,
       baseOptions: {
-        modelAssetPath: handLandmarkerModelUrl,
+        modelAssetPath: assetUrls.modelAssetUrl,
         delegate: "CPU",
       },
     });
