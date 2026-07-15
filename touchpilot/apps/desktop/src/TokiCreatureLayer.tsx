@@ -1,6 +1,7 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { TargetBox } from "@toki/shared";
 import type { TokiCreatureState } from "./tokiCreatureState";
+import { TokiStatusRing } from "./TokiStatusRing";
 import "./TokiCreatureLayer.css";
 
 type TokiCreatureLayerProps = {
@@ -10,16 +11,6 @@ type TokiCreatureLayerProps = {
 };
 
 export function TokiCreatureLayer({ state, target, children }: TokiCreatureLayerProps) {
-  const targetStyle =
-    target != null
-      ? ({
-          "--toki-target-x": `${target.x + target.width / 2}px`,
-          "--toki-target-y": `${target.y + target.height / 2}px`,
-          "--toki-target-width": `${Math.max(target.width, 30)}px`,
-          "--toki-target-height": `${Math.max(target.height, 30)}px`,
-        } as CSSProperties)
-      : undefined;
-
   return (
     <div
       className="toki-creature-layer"
@@ -36,12 +27,14 @@ export function TokiCreatureLayer({ state, target, children }: TokiCreatureLayer
       data-reason={state.reason}
       aria-hidden="true"
     >
-      {target != null && state.shouldStretchTowardTarget ? (
-        <span className="toki-target-travel" style={targetStyle}>
-          <span className="toki-target-travel__ring" />
-          <span className="toki-target-travel__glint toki-target-travel__glint--one" />
-          <span className="toki-target-travel__glint toki-target-travel__glint--two" />
-        </span>
+      {target != null ? (
+        <TokiStatusRing
+          centerX={target.x + target.width / 2}
+          centerY={target.y + target.height / 2}
+          targetWidth={target.width}
+          targetHeight={target.height}
+          state={state}
+        />
       ) : null}
       {children}
     </div>

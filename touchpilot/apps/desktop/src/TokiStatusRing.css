@@ -4,8 +4,8 @@
   position: absolute;
   left: var(--toki-status-x);
   top: var(--toki-status-y);
-  width: 52px;
-  height: 52px;
+  width: var(--toki-status-width, 52px);
+  height: var(--toki-status-height, 52px);
   transform: translate(-50%, -50%);
   opacity: calc(0.64 + var(--toki-status-energy) * 0.28);
   pointer-events: none;
@@ -17,6 +17,9 @@
   width: 100%;
   height: 100%;
   overflow: visible;
+}
+
+.toki-status-ring[data-shape="circle"] svg {
   animation: toki-status-ring-drift 7s linear infinite;
 }
 
@@ -57,6 +60,33 @@
   animation: toki-status-ring-progress 1.8s ease-in-out infinite;
 }
 
+.toki-status-ring__region-underlay,
+.toki-status-ring__region-orbit,
+.toki-status-ring__region-progress {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.toki-status-ring__region-underlay {
+  stroke: var(--toki-status-underlay);
+  stroke-width: 3.4;
+}
+
+.toki-status-ring__region-orbit {
+  stroke: color-mix(in srgb, var(--toki-status-color) 68%, transparent);
+  stroke-width: 1.25;
+  stroke-dasharray: 3 3;
+}
+
+.toki-status-ring__region-progress {
+  stroke: var(--toki-status-color);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 18 82;
+  filter: drop-shadow(0 0 3px var(--toki-status-color));
+  animation: toki-status-region-progress 1.7s linear infinite;
+}
+
 .toki-status-ring__label {
   fill: color-mix(in srgb, var(--toki-status-color) 78%, white);
   stroke: var(--toki-status-underlay);
@@ -82,7 +112,9 @@
 
 .toki-status-ring[data-gesture-phase="holding"] .toki-status-ring__progress,
 .toki-status-ring[data-gesture-phase="holding"]
-  .toki-status-ring__progress-underlay {
+  .toki-status-ring__progress-underlay,
+.toki-status-ring[data-gesture-phase="holding"]
+  .toki-status-ring__region-progress {
   animation-duration: 0.82s;
 }
 
@@ -114,10 +146,21 @@
   }
 }
 
+@keyframes toki-status-region-progress {
+  from {
+    stroke-dashoffset: 0;
+  }
+
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .toki-status-ring svg,
   .toki-status-ring__progress,
-  .toki-status-ring__progress-underlay {
+  .toki-status-ring__progress-underlay,
+  .toki-status-ring__region-progress {
     animation: none;
   }
 }

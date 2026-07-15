@@ -40,6 +40,9 @@ type BlobCursorProps = {
   position?: BlobCursorPosition | null;
   trailPull?: number;
   liquidStretch?: number;
+  ambientMotion?: number;
+  ambientSpeed?: number;
+  ambientDeform?: number;
 };
 
 export default function BlobCursor({
@@ -64,6 +67,9 @@ export default function BlobCursor({
   position = null,
   trailPull = 0,
   liquidStretch = 0,
+  ambientMotion = 0,
+  ambientSpeed = 1,
+  ambientDeform = 0,
 }: BlobCursorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const blobsRef = useRef<Array<HTMLDivElement | null>>([]);
@@ -73,6 +79,7 @@ export default function BlobCursor({
   const animationFrameRef = useRef<number | null>(null);
   const offsetRef = useRef({ left: 0, top: 0 });
   const trailVectorRef = useRef({ x: -1, y: 0.18 });
+  const reducedMotionRef = useRef(false);
 
   const updateOffset = useCallback(() => {
     if (!containerRef.current) {
@@ -90,7 +97,7 @@ export default function BlobCursor({
     return Math.min(0.78, Math.max(0.1, 1 - Math.pow(0.001, 1 / frames)));
   }, []);
 
-  const applyFrame = useCallback(() => {
+  const applyFrame = useCallback((timestamp: number) => {
     const target = targetPositionRef.current;
 
     if (target == null) {
@@ -100,6 +107,9 @@ export default function BlobCursor({
 
     const trailVector = trailVectorRef.current;
     const rotation = Math.atan2(-trailVector.y, -trailVector.x) * (180 / Math.PI);
+    const ambientMotionIsActive =
+      !reducedMotionRef.current && ambientMotion > 0 && ambientSpeed > 0;
+    const elapsed = timestamp / 1000;
     let shouldContinue = false;
 
     blobsRef.current.forEach((el, i) => {
@@ -109,8 +119,16 @@ export default function BlobCursor({
 
       const isLead = i === 0;
       const offset = i * trailPull;
-      const desiredX = target.x + trailVector.x * offset;
-      const desiredY = target.y + trailVector.y * offset;
+      const phase = elapsed * ambientSpeed + i * 2.17;
+      const ambientWeight = isLead ? 0.58 : 1;
+      const ambientX = ambientMotionIsActive
+        ? Math.sin(phase) * ambientMotion * ambientWeight
+        : 0;
+      const ambientY = ambientMotionIsActive
+        ? Math.cos(phase * 1.23) * ambientMotion * ambientWeight * 0.74
+        : 0;
+      const desiredX = target.x + trailVector.x * offset + ambientX;
+      const desiredY = target.y + trailVector.y * offset + ambientY;
       const alpha = getLerpAlpha(isLead ? fastDuration : slowDuration);
       const frame =
         blobFramesRef.current[i] ??
@@ -137,19 +155,48 @@ export default function BlobCursor({
 
       const remainingDistance = Math.hypot(desiredX - frame.x, desiredY - frame.y);
       const speed = Math.min(Math.hypot(frame.x - frame.previousX, frame.y - frame.previousY) / 16, 1);
-      const scaleX = 1 + speed * liquidStretch * (isLead ? 1 : 0.65);
-      const scaleY = 1 - speed * liquidStretch * (isLead ? 0.42 : 0.28);
+      const ambientShape = ambientMotionIsActive
+        ? Math.sin(phase * 1.41) * ambientDeform * (isLead ? 1 : 0.72)
+        : 0;
+      const scaleX = 1 + speed * liquidStretch * (isLead ? 1 : 0.65) + ambientShape;
+      const scaleY =
+        1 - speed * liquidStretch * (isLead ? 0.42 : 0.28) - ambientShape * 0.72;
+      const rotationWobble = ambientMotionIsActive ? Math.sin(phase * 0.83) * 5 : 0;
 
       blobFramesRef.current[i] = frame;
-      el.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0) translate(-50%, -50%) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`;
+      el.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0) translate(-50%, -50%) rotate(${rotation + rotationWobble}deg) scale(${scaleX}, ${scaleY})`;
 
-      if (remainingDistance > 0.35) {
+      if (blobType === "circle") {
+        const radiusShift = ambientMotionIsActive
+          ? Math.sin(phase * 1.13) * ambientDeform * 100
+          : 0;
+        const crossShift = ambientMotionIsActive
+          ? Math.cos(phase * 0.91) * ambientDeform * 76
+          : 0;
+        const radiusA = Math.min(64, Math.max(36, 50 + radiusShift));
+        const radiusB = Math.min(64, Math.max(36, 50 + crossShift));
+        el.style.borderRadius = `${radiusA}% ${100 - radiusA}% ${radiusB}% ${
+          100 - radiusB
+        }% / ${radiusB}% ${radiusA}% ${100 - radiusB}% ${100 - radiusA}%`;
+      }
+
+      if (ambientMotionIsActive || remainingDistance > 0.35) {
         shouldContinue = true;
       }
     });
 
     animationFrameRef.current = shouldContinue ? window.requestAnimationFrame(applyFrame) : null;
-  }, [fastDuration, getLerpAlpha, liquidStretch, slowDuration, trailPull]);
+  }, [
+    ambientDeform,
+    ambientMotion,
+    ambientSpeed,
+    blobType,
+    fastDuration,
+    getLerpAlpha,
+    liquidStretch,
+    slowDuration,
+    trailPull,
+  ]);
 
   const startAnimationLoop = useCallback(() => {
     if (animationFrameRef.current != null) {
@@ -217,6 +264,40 @@ export default function BlobCursor({
   );
 
   useEffect(() => {
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    const syncReducedMotion = () => {
+      reducedMotionRef.current = reducedMotionQuery.matches;
+      startAnimationLoop();
+    };
+
+    syncReducedMotion();
+    reducedMotionQuery.addEventListener("change", syncReducedMotion);
+
+    return () => {
+      reducedMotionQuery.removeEventListener("change", syncReducedMotion);
+    };
+  }, [startAnimationLoop]);
+
+  useEffect(() => {
+    if (targetPositionRef.current == null) {
+      return;
+    }
+
+    if (animationFrameRef.current != null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+    }
+    animationFrameRef.current = window.requestAnimationFrame(applyFrame);
+
+    return () => {
+      if (animationFrameRef.current != null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, [applyFrame]);
+
+  useEffect(() => {
     const onResize = () => {
       updateOffset();
 
@@ -229,10 +310,6 @@ export default function BlobCursor({
     window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
-      if (animationFrameRef.current != null) {
-        window.cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
     };
   }, [moveTo, updateOffset]);
 

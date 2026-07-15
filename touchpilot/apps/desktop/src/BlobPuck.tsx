@@ -1,8 +1,10 @@
+import type { CSSProperties } from "react";
+import type { TargetBox } from "@toki/shared";
 import BlobCursor from "./BlobCursor";
 import { pointerShadowGeometry, type PointerShadowPosition } from "./overlayGeometry";
 import type { PuckMotionModel } from "./puckMotion";
 import type { TokiCreatureMode, TokiCreatureState } from "./tokiCreatureState";
-import { TokiStatusRing } from "./TokiStatusRing";
+import "./BlobPuck.css";
 
 type BlobPuckVisualConfig = {
   fillColor: string;
@@ -18,6 +20,9 @@ type BlobPuckVisualConfig = {
   slowDuration: number;
   trailPull: number;
   liquidStretch: number;
+  ambientMotion: number;
+  ambientSpeed: number;
+  ambientDeform: number;
 };
 
 const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
@@ -36,6 +41,9 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     slowDuration: 0.16,
     trailPull: 3,
     liquidStretch: 0.28,
+    ambientMotion: 1.6,
+    ambientSpeed: 1.45,
+    ambientDeform: 0.075,
   },
   listening: {
     fillColor:
@@ -52,6 +60,9 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     slowDuration: 0.13,
     trailPull: 4,
     liquidStretch: 0.36,
+    ambientMotion: 2.6,
+    ambientSpeed: 2.9,
+    ambientDeform: 0.11,
   },
   thinking: {
     fillColor:
@@ -68,6 +79,9 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     slowDuration: 0.2,
     trailPull: 5,
     liquidStretch: 0.4,
+    ambientMotion: 3.4,
+    ambientSpeed: 2.35,
+    ambientDeform: 0.145,
   },
   guiding: {
     fillColor:
@@ -84,6 +98,9 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     slowDuration: 0.14,
     trailPull: 4,
     liquidStretch: 0.44,
+    ambientMotion: 2.2,
+    ambientSpeed: 2.1,
+    ambientDeform: 0.105,
   },
   confirming: {
     fillColor:
@@ -100,6 +117,9 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     slowDuration: 0.15,
     trailPull: 4,
     liquidStretch: 0.36,
+    ambientMotion: 2.8,
+    ambientSpeed: 2.55,
+    ambientDeform: 0.12,
   },
   paused: {
     fillColor:
@@ -116,6 +136,9 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     slowDuration: 0.26,
     trailPull: 2,
     liquidStretch: 0.16,
+    ambientMotion: 0,
+    ambientSpeed: 0,
+    ambientDeform: 0,
   },
   error: {
     fillColor:
@@ -132,16 +155,22 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     slowDuration: 0.22,
     trailPull: 3,
     liquidStretch: 0.24,
+    ambientMotion: 1.3,
+    ambientSpeed: 1.85,
+    ambientDeform: 0.085,
   },
 };
 
 export function BlobPuck({
   creatureState,
+  motion,
   pointerShadow,
+  target,
 }: {
   creatureState?: TokiCreatureState;
   motion: PuckMotionModel;
   pointerShadow: PointerShadowPosition | null;
+  target: TargetBox | null;
 }) {
   if (pointerShadow == null) {
     return null;
@@ -179,31 +208,43 @@ export function BlobPuck({
     Math.max(unclampedCenterY, puckRadius),
     Math.max(puckRadius, window.innerHeight - puckRadius),
   );
+  const canSendTargetDroplet = motion.canSendTargetDroplets && target != null;
+  const targetCenterX = target == null ? centerX : target.x + target.width / 2;
+  const targetCenterY = target == null ? centerY : target.y + target.height / 2;
+  const targetDeltaX = targetCenterX - centerX;
+  const targetDeltaY = targetCenterY - centerY;
+  const targetDistance = Math.max(1, Math.hypot(targetDeltaX, targetDeltaY));
+  const releaseOffset = Math.max(5, sizes[0] / 2 - 1);
+  const dropletSourceX = centerX + (targetDeltaX / targetDistance) * releaseOffset;
+  const dropletSourceY = centerY + (targetDeltaY / targetDistance) * releaseOffset;
+  const dropletTravelX = targetCenterX - dropletSourceX;
+  const dropletTravelY = targetCenterY - dropletSourceY;
+  const dropletArc = Math.min(28, Math.max(10, targetDistance * 0.075));
+  const dropletStyle = {
+    "--toki-droplet-source-x": `${dropletSourceX}px`,
+    "--toki-droplet-source-y": `${dropletSourceY}px`,
+    "--toki-droplet-mid-x": `${dropletTravelX * 0.54}px`,
+    "--toki-droplet-mid-y": `${dropletTravelY * 0.54 - dropletArc}px`,
+    "--toki-droplet-travel-x": `${dropletTravelX}px`,
+    "--toki-droplet-travel-y": `${dropletTravelY}px`,
+    background: visual.fillColor,
+    boxShadow: `0 0 8px ${visual.shadowColor}`,
+  } as CSSProperties;
+  const dropletKey =
+    target == null
+      ? "none"
+      : `${target.label}:${target.x}:${target.y}:${target.width}:${target.height}`;
 
   return (
     <span
       className="blob-puck"
-      data-aura={creatureState?.shouldShowAura ? "true" : "false"}
       data-mode={mode}
       data-gesture={gesture?.label ?? "none"}
       data-gesture-phase={gesture?.phase ?? "inactive"}
       data-gesture-active={gestureIsActive ? "true" : "false"}
+      data-droplet-travel={canSendTargetDroplet ? "true" : "false"}
       aria-hidden="true"
     >
-      {creatureState != null ? (
-        <TokiStatusRing centerX={centerX} centerY={centerY} state={creatureState} />
-      ) : null}
-      <span
-        className="blob-puck-aura"
-        style={{
-          left: `${centerX}px`,
-          top: `${centerY}px`,
-        }}
-      >
-        <span className="blob-puck-strand blob-puck-strand--one" />
-        <span className="blob-puck-strand blob-puck-strand--two" />
-        <span className="blob-puck-strand blob-puck-strand--three" />
-      </span>
       <BlobCursor
         position={{
           clientX: centerX,
@@ -227,8 +268,19 @@ export function BlobPuck({
         slowDuration={gestureIsActive ? visual.slowDuration * 0.88 : visual.slowDuration}
         trailPull={gestureIsActive ? visual.trailPull + 2 : visual.trailPull}
         liquidStretch={gestureIsActive ? visual.liquidStretch + 0.12 : visual.liquidStretch}
+        ambientMotion={visual.ambientMotion}
+        ambientSpeed={visual.ambientSpeed}
+        ambientDeform={visual.ambientDeform}
         zIndex={100}
       />
+      {canSendTargetDroplet ? (
+        <span
+          key={dropletKey}
+          className="blob-puck__target-droplet"
+          data-target-label={target.label}
+          style={dropletStyle}
+        />
+      ) : null}
     </span>
   );
 }
