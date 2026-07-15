@@ -321,15 +321,15 @@ Evidence: `touchpilot/docs/phase-15-evals.md` records deterministic eval closure
 29. Accepted-target droplet travel — `COMPLETED` implementation/automated gate: one transient droplet can travel only when the existing accepted-guidance motion gate and a visible target are both present.
 30. Living-visual installed-app acceptance — `PENDING`, user-owned: confirm the liquid motion is visible and tasteful, processing does not look idle, the droplet reaches the verified target, and rejected/hidden targets remain invisible.
 
-## Adaptive Gesture Control Plan — IN PROGRESS, STEP 3 COMPLETE
+## Adaptive Gesture Control Plan — IN PROGRESS, STEP 4 COMPLETE
 
 The detailed design and rationale are preserved in `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md`. Execution uses one step at a time, with a pause for user review after every completed step.
 
 1. Freeze gesture contracts and deterministic landmark fixtures — `COMPLETED` in Gesture Step 1; 7/7 focused tests and all workspace typechecks pass.
 2. Extract an always-running gesture runtime independent of Debug — `COMPLETED` in Gesture Step 2; Overlay now owns the camera, hidden video source, MediaPipe loop, smoothing, and legacy action routing while Debug receives sanitized snapshots only.
 3. Package MediaPipe assets locally and preserve camera privacy — `COMPLETED` in Gesture Step 3; the exact MediaPipe 0.10.35 WASM loaders/binaries and official float16 hand-landmarker model are checksum-pinned, loaded from packaged application paths, embedded in the signed native app, and covered by a 7/7 offline asset gate. Camera-frame privacy and legacy gesture ownership regressions remain green.
-4. Build reliable single-hand pointing with calibration, smoothing, and active-display mapping — `NEXT`.
-5. Build double-air-tap target locking with an immutable snapshot and screen-freshness invalidation — `PENDING`.
+4. Build reliable single-hand pointing with calibration, smoothing, and active-display mapping — `COMPLETED` at the implementation/build gate in Gesture Step 4; a palm-normalized point pose, 140 ms stability hold, configurable personal camera range, mirrored/clamped active-display mapping, dead-zone smoothing, absolute blob positioning, two-second tracking-loss recovery, and immediate permission fallback are covered by 9/9 focused tests. Live comfort/lighting tuning remains user-owned acceptance.
+5. Build double-air-tap target locking with an immutable snapshot and screen-freshness invalidation — `NEXT`.
 6. Add a bounded, resettable local adaptive profile with two-second human grace windows — `PENDING`.
 7. Add stable two-hand identity plus liquid split/merge visuals — `PENDING`.
 8. Compose a locked pointer with secondary-hand pinch hold-to-talk; release submits exactly once and tracking loss cancels safely — `PENDING`.
@@ -361,4 +361,4 @@ The command-testing foundation is already committed: `touchpilot/docs/manual-com
 5. Broader verification and release — `COMPLETED`: all workspace TypeScript, Rust check, semantic verifier 23/23, production web build, app release, signing, install, hash match, and launch pass.
 6. Installed-app permission and live behavior acceptance — `PENDING`, user-owned. Grant Screen Recording to the exact current `/Applications/Toki.app` if prompted, relaunch, then run the known commands manually.
 
-Current installed executable SHA-256: `842d14520c795c4a311a989ce12b0f2c5a6d3b4d13990d056286e1df4920ae7e`. Gesture Step 3 installed-app PID at verification: `25256`.
+Current installed executable SHA-256: `2a406c307a6ca517981fc570cd2d21be129db48e48fe60d2fda55fdebd4483bc`. Gesture Step 4 installed-app PID at verification: `28758`.
