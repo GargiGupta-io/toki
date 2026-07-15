@@ -19,6 +19,7 @@ import type {
   ClickAwareNativeClick,
   ClickAwareRuntimeState,
   CoordinateCalibration,
+  DisplayContext,
   GuidanceRequest,
   GuidanceProviderMode,
   GuidanceProviderResponse,
@@ -1531,12 +1532,38 @@ function OverlayWindowApp() {
   const topUtilityFocusedRef = useRef(false);
   const topUtilityRevealTimerRef = useRef<number | null>(null);
   const topUtilityLeaveTimerRef = useRef<number | null>(null);
+  const gesturePointerDisplay = useMemo<DisplayContext>(
+    () => ({
+      id: "overlay-active-display",
+      width: viewport.width,
+      height: viewport.height,
+      scaleFactor: viewport.devicePixelRatio,
+    }),
+    [viewport.devicePixelRatio, viewport.height, viewport.width],
+  );
   const alwaysOnGestureRuntime = useAlwaysOnGestureRuntime({
     cameraEnabled: gestureRuntime.camera.enabled,
     gesturesEnabled: gestureRuntime.enabled,
     thresholds: gestureRuntime.thresholds,
     deviceRefreshToken: gestureDeviceRefreshToken,
+    display: gesturePointerDisplay,
   });
+  const gesturePointerShadow = useMemo(() => {
+    const pointer = alwaysOnGestureRuntime.pointer;
+
+    if (
+      pointer == null ||
+      pointer.display.displayId !== gesturePointerDisplay.id
+    ) {
+      return null;
+    }
+
+    return getPointerShadowPosition(
+      pointer.display.x,
+      pointer.display.y,
+      viewport,
+    );
+  }, [alwaysOnGestureRuntime.pointer, gesturePointerDisplay.id, viewport]);
 
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep =
@@ -3537,7 +3564,8 @@ function OverlayWindowApp() {
         <BlobPuck
           creatureState={tokiCreatureState}
           motion={puckMotion}
-          pointerShadow={pointerShadow}
+          pointerShadow={gesturePointerShadow ?? pointerShadow}
+          pointerSource={gesturePointerShadow == null ? "cursor" : "gesture"}
           target={hasAcceptedGuidance ? activeTarget : null}
         />
       </TokiCreatureLayer>
@@ -3773,6 +3801,8 @@ function DebugWindowApp() {
   const handLandmarkSummary = gestureDiagnostics.hand;
   const pinchClassification = gestureDiagnostics.pinch;
   const openPalmClassification = gestureDiagnostics.openPalm;
+  const pointPoseClassification = gestureDiagnostics.pointPose;
+  const gesturePointer = gestureDiagnostics.pointer;
   const smoothedGesture = gestureDiagnostics.smoothedGesture;
   const cameraLabelsMayBeHidden =
     cameraProbeStatus === "ready" &&
@@ -4680,6 +4710,57 @@ function DebugWindowApp() {
                 </dl>
                 <p className="debug-muted">
                   Open palm recognizes when enough fingers are extended and spread.
+                </p>
+              </div>
+
+              <div className="debug-recognition-card">
+                <h3>Point</h3>
+                <dl>
+                  <div>
+                    <dt>Pose</dt>
+                    <dd>{pointPoseClassification.label}</dd>
+                  </div>
+                  <div>
+                    <dt>Phase</dt>
+                    <dd>{gesturePointer?.phase ?? pointPoseClassification.phase}</dd>
+                  </div>
+                  <div>
+                    <dt>Index ratio</dt>
+                    <dd>
+                      {pointPoseClassification.indexExtensionRatio == null
+                        ? "None"
+                        : pointPoseClassification.indexExtensionRatio.toFixed(2)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Folded fingers</dt>
+                    <dd>
+                      {pointPoseClassification.foldedFingerCount} /{" "}
+                      {pointPoseClassification.requiredFoldedFingerCount}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Mapped point</dt>
+                    <dd>
+                      {gesturePointer
+                        ? `${Math.round(gesturePointer.display.x)}, ${Math.round(
+                            gesturePointer.display.y,
+                          )}`
+                        : "None"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Display</dt>
+                    <dd>
+                      {gestureDiagnostics.pointerDisplay.width} ×{" "}
+                      {gestureDiagnostics.pointerDisplay.height}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="debug-muted">
+                  Hold one index finger extended with the other three fingers folded.
+                  Toki maps the stable fingertip across the active display and keeps the
+                  last point for up to two seconds during brief tracking loss.
                 </p>
               </div>
 

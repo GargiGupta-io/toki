@@ -165,11 +165,13 @@ export function BlobPuck({
   creatureState,
   motion,
   pointerShadow,
+  pointerSource,
   target,
 }: {
   creatureState?: TokiCreatureState;
   motion: PuckMotionModel;
   pointerShadow: PointerShadowPosition | null;
+  pointerSource: "cursor" | "gesture";
   target: TargetBox | null;
 }) {
   if (pointerShadow == null) {
@@ -179,7 +181,10 @@ export function BlobPuck({
   const mode = creatureState?.mode ?? "idle";
   const visual = blobPuckVisuals[mode];
   const gesture = creatureState?.gesture;
-  const gestureIsActive = creatureState?.anchor === "gesture" && gesture?.active === true;
+  const gestureIsActive =
+    pointerSource === "cursor" &&
+    creatureState?.anchor === "gesture" &&
+    gesture?.active === true;
   const gestureScale =
     gestureIsActive && gesture?.label === "pinch"
       ? 0.86
@@ -242,6 +247,7 @@ export function BlobPuck({
       data-gesture={gesture?.label ?? "none"}
       data-gesture-phase={gesture?.phase ?? "inactive"}
       data-gesture-active={gestureIsActive ? "true" : "false"}
+      data-pointer-source={pointerSource}
       data-droplet-travel={canSendTargetDroplet ? "true" : "false"}
       aria-hidden="true"
     >
