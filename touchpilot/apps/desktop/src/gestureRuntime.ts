@@ -4,8 +4,10 @@ import type {
   CameraPermissionState,
   CameraRuntimeState,
   CameraStreamStatus,
+  DisplayContext,
   GestureActionEvent,
   GestureClassification,
+  GesturePointerSample,
   GestureThresholds,
   HandLandmarkFrame,
 } from "@toki/shared";
@@ -24,6 +26,13 @@ import {
   getGestureVisualAnchor,
   type GestureVisualAnchor,
 } from "./gestureVisuals";
+import {
+  advanceGesturePointerTracking,
+  classifyPointPose,
+  defaultGesturePointerCalibration,
+  resetGesturePointerTracking,
+  type PointPoseClassification,
+} from "./gesturePointing";
 import {
   detectHandLandmarksForVideo,
   getHandLandmarker,
@@ -68,6 +77,10 @@ export type GestureRuntimeDiagnostics = {
   hand: HandLandmarkSummary | null;
   pinch: PinchClassification;
   openPalm: OpenPalmClassification;
+  pointPose: PointPoseClassification;
+  pointer: GesturePointerSample | null;
+  pointerDisplay: DisplayContext;
+  pointerCalibration: typeof defaultGesturePointerCalibration;
   smoothedGesture: GestureClassification;
   visualAnchor: GestureVisualAnchor | null;
   updatedAt: string;
@@ -76,6 +89,7 @@ export type GestureRuntimeDiagnostics = {
 export type AlwaysOnGestureRuntime = {
   camera: CameraRuntimeState;
   classification: GestureClassification;
+  pointer: GesturePointerSample | null;
   visualAnchor: GestureVisualAnchor | null;
   diagnostics: GestureRuntimeDiagnostics;
 };
@@ -141,6 +155,15 @@ export function createEmptyGestureRuntimeDiagnostics(
     hand: null,
     pinch: classifyPinchGesture(null, thresholds),
     openPalm: classifyOpenPalmGesture(null, thresholds),
+    pointPose: classifyPointPose(null, thresholds.minDetectionConfidence),
+    pointer: null,
+    pointerDisplay: {
+      id: "overlay-unavailable",
+      width: 0,
+      height: 0,
+      scaleFactor: 1,
+    },
+    pointerCalibration: defaultGesturePointerCalibration,
     smoothedGesture: createInactiveGestureClassification(),
     visualAnchor: null,
     updatedAt: now,
@@ -152,11 +175,13 @@ export function useAlwaysOnGestureRuntime({
   gesturesEnabled,
   thresholds,
   deviceRefreshToken,
+  display,
 }: {
   cameraEnabled: boolean;
   gesturesEnabled: boolean;
   thresholds: GestureThresholds;
   deviceRefreshToken: number;
+  display: DisplayContext;
 }): AlwaysOnGestureRuntime {
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceSummary[]>([]);
   const [cameraProbeStatus, setCameraProbeStatus] =
@@ -176,9 +201,12 @@ export function useAlwaysOnGestureRuntime({
   const [smoothedGesture, setSmoothedGesture] = useState<GestureClassification>(
     createInactiveGestureClassification,
   );
+  const [gesturePointer, setGesturePointer] =
+    useState<GesturePointerSample | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const handFrameIdRef = useRef(0);
   const gestureSmoothingStateRef = useRef(initialGestureSmoothingState);
+  const pointerTrackingStateRef = useRef(resetGesturePointerTracking());
 
   useEffect(() => {
     let cancelled = false;
@@ -230,6 +258,8 @@ export function useAlwaysOnGestureRuntime({
       setHandLandmarkerError(null);
       gestureSmoothingStateRef.current = initialGestureSmoothingState;
       setSmoothedGesture(createInactiveGestureClassification());
+      pointerTrackingStateRef.current = resetGesturePointerTracking();
+      setGesturePointer(null);
     }
 
     async function startCameraRuntime() {
@@ -373,6 +403,10 @@ export function useAlwaysOnGestureRuntime({
     () => classifyOpenPalmGesture(handLandmarkFrame, thresholds),
     [handLandmarkFrame, thresholds],
   );
+  const pointPoseClassification = useMemo(
+    () => classifyPointPose(handLandmarkFrame, thresholds.minDetectionConfidence),
+    [handLandmarkFrame, thresholds.minDetectionConfidence],
+  );
   const rawGestureCandidate =
     openPalmClassification.label !== "none" &&
     openPalmClassification.confidence >= pinchClassification.confidence
@@ -404,6 +438,68 @@ export function useAlwaysOnGestureRuntime({
     rawGestureCandidate.confidence,
     rawGestureCandidate.sourceFrameId,
     thresholds,
+  ]);
+
+  useEffect(() => {
+    if (!gesturesEnabled || cameraStatus !== "active") {
+      pointerTrackingStateRef.current = resetGesturePointerTracking();
+      setGesturePointer(null);
+      return;
+    }
+
+    const result = advanceGesturePointerTracking({
+      previousState: pointerTrackingStateRef.current,
+      classification: pointPoseClassification,
+      display,
+      nowMs: performance.now(),
+    });
+    pointerTrackingStateRef.current = result.state;
+    setGesturePointer((current) =>
+      isSameGesturePointer(current, result.pointer) ? current : result.pointer,
+    );
+  }, [
+    cameraStatus,
+    display.height,
+    display.id,
+    display.scaleFactor,
+    display.width,
+    gesturesEnabled,
+    pointPoseClassification,
+  ]);
+
+  useEffect(() => {
+    if (
+      gesturePointer?.phase !== "recovering" ||
+      pointerTrackingStateRef.current.lastPointSeenAtMs == null
+    ) {
+      return;
+    }
+
+    const elapsedMs =
+      performance.now() - pointerTrackingStateRef.current.lastPointSeenAtMs;
+    const remainingMs = Math.max(
+      0,
+      defaultGesturePointerCalibration.trackingLossGraceMs - elapsedMs,
+    );
+    const timeout = window.setTimeout(() => {
+      const result = advanceGesturePointerTracking({
+        previousState: pointerTrackingStateRef.current,
+        classification: classifyPointPose(null, thresholds.minDetectionConfidence),
+        display,
+        nowMs: performance.now(),
+      });
+      pointerTrackingStateRef.current = result.state;
+      setGesturePointer(result.pointer);
+    }, remainingMs);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    display,
+    gesturePointer?.phase,
+    gesturePointer?.sourceFrameId,
+    thresholds.minDetectionConfidence,
   ]);
 
   const gestureVisualAnchor = useMemo(() => {
@@ -454,6 +550,10 @@ export function useAlwaysOnGestureRuntime({
         : null,
       pinch: pinchClassification,
       openPalm: openPalmClassification,
+      pointPose: pointPoseClassification,
+      pointer: gesturePointer,
+      pointerDisplay: display,
+      pointerCalibration: defaultGesturePointerCalibration,
       smoothedGesture,
       visualAnchor: gestureVisualAnchor,
       updatedAt: handLandmarkFrame?.capturedAt ?? new Date().toISOString(),
@@ -466,11 +566,14 @@ export function useAlwaysOnGestureRuntime({
       cameraProbeStatus,
       cameraStatus,
       gestureVisualAnchor,
+      gesturePointer,
       handLandmarkFrame,
       handLandmarkerError,
       handLandmarkerStatus,
       openPalmClassification,
       pinchClassification,
+      pointPoseClassification,
+      display,
       smoothedGesture,
     ],
   );
@@ -478,9 +581,29 @@ export function useAlwaysOnGestureRuntime({
   return {
     camera,
     classification: smoothedGesture,
+    pointer: gesturePointer,
     visualAnchor: gestureVisualAnchor,
     diagnostics,
   };
+}
+
+function isSameGesturePointer(
+  left: GesturePointerSample | null,
+  right: GesturePointerSample | null,
+): boolean {
+  if (left == null || right == null) {
+    return left === right;
+  }
+
+  return (
+    left.phase === right.phase &&
+    left.handTrackId === right.handTrackId &&
+    left.display.displayId === right.display.displayId &&
+    left.sourceFrameId === right.sourceFrameId &&
+    Math.abs(left.display.x - right.display.x) < 0.5 &&
+    Math.abs(left.display.y - right.display.y) < 0.5 &&
+    Math.abs(left.confidence - right.confidence) < 0.01
+  );
 }
 
 function sameGestureClassification(
