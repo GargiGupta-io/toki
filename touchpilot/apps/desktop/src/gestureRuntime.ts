@@ -27,6 +27,7 @@ import {
 import {
   detectHandLandmarksForVideo,
   getHandLandmarker,
+  handLandmarkerAssetMode,
 } from "./handLandmarker";
 
 export type GestureRuntimeOwner = "overlay";
@@ -62,6 +63,7 @@ export type GestureRuntimeDiagnostics = {
   cameraPermission: CameraPermissionState;
   cameraError: string | null;
   handLandmarkerStatus: HandLandmarkerStatus;
+  handLandmarkerAssetMode: typeof handLandmarkerAssetMode;
   handLandmarkerError: string | null;
   hand: HandLandmarkSummary | null;
   pinch: PinchClassification;
@@ -134,6 +136,7 @@ export function createEmptyGestureRuntimeDiagnostics(
     cameraPermission: "unknown",
     cameraError: null,
     handLandmarkerStatus: "idle",
+    handLandmarkerAssetMode,
     handLandmarkerError: null,
     hand: null,
     pinch: classifyPinchGesture(null, thresholds),
@@ -438,6 +441,7 @@ export function useAlwaysOnGestureRuntime({
       cameraPermission,
       cameraError,
       handLandmarkerStatus,
+      handLandmarkerAssetMode,
       handLandmarkerError,
       hand: handLandmarkFrame
         ? {

@@ -4575,6 +4575,14 @@ function DebugWindowApp() {
                 <dd>{handLandmarkerStatus}</dd>
               </div>
               <div>
+                <dt>Assets</dt>
+                <dd>
+                  {gestureDiagnostics.handLandmarkerAssetMode === "bundled"
+                    ? "Bundled locally"
+                    : gestureDiagnostics.handLandmarkerAssetMode}
+                </dd>
+              </div>
+              <div>
                 <dt>Frame</dt>
                 <dd>{handLandmarkSummary?.frameId ?? "None"}</dd>
               </div>
@@ -4600,8 +4608,7 @@ function DebugWindowApp() {
             ) : null}
             {handLandmarkerStatus === "loading" ? (
               <p className="debug-muted">
-                Loading MediaPipe hand model. Internet access is required for the
-                current model URL.
+                Loading the bundled MediaPipe runtime and hand model from Toki.
               </p>
             ) : handLandmarkerStatus === "no_hand" ? (
               <p className="debug-muted">
