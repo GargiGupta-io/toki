@@ -325,8 +325,8 @@ Evidence: `touchpilot/docs/phase-15-evals.md` records deterministic eval closure
 
 The detailed design and rationale are preserved in `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md`. Execution uses one step at a time, with a pause for user review after every completed step.
 
-1. Freeze gesture contracts and deterministic landmark fixtures — `NEXT`.
-2. Extract an always-running gesture runtime independent of Debug — `PENDING`.
+1. Freeze gesture contracts and deterministic landmark fixtures — `COMPLETED` in Gesture Step 1; 7/7 focused tests and all workspace typechecks pass.
+2. Extract an always-running gesture runtime independent of Debug — `NEXT`.
 3. Package MediaPipe assets locally and preserve camera privacy — `PENDING`.
 4. Build reliable single-hand pointing with calibration, smoothing, and active-display mapping — `PENDING`.
 5. Build double-air-tap target locking with an immutable snapshot and screen-freshness invalidation — `PENDING`.
