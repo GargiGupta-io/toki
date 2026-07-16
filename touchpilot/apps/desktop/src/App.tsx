@@ -64,7 +64,10 @@ import {
   type GestureCalibrationCandidate,
   type GestureCalibrationSession,
 } from "./gestureAdaptiveProfile";
-import { createScreenshotCropFromDisplayRect } from "./coordinateTransforms";
+import {
+  createScreenshotCropFromDisplayRect,
+  mapDisplayRectToProviderImage,
+} from "./coordinateTransforms";
 import {
   canRevealGuidanceTarget,
   getAcceptedGuidanceResult,
@@ -97,6 +100,17 @@ import {
   canStartGestureVoice,
   createGestureVoiceContext,
 } from "./gestureControlVoice";
+import {
+  classifyPointerExplanationCommand,
+  explicitObjectConflictsWithLabel,
+  getPointerEvidenceDecision,
+  hasSpecificPointerEvidenceLabel,
+  requestCodexPointerExplanation,
+  shouldRoutePointerExplanation,
+  type PointerExplanationImageEvidence,
+  type PointerExplanationIntent,
+  type PointerExplanationState,
+} from "./gesturePointerExplanation";
 import {
   createScreenStateFingerprint,
   getPointerLockInvalidationReason,
@@ -136,6 +150,7 @@ import { TokiCreatureLayer } from "./TokiCreatureLayer";
 import { TokiTopUtilitySurface } from "./TokiTopUtilitySurface";
 import { TokiTaskProgress } from "./TokiTaskProgress";
 import { TokiPointerLockCue } from "./TokiPointerLockCue";
+import { TokiPointerExplanationCard } from "./TokiPointerExplanationCard";
 import {
   getPassiveTopUtilityMode,
   isInsideExpandedTopUtility,
@@ -182,6 +197,8 @@ type OverlaySnapshot = {
   gestureRuntime: GestureRuntimeState;
   voiceRuntime: VoiceRuntimeState;
   topStatus: TokiTopStatusModel | null;
+  pointerExplanation: PointerExplanationState | null;
+  pointerExplanationSpeechMuted: boolean;
 };
 
 type DebugSnapshot = OverlaySnapshot & {
@@ -247,6 +264,7 @@ type OverlayCommand =
       source: VoiceActivationSource;
       gestureContext?: GestureVoiceContext;
     }
+  | { type: "set-pointer-explanation-speech-muted"; muted: boolean }
   | { type: "submit-voice-listening" }
   | { type: "stop-voice-listening" };
 
@@ -542,6 +560,7 @@ function getTokiTopStatusModel({
   voiceRuntime,
   overlayState,
   isRefreshingCapture,
+  pointerExplanation,
   guidanceFailure,
   hasAcceptedGuidance,
   targetLabel,
@@ -552,6 +571,7 @@ function getTokiTopStatusModel({
   voiceRuntime: VoiceRuntimeState;
   overlayState: OverlayState;
   isRefreshingCapture: boolean;
+  pointerExplanation: PointerExplanationState | null;
   guidanceFailure: string | null;
   hasAcceptedGuidance: boolean;
   targetLabel: string;
@@ -574,6 +594,30 @@ function getTokiTopStatusModel({
       message:
         safetyDecision?.message ??
         "Choose Show target to reveal the guidance marker. Toki will not click it.",
+    };
+  }
+
+  if (pointerExplanation?.status === "processing") {
+    return {
+      mode: "thinking",
+      label: "Explaining locked control",
+      message: "Checking the same point against the current screen",
+    };
+  }
+
+  if (pointerExplanation?.status === "grounded") {
+    return {
+      mode: pointerExplanation.riskWarning ? "warning" : "ready",
+      label: pointerExplanation.label,
+      message: pointerExplanation.riskWarning ?? pointerExplanation.message,
+    };
+  }
+
+  if (pointerExplanation?.status === "clarify") {
+    return {
+      mode: "warning",
+      label: pointerExplanation.label,
+      message: pointerExplanation.message,
     };
   }
 
@@ -687,6 +731,88 @@ type NativeCursorPosition = {
 };
 
 const POINTER_SHADOW_UPDATE_THRESHOLD_PX = 2;
+const POINTER_EXPLANATION_FOCUS_SIZE_PX = 160;
+
+function isDisplayPointInsideBounds(
+  point: { x: number; y: number },
+  bounds: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    point.x >= bounds.x &&
+    point.x <= bounds.x + bounds.width &&
+    point.y >= bounds.y &&
+    point.y <= bounds.y + bounds.height
+  );
+}
+
+function createPointerExplanationDisplayRegion(
+  point: { x: number; y: number },
+  display: DisplayContext,
+) {
+  const size = Math.min(
+    POINTER_EXPLANATION_FOCUS_SIZE_PX,
+    display.width,
+    display.height,
+  );
+  const x = Math.min(Math.max(point.x - size / 2, 0), display.width - size);
+  const y = Math.min(Math.max(point.y - size / 2, 0), display.height - size);
+
+  return { x, y, width: size, height: size };
+}
+
+function createProcessingPointerExplanation(
+  id: string,
+  transcript: string,
+  lock: PointerLockSnapshot | null,
+): PointerExplanationState {
+  return {
+    id,
+    status: "processing",
+    transcript,
+    lock,
+    label: "Locked control",
+    message: "Checking the frozen point against the current screen.",
+    confidence: null,
+    supportingEvidence: [],
+    riskWarning: null,
+    reason: null,
+    debug: null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function createPointerExplanationClarification({
+  id,
+  transcript,
+  lock,
+  label = "Please lock the control again",
+  message,
+  reason,
+  debug = null,
+}: {
+  id: string;
+  transcript: string;
+  lock: PointerLockSnapshot | null;
+  label?: string;
+  message: string;
+  reason: string;
+  debug?: PointerExplanationState["debug"];
+}): PointerExplanationState {
+  return {
+    id,
+    status: "clarify",
+    transcript,
+    lock,
+    label,
+    message,
+    confidence: null,
+    supportingEvidence: [],
+    riskWarning: null,
+    reason,
+    debug,
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 async function getOverlayCursorPosition(): Promise<Pick<NativeCursorPosition, "x" | "y">> {
   try {
@@ -1496,6 +1622,8 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     gestureCalibration: createIdleGestureCalibrationSession(),
     voiceRuntime: createDefaultVoiceRuntimeState(),
     topStatus: null,
+    pointerExplanation: null,
+    pointerExplanationSpeechMuted: false,
     guidanceTrace: null,
     guidanceProviderMode: "unavailable",
     guidanceProviderName: null,
@@ -1530,6 +1658,13 @@ function getBrowserStorage(): Storage | null {
   } catch {
     return null;
   }
+}
+
+const POINTER_EXPLANATION_SPEECH_MUTED_KEY =
+  "toki.pointer-explanation-speech-muted";
+
+function loadPointerExplanationSpeechMuted(): boolean {
+  return getBrowserStorage()?.getItem(POINTER_EXPLANATION_SPEECH_MUTED_KEY) === "true";
 }
 
 function getGestureCalibrationCandidate(
@@ -1631,6 +1766,10 @@ function OverlayWindowApp() {
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
   );
+  const [pointerExplanation, setPointerExplanation] =
+    useState<PointerExplanationState | null>(null);
+  const [pointerExplanationSpeechMuted, setPointerExplanationSpeechMuted] =
+    useState(loadPointerExplanationSpeechMuted);
   const [workflowRuntime, setWorkflowRuntime] = useState<WorkflowRuntimeState>(() =>
     createEmptyWorkflowRuntimeState(),
   );
@@ -1659,6 +1798,8 @@ function OverlayWindowApp() {
   const voiceHoldStateRef = useRef(createIdleVoiceHoldState());
   const gestureVoiceContextRef = useRef<GestureVoiceContext | null>(null);
   const routedVoiceCommandRef = useRef<string | null>(null);
+  const pointerExplanationInFlightRef = useRef(false);
+  const lastSpokenPointerExplanationRef = useRef<string | null>(null);
   const guidanceTraceRef = useRef<GuidanceTrace | null>(null);
   const activeGuidanceTraceStageRef = useRef<GuidanceTraceStage | null>(null);
   const guidanceRefreshInFlightRef = useRef(false);
@@ -1806,6 +1947,7 @@ function OverlayWindowApp() {
     voiceRuntime,
     overlayState,
     isRefreshingCapture,
+    pointerExplanation,
     guidanceFailure: visibleGuidanceFailure,
     hasAcceptedGuidance,
     targetLabel: activeTarget.label,
@@ -1962,6 +2104,8 @@ function OverlayWindowApp() {
       display: gesturePointerDisplay,
     });
 
+    window.speechSynthesis?.cancel();
+    setPointerExplanation(null);
     setGesturePointerLock(lock);
     setGesturePointerLockFeedback({
       validation: "checking",
@@ -2239,6 +2383,8 @@ function OverlayWindowApp() {
       gestureRuntime,
       voiceRuntime,
       topStatus,
+      pointerExplanation,
+      pointerExplanationSpeechMuted,
     }),
     [
       overlayState,
@@ -2247,6 +2393,8 @@ function OverlayWindowApp() {
       gestureRuntime,
       voiceRuntime,
       topStatus,
+      pointerExplanation,
+      pointerExplanationSpeechMuted,
     ],
   );
 
@@ -2411,6 +2559,298 @@ function OverlayWindowApp() {
       }
 
       throw error;
+    }
+  }
+
+  async function explainFrozenGesturePointer(
+    command: VoiceCommandRequest,
+    intent: PointerExplanationIntent,
+  ) {
+    const explanationId = `pointer-explanation-${crypto.randomUUID()}`;
+    const lock = command.gestureContext?.lock ?? null;
+
+    if (pointerExplanationInFlightRef.current) {
+      setPointerExplanation(
+        createPointerExplanationClarification({
+          id: explanationId,
+          transcript: command.text,
+          lock,
+          label: "Still reading the previous lock",
+          message: "Wait for the current explanation to finish, then lock the next control.",
+          reason: "explanation_in_flight",
+        }),
+      );
+      return;
+    }
+
+    if (lock == null) {
+      setPointerExplanation(
+        createPointerExplanationClarification({
+          id: explanationId,
+          transcript: command.text,
+          lock: null,
+          message:
+            "Point at the control and double-tap your index finger to lock it, then ask again.",
+          reason: "missing_pointer_lock",
+        }),
+      );
+      return;
+    }
+
+    pointerExplanationInFlightRef.current = true;
+    window.speechSynthesis?.cancel();
+    setPointerExplanation(
+      createProcessingPointerExplanation(explanationId, command.text, lock),
+    );
+    setCaptureError(null);
+    setOverlayState("thinking");
+    setGesturePointerLock((current) =>
+      current?.id === lock.id ? null : current,
+    );
+    setGesturePointerLockFeedback((current) =>
+      current.validation === "invalidated"
+        ? current
+        : {
+            validation: "idle",
+            reason: null,
+            updatedAt: new Date().toISOString(),
+          },
+    );
+
+    const refuse = (
+      message: string,
+      reason: string,
+      label?: string,
+      debug?: PointerExplanationState["debug"],
+    ) => {
+      setPointerExplanation(
+        createPointerExplanationClarification({
+          id: explanationId,
+          transcript: command.text,
+          lock,
+          label,
+          message,
+          reason,
+          debug,
+        }),
+      );
+    };
+
+    try {
+      const snapshot = await invokeCaptureCommand<ActiveWindowCaptureSnapshot>(
+        "capture_active_window_snapshot",
+        { appName: null },
+      );
+      const activeWindowId = createScreenStateFingerprint(snapshot.window);
+      const invalidationReason = getPointerLockInvalidationReason({
+        lock,
+        display: gesturePointerDisplay,
+        screenCaptureAvailable: true,
+        activeWindowId,
+      });
+
+      setCaptureMetadata(snapshot.metadata);
+      setScreenshotCapture(snapshot.screenshot);
+
+      if (invalidationReason != null) {
+        refuse(
+          "The active screen changed after you locked the point. Lock the control again on the current screen.",
+          invalidationReason,
+          "Locked screen changed",
+        );
+        return;
+      }
+
+      const displayPoint = {
+        x: lock.pointer.display.x,
+        y: lock.pointer.display.y,
+      };
+      if (!isDisplayPointInsideBounds(displayPoint, snapshot.window)) {
+        refuse(
+          "The locked point is no longer inside the active app window. Lock the intended control again.",
+          "point_outside_active_window",
+        );
+        return;
+      }
+
+      const screenshotPayload = await getProviderScreenshotPayload(
+        snapshot.screenshot,
+        snapshot.window,
+      );
+      if (screenshotPayload.crop == null) {
+        refuse(
+          "I couldn't isolate the active app safely, so I refused to explain a desktop-wide point.",
+          "active_window_crop_unavailable",
+        );
+        return;
+      }
+
+      const rawCandidateContext = await collectScreenCandidatesForGuidance(
+        snapshot.screenshot,
+        snapshot.metadata.display,
+        command.text,
+        snapshot.window.appName ?? snapshot.screenshot.activeWindow?.appName,
+      );
+      const candidateContext = filterCandidateContextForPayload(
+        rawCandidateContext,
+        screenshotPayload,
+        snapshot.screenshot,
+      );
+      const evidenceDecision = getPointerEvidenceDecision(
+        candidateContext.candidates ?? [],
+        displayPoint,
+      );
+
+      if (evidenceDecision.status === "ambiguous") {
+        refuse(
+          "More than one current control is equally close to the locked point. Lock one control more precisely.",
+          "ambiguous_pointer_region",
+          "Two controls overlap the lock",
+        );
+        return;
+      }
+
+      const uniqueCandidate =
+        evidenceDecision.status === "unique" ? evidenceDecision.candidate : null;
+      if (
+        uniqueCandidate != null &&
+        hasSpecificPointerEvidenceLabel(uniqueCandidate.label) &&
+        explicitObjectConflictsWithLabel(
+          intent.explicitObject,
+          uniqueCandidate.label,
+        )
+      ) {
+        refuse(
+          "The control you named does not match the control at the locked point. Lock the named control and try again.",
+          "spoken_object_conflict",
+          "Speech and pointer disagree",
+        );
+        return;
+      }
+
+      const coordinateContext = {
+        display: snapshot.metadata.display,
+        screenshot: {
+          width: snapshot.screenshot.imageWidth,
+          height: snapshot.screenshot.imageHeight,
+        },
+        providerImage: {
+          width: screenshotPayload.imageWidth,
+          height: screenshotPayload.imageHeight,
+        },
+        crop: screenshotPayload.crop,
+      };
+      const displayFocusRegion = createPointerExplanationDisplayRegion(
+        displayPoint,
+        snapshot.metadata.display,
+      );
+      const focusRegion = mapDisplayRectToProviderImage(
+        displayFocusRegion,
+        coordinateContext,
+      );
+      const pointRegion = mapDisplayRectToProviderImage(
+        {
+          x: displayPoint.x - 1,
+          y: displayPoint.y - 1,
+          width: 2,
+          height: 2,
+        },
+        coordinateContext,
+      );
+
+      if (focusRegion == null || pointRegion == null) {
+        refuse(
+          "The frozen point is outside the current active-app image. Lock it again on the visible app.",
+          "point_mapping_unavailable",
+        );
+        return;
+      }
+
+      const structuredEvidence: PointerExplanationImageEvidence | null =
+        uniqueCandidate == null ||
+        !hasSpecificPointerEvidenceLabel(uniqueCandidate.label)
+          ? null
+          : (() => {
+              const imageRect = mapDisplayRectToProviderImage(
+                uniqueCandidate,
+                coordinateContext,
+              );
+              return imageRect == null
+                ? null
+                : {
+                    candidateId: uniqueCandidate.id,
+                    label: uniqueCandidate.label,
+                    role: uniqueCandidate.role,
+                    source: uniqueCandidate.source ?? "unknown",
+                    imageRect,
+                  };
+            })();
+      const providerRequest = {
+        transcript: command.text,
+        intent,
+        lock,
+        appName: snapshot.window.appName ?? null,
+        image: {
+          imageBase64: screenshotPayload.imageBase64,
+          format: screenshotPayload.format,
+          width: screenshotPayload.imageWidth,
+          height: screenshotPayload.imageHeight,
+        },
+        lockedPoint: {
+          x: Math.round(pointRegion.x + pointRegion.width / 2),
+          y: Math.round(pointRegion.y + pointRegion.height / 2),
+        },
+        focusRegion: {
+          x: Math.round(focusRegion.x),
+          y: Math.round(focusRegion.y),
+          width: Math.round(focusRegion.width),
+          height: Math.round(focusRegion.height),
+        },
+        structuredEvidence,
+      };
+      const configuredCodexTimeoutMs = Number(
+        import.meta.env.VITE_TOKI_CODEX_TIMEOUT_MS,
+      );
+      const result = await requestCodexPointerExplanation(providerRequest, {
+        model: import.meta.env.VITE_TOKI_CODEX_MODEL,
+        timeoutMs:
+          Number.isFinite(configuredCodexTimeoutMs) &&
+          configuredCodexTimeoutMs > 0
+            ? configuredCodexTimeoutMs
+            : undefined,
+      });
+
+      if (result.status === "clarify") {
+        refuse(result.message, result.reason, undefined, result.debug);
+        return;
+      }
+
+      setPointerExplanation({
+        id: explanationId,
+        status: "grounded",
+        transcript: command.text,
+        lock,
+        label: result.label,
+        message: result.explanation,
+        confidence: result.confidence,
+        supportingEvidence: result.supportingEvidence,
+        riskWarning: result.riskWarning,
+        reason: null,
+        debug: result.debug,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      refuse(
+        `I couldn't recheck the locked point on the current screen: ${formatErrorMessage(
+          error,
+        )}`,
+        "current_screen_unavailable",
+      );
+    } finally {
+      pointerExplanationInFlightRef.current = false;
+      setOverlayState((current) =>
+        current === "thinking" ? "idle" : current,
+      );
     }
   }
 
@@ -3867,7 +4307,26 @@ function OverlayWindowApp() {
         return;
       }
 
+      if (event.payload.type === "set-pointer-explanation-speech-muted") {
+        setPointerExplanationSpeechMuted(event.payload.muted);
+        getBrowserStorage()?.setItem(
+          POINTER_EXPLANATION_SPEECH_MUTED_KEY,
+          String(event.payload.muted),
+        );
+        if (event.payload.muted) {
+          window.speechSynthesis?.cancel();
+        }
+        return;
+      }
+
       if (event.payload.type === "start-voice-listening") {
+        if (pointerExplanationInFlightRef.current) {
+          if (event.payload.source === "gesture") {
+            clearActiveGestureVoiceContext();
+          }
+          return;
+        }
+
         if (voiceCapturePhaseRef.current !== "idle") {
           if (event.payload.source === "gesture") {
             clearActiveGestureVoiceContext();
@@ -3884,6 +4343,8 @@ function OverlayWindowApp() {
         }
 
         clearVoiceCaptureTimeout();
+        window.speechSynthesis?.cancel();
+        setPointerExplanation(null);
         voiceSubmitInFlightRef.current = false;
         voiceCapturePhaseRef.current = "starting";
         const heldActivation = isHeldVoiceActivationSource(event.payload.source);
@@ -4057,12 +4518,23 @@ function OverlayWindowApp() {
       ...currentState,
       status: "transcribing",
     }));
-    void refreshCaptureMetadata(command.text, "codex-subscription", {
-      traceId: command.traceId,
-      source: "voice",
-      transcript: command.text,
-      transcriptAt: voiceRuntime.transcript?.updatedAt ?? command.createdAt,
-    }).finally(() => {
+    const pointerIntent = classifyPointerExplanationCommand(command.text);
+    const shouldExplainPointer = shouldRoutePointerExplanation(
+      pointerIntent,
+      command.gestureContext != null,
+    );
+    const routingPromise =
+      shouldExplainPointer && pointerIntent != null
+        ? explainFrozenGesturePointer(command, pointerIntent)
+        : refreshCaptureMetadata(command.text, "codex-subscription", {
+            traceId: command.traceId,
+            source: "voice",
+            transcript: command.text,
+            transcriptAt:
+              voiceRuntime.transcript?.updatedAt ?? command.createdAt,
+          });
+
+    void routingPromise.finally(() => {
       setVoiceRuntime((currentState) =>
         currentState.pendingCommand?.createdAt === command.createdAt
           ? {
@@ -4078,6 +4550,54 @@ function OverlayWindowApp() {
     viewport,
     guidanceFixture,
     guidanceResult,
+    gesturePointerDisplay,
+  ]);
+
+  useEffect(() => {
+    if (pointerExplanation?.status !== "grounded") {
+      return;
+    }
+
+    if (pointerExplanationSpeechMuted) {
+      lastSpokenPointerExplanationRef.current = pointerExplanation.id;
+      window.speechSynthesis?.cancel();
+      return;
+    }
+
+    if (
+      voiceCapturePhaseRef.current !== "idle" ||
+      voiceRuntime.status === "requesting_microphone" ||
+      voiceRuntime.status === "listening" ||
+      voiceRuntime.status === "transcribing" ||
+      lastSpokenPointerExplanationRef.current === pointerExplanation.id
+    ) {
+      return;
+    }
+
+    if (
+      window.speechSynthesis == null ||
+      typeof SpeechSynthesisUtterance === "undefined"
+    ) {
+      return;
+    }
+
+    const speech = new SpeechSynthesisUtterance(
+      [
+        pointerExplanation.label,
+        pointerExplanation.message,
+        pointerExplanation.riskWarning,
+      ]
+        .filter(Boolean)
+        .join(". "),
+    );
+    speech.rate = 1;
+    lastSpokenPointerExplanationRef.current = pointerExplanation.id;
+    window.speechSynthesis?.cancel();
+    window.speechSynthesis?.speak(speech);
+  }, [
+    pointerExplanation,
+    pointerExplanationSpeechMuted,
+    voiceRuntime.status,
   ]);
 
   return (
@@ -4103,6 +4623,10 @@ function OverlayWindowApp() {
                 ? "locked"
                 : null
           }
+        />
+        <TokiPointerExplanationCard
+          explanation={pointerExplanation}
+          viewport={viewport}
         />
         <BlobPuck
           creatureState={tokiCreatureState}
@@ -4131,6 +4655,8 @@ function SettingsWindowApp() {
     createDefaultVoiceRuntimeState(),
   );
   const [topStatus, setTopStatus] = useState<TokiTopStatusModel | null>(null);
+  const [pointerExplanationSpeechMuted, setPointerExplanationSpeechMuted] =
+    useState(false);
   const isSpaceVoiceHeldRef = useRef(false);
   const utilityModeRef = useRef<TopUtilityMode>("hidden");
   const topStatusRef = useRef<TokiTopStatusModel | null>(null);
@@ -4156,6 +4682,9 @@ function SettingsWindowApp() {
       setHasAcceptedGuidance(event.payload.hasAcceptedGuidance);
       setIsRefreshingCapture(event.payload.isRefreshingCapture);
       setVoiceRuntime(event.payload.voiceRuntime);
+      setPointerExplanationSpeechMuted(
+        event.payload.pointerExplanationSpeechMuted,
+      );
       topStatusRef.current = event.payload.topStatus;
       setTopStatus(event.payload.topStatus);
     })
@@ -4291,6 +4820,7 @@ function SettingsWindowApp() {
               ? voiceStatusDetails.message
               : "Press and hold as a fallback."
           }
+          pointerExplanationSpeechMuted={pointerExplanationSpeechMuted}
           idleStatusText={idleStatusText}
           onRefreshCapture={() => {
             emitTo("overlay", "toki://overlay-command", {
@@ -4300,6 +4830,12 @@ function SettingsWindowApp() {
           onPauseToggle={() => {
             emitTo("overlay", "toki://overlay-command", {
               type: "toggle-pause",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onPointerExplanationSpeechMuteToggle={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "set-pointer-explanation-speech-muted",
+              muted: !pointerExplanationSpeechMuted,
             } satisfies OverlayCommand).catch(() => undefined);
           }}
           onRevealTarget={() => {
@@ -5296,11 +5832,53 @@ function DebugWindowApp() {
                     <dt>Frozen lock</dt>
                     <dd>{snapshot.gestureVoiceContext?.lock.id ?? "None"}</dd>
                   </div>
+                  <div>
+                    <dt>Explanation</dt>
+                    <dd>{snapshot.pointerExplanation?.status ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Explained label</dt>
+                    <dd>{snapshot.pointerExplanation?.label ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Explanation reason</dt>
+                    <dd>{snapshot.pointerExplanation?.reason ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Provider</dt>
+                    <dd>
+                      {snapshot.pointerExplanation?.debug?.providerName ?? "None"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Confidence</dt>
+                    <dd>
+                      {snapshot.pointerExplanation?.confidence == null
+                        ? "None"
+                        : `${Math.round(
+                            snapshot.pointerExplanation.confidence * 100,
+                          )}%`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Current evidence</dt>
+                    <dd>
+                      {snapshot.pointerExplanation?.supportingEvidence.join(" | ") ||
+                        "None"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Speech</dt>
+                    <dd>
+                      {snapshot.pointerExplanationSpeechMuted ? "Muted" : "On"}
+                    </dd>
+                  </div>
                 </dl>
                 <p className="debug-muted">
                   With a validated pointer lock, hold the control hand pinch to record.
                   Release submits once; a lost control hand gets two seconds to recover
-                  before capture is cancelled without submission.
+                  before capture is cancelled without submission. Deictic explanation
+                  commands recheck the frozen point on the current screen and never click.
                 </p>
               </div>
 
