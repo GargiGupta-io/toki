@@ -13,6 +13,27 @@ This ledger uses repository scripts, terminal output recorded in the conversatio
 
 No command in this section manually controlled Toki or issued a guidance request. The latest installation step replaced and launched the app for user-owned acceptance.
 
+### Gesture Step 7 — Stable Two-Hand Split/Merge (2026-07-16)
+
+No command in this step issued a Toki guidance, voice, click, or gesture command. The rebuilt installed app was launched only for user-owned live two-hand acceptance.
+
+| Command | Result |
+| --- | --- |
+| `npm run test:gesture-two-hand` | `PASS` — 6/6 two-hand limit, stable identity, crossing, loss grace, role, hysteresis, visual-only, and bounds tests |
+| `npm run test:gesture-contracts` | `PASS` — 7/7 |
+| `npm run test:gesture-runtime` | `PASS` — 6/6 |
+| `npm run test:gesture-assets` | `PASS` — 7/7 |
+| `npm run test:gesture-pointing` | `PASS` — 9/9 |
+| `npm run test:gesture-target-lock` | `PASS` — 8/8 |
+| `npm run test:gesture-adaptive-profile` | `PASS` — 6/6 |
+| `npm run check` | `PASS` — all TypeScript workspaces and Rust workspace check |
+| `npm run qa:visual:motion` | `PASS` — 18/18 |
+| `npm run desktop:release:mac` | `PASS` — production web/native app bundle built and ad-hoc signed; existing Vite chunk-size warning only |
+| `npm run desktop:install:mac` | `PASS` — previous app replaced, installed bundle strictly verified, and app launched |
+| Built/installed executable SHA-256 comparison | `PASS` — both `cb4281a33d1174477b1aa668896ef5f6dfd9a29351e4992d588874e613513889` |
+
+Installed process observed at final verification: PID `44566`.
+
 ### Gesture Step 6 — Bounded Adaptive Profile (2026-07-16)
 
 No command in this step issued a Toki guidance or gesture command. The rebuilt installed app was launched only for user-owned live calibration acceptance.

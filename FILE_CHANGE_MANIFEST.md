@@ -205,6 +205,24 @@ Whether all generated outputs are ignored by Git is `UNKNOWN`; verify `.gitignor
 
 Generated `dist/`, `target/`, and `.app` outputs were rebuilt but remain generated artifacts and must not be committed as source.
 
+## Gesture Step 7 Two-Hand Split/Merge Delta
+
+| Path | State | Purpose |
+| --- | --- | --- |
+| `touchpilot/apps/desktop/src/handLandmarker.ts` | Modified | Raises bundled local inference from one to at most two current hands |
+| `touchpilot/apps/desktop/src/gestureHandTracking.ts` | Added | Assigns stable velocity-assisted track IDs, deterministic order, and two-second retained histories |
+| `touchpilot/apps/desktop/src/gestureTwoHand.ts` | Added | Preserves pointer/control roles and owns split/merge hold thresholds, hysteresis, recovery, and visual mapping |
+| `touchpilot/apps/desktop/src/gestureRuntime.ts` | Modified | Feeds only the retained pointer hand to all existing action classifiers and publishes sanitized multi-hand/split diagnostics |
+| `touchpilot/apps/desktop/src/App.tsx` | Modified | Enables two-hand runtime configuration, passes visual split state to the puck, and exposes stable roles in Debug |
+| `touchpilot/apps/desktop/src/BlobPuck.tsx` | Modified | Renders two hand-following liquid lobes and a transient separation/rejoin bridge without adding an action path |
+| `touchpilot/apps/desktop/src/BlobPuck.css` | Modified | Adds split/merge/recovery transitions and reduced-motion fallbacks |
+| `touchpilot/scripts/gesture-two-hand.test.mjs` | Added | Covers two-hand limits, identity/order/crossing, recovery, role stability, hysteresis, bounds, and no-action behavior |
+| `touchpilot/scripts/visual-motion-qa.mjs` | Modified | Locks the visual-only liquid split and reduced-motion boundary |
+| `touchpilot/package.json` | Modified | Adds `test:gesture-two-hand` |
+| `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md` | Modified outside repository | Records Step 7 behavior, boundaries, verification, installed hash, and next step |
+
+Generated production frontend/native outputs and `/Applications/Toki.app` were rebuilt and replaced but remain outside tracked source. `touchpilot/learnings/` remains pre-existing and untracked.
+
 ## Gesture Step 6 Adaptive-Profile Delta
 
 | Path | State | Purpose |

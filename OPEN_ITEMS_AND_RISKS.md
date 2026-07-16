@@ -74,7 +74,9 @@ Required remaining work:
 
 - Gesture foundation exists.
 - Current Mac camera/lighting/threshold acceptance is pending.
-- Gesture-reactive visual behavior is not proven across normal use.
+- Stable two-hand identities, pointer/control roles, and visual-only split/merge are implemented and covered by deterministic tests.
+- Live two-hand crossing, temporary occlusion, split comfort, and performance are not yet proven across normal installed-app use.
+- Secondary-hand voice control is intentionally not connected until Gesture Step 8.
 
 ## Unfinished Implementation
 
