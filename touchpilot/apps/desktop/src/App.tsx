@@ -1075,7 +1075,7 @@ function createDefaultGestureRuntimeState(): GestureRuntimeState {
       pinchHoldMs: 180,
       openPalmHoldMs: 220,
       cooldownMs: 700,
-      maxHands: 1,
+      maxHands: 2,
     },
     currentGesture: {
       label: "none",
@@ -3974,7 +3974,13 @@ function OverlayWindowApp() {
           creatureState={tokiCreatureState}
           motion={puckMotion}
           pointerShadow={gesturePointerShadow ?? pointerShadow}
-          pointerSource={gesturePointerShadow == null ? "cursor" : "gesture"}
+          pointerSource={
+            gesturePointerShadow == null &&
+            alwaysOnGestureRuntime.splitVisual == null
+              ? "cursor"
+              : "gesture"
+          }
+          splitVisual={alwaysOnGestureRuntime.splitVisual}
           target={hasAcceptedGuidance ? activeTarget : null}
         />
       </TokiCreatureLayer>
@@ -5035,7 +5041,15 @@ function DebugWindowApp() {
                 <dd>{handLandmarkSummary?.frameId ?? "None"}</dd>
               </div>
               <div>
-                <dt>Hand</dt>
+                <dt>Hands</dt>
+                <dd>{gestureDiagnostics.hands.length} / 2</dd>
+              </div>
+              <div>
+                <dt>Pointer track</dt>
+                <dd>{handLandmarkSummary?.trackId ?? "None"}</dd>
+              </div>
+              <div>
+                <dt>Pointer hand</dt>
                 <dd>{handLandmarkSummary?.handedness ?? "None"}</dd>
               </div>
               <div>
@@ -5050,7 +5064,21 @@ function DebugWindowApp() {
                 <dt>Landmarks</dt>
                 <dd>{handLandmarkSummary?.landmarkCount ?? 0}</dd>
               </div>
+              <div>
+                <dt>Split state</dt>
+                <dd>{gestureDiagnostics.split.phase}</dd>
+              </div>
             </dl>
+            {gestureDiagnostics.hands.length > 0 ? (
+              <p className="debug-muted">
+                {gestureDiagnostics.hands
+                  .map(
+                    (detectedHand) =>
+                      `${detectedHand.trackId}: ${detectedHand.role}, ${detectedHand.handedness}, ${(detectedHand.trackingConfidence * 100).toFixed(0)}% tracking`,
+                  )
+                  .join(" · ")}
+              </p>
+            ) : null}
             {handLandmarkerError ? (
               <p className="debug-muted">{handLandmarkerError}</p>
             ) : null}
@@ -5060,8 +5088,8 @@ function DebugWindowApp() {
               </p>
             ) : handLandmarkerStatus === "no_hand" ? (
               <p className="debug-muted">
-                Model is running. Put one open hand in the camera frame to detect
-                landmarks.
+                Model is running. Put one or two open hands in the camera frame to
+                detect landmarks.
               </p>
             ) : null}
           </section>

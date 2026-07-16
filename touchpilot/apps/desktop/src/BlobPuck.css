@@ -1,3 +1,52 @@
+.blob-puck__split-bridge {
+  position: absolute;
+  height: 7px;
+  border-radius: 999px;
+  opacity: 0.52;
+  pointer-events: none;
+  transform-origin: left center;
+  transition:
+    height 180ms ease,
+    opacity 180ms ease;
+  will-change: transform, opacity;
+  z-index: 99;
+}
+
+.blob-puck__secondary-lobe {
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  pointer-events: none;
+  transform: scale(1);
+  transform-origin: center;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.blob-puck[data-split-phase="splitting"] .blob-puck__split-bridge {
+  height: 10px;
+  opacity: 0.82;
+}
+
+.blob-puck[data-split-phase="split"] .blob-puck__split-bridge {
+  opacity: 0;
+}
+
+.blob-puck[data-split-phase="recovering"] .blob-puck__split-bridge {
+  opacity: 0.12;
+}
+
+.blob-puck[data-split-phase="merging"] .blob-puck__split-bridge {
+  height: 11px;
+  opacity: 0.72;
+}
+
+.blob-puck[data-split-phase="merging"] .blob-puck__secondary-lobe {
+  opacity: 0.42;
+  transform: scale(0.76);
+}
+
 .blob-puck__target-droplet {
   position: absolute;
   left: var(--toki-droplet-source-x);
@@ -64,6 +113,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .blob-puck__split-bridge,
+  .blob-puck__secondary-lobe {
+    transition: none;
+  }
+
   .blob-puck__target-droplet {
     display: none;
     animation: none;
