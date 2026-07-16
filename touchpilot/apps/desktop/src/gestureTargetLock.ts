@@ -11,7 +11,7 @@ import type {
 import { defaultGestureTimingPolicy } from "./gestureContracts";
 import type { PointPoseClassification } from "./gesturePointing";
 
-const flexionRatioThreshold = 1.3;
+const defaultFlexionRatioThreshold = 1.3;
 const requiredFoldedFingerCount = 2;
 const sameTargetMovementRadius = 0.1;
 const cooldownMs = 350;
@@ -71,13 +71,15 @@ export function classifyAirTapPose({
   frame,
   pointPose,
   minDetectionConfidence,
+  flexionRatioThreshold = defaultFlexionRatioThreshold,
 }: {
   frame: HandLandmarkFrame | null;
   pointPose: PointPoseClassification;
   minDetectionConfidence: number;
+  flexionRatioThreshold?: number;
 }): AirTapPoseClassification {
   if (frame == null || frame.confidence < minDetectionConfidence) {
-    return createInactiveAirTapPose();
+    return createInactiveAirTapPose(undefined, flexionRatioThreshold);
   }
 
   if (pointPose.label === "point" && pointPose.handTrackId != null) {
@@ -99,12 +101,12 @@ export function classifyAirTapPose({
   const middleMcp = findLandmark(frame, "middle_mcp");
 
   if (!wrist || !indexMcp || !indexTip || !middleMcp) {
-    return createInactiveAirTapPose(frame);
+    return createInactiveAirTapPose(frame, flexionRatioThreshold);
   }
 
   const palmSize = distance2d(wrist, indexMcp);
   if (palmSize <= 0) {
-    return createInactiveAirTapPose(frame);
+    return createInactiveAirTapPose(frame, flexionRatioThreshold);
   }
 
   const indexExtensionRatio = distance2d(wrist, indexTip) / palmSize;
@@ -500,6 +502,7 @@ function distanceBetweenPointers(
 
 function createInactiveAirTapPose(
   frame?: HandLandmarkFrame,
+  threshold = defaultFlexionRatioThreshold,
 ): AirTapPoseClassification {
   return {
     label: "none",
@@ -507,7 +510,7 @@ function createInactiveAirTapPose(
     handTrackId: frame ? getHandTrackId(frame) : null,
     indexExtensionRatio: null,
     foldedFingerCount: 0,
-    flexionRatioThreshold,
+    flexionRatioThreshold: threshold,
     sourceFrameId: frame?.frameId,
     capturedAt: frame?.capturedAt,
   };

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AdaptiveGestureProfile,
   CameraDeviceSummary,
   CameraPermissionState,
   CameraRuntimeState,
@@ -12,6 +13,10 @@ import type {
   GestureThresholds,
   HandLandmarkFrame,
 } from "@toki/shared";
+import {
+  deriveAdaptiveGestureSettings,
+  type AdaptiveGestureSettings,
+} from "./gestureAdaptiveProfile";
 import { probeCameraDevices } from "./cameraDevices";
 import {
   classifyOpenPalmGesture,
@@ -93,6 +98,7 @@ export type GestureRuntimeDiagnostics = {
   lockRequest: PointerLockRequest | null;
   pointerDisplay: DisplayContext;
   pointerCalibration: typeof defaultGesturePointerCalibration;
+  adaptiveSettings: AdaptiveGestureSettings;
   smoothedGesture: GestureClassification;
   visualAnchor: GestureVisualAnchor | null;
   updatedAt: string;
@@ -185,6 +191,7 @@ export function createEmptyGestureRuntimeDiagnostics(
       scaleFactor: 1,
     },
     pointerCalibration: defaultGesturePointerCalibration,
+    adaptiveSettings: deriveAdaptiveGestureSettings(null),
     smoothedGesture: createInactiveGestureClassification(),
     visualAnchor: null,
     updatedAt: now,
@@ -197,12 +204,14 @@ export function useAlwaysOnGestureRuntime({
   thresholds,
   deviceRefreshToken,
   display,
+  adaptiveProfile,
 }: {
   cameraEnabled: boolean;
   gesturesEnabled: boolean;
   thresholds: GestureThresholds;
   deviceRefreshToken: number;
   display: DisplayContext;
+  adaptiveProfile: AdaptiveGestureProfile | null;
 }): AlwaysOnGestureRuntime {
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceSummary[]>([]);
   const [cameraProbeStatus, setCameraProbeStatus] =
@@ -233,6 +242,10 @@ export function useAlwaysOnGestureRuntime({
   const gestureSmoothingStateRef = useRef(initialGestureSmoothingState);
   const pointerTrackingStateRef = useRef(resetGesturePointerTracking());
   const doubleAirTapStateRef = useRef(initialDoubleAirTapControllerState);
+  const adaptiveSettings = useMemo(
+    () => deriveAdaptiveGestureSettings(adaptiveProfile),
+    [adaptiveProfile],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -425,8 +438,13 @@ export function useAlwaysOnGestureRuntime({
   }, [cameraStatus, gesturesEnabled]);
 
   const pinchClassification = useMemo(
-    () => classifyPinchGesture(handLandmarkFrame, thresholds),
-    [handLandmarkFrame, thresholds],
+    () =>
+      classifyPinchGesture(
+        handLandmarkFrame,
+        thresholds,
+        adaptiveSettings.pinchDistanceThreshold,
+      ),
+    [adaptiveSettings.pinchDistanceThreshold, handLandmarkFrame, thresholds],
   );
   const openPalmClassification = useMemo(
     () => classifyOpenPalmGesture(handLandmarkFrame, thresholds),
@@ -442,8 +460,14 @@ export function useAlwaysOnGestureRuntime({
         frame: handLandmarkFrame,
         pointPose: pointPoseClassification,
         minDetectionConfidence: thresholds.minDetectionConfidence,
+        flexionRatioThreshold: adaptiveSettings.tapFlexionRatioThreshold,
       }),
-    [handLandmarkFrame, pointPoseClassification, thresholds.minDetectionConfidence],
+    [
+      adaptiveSettings.tapFlexionRatioThreshold,
+      handLandmarkFrame,
+      pointPoseClassification,
+      thresholds.minDetectionConfidence,
+    ],
   );
   const rawGestureCandidate =
     openPalmClassification.label !== "none" &&
@@ -490,6 +514,7 @@ export function useAlwaysOnGestureRuntime({
       classification: pointPoseClassification,
       display,
       nowMs: performance.now(),
+      calibration: adaptiveSettings.pointerCalibration,
     });
     pointerTrackingStateRef.current = result.state;
     setGesturePointer((current) =>
@@ -503,6 +528,7 @@ export function useAlwaysOnGestureRuntime({
     display.width,
     gesturesEnabled,
     pointPoseClassification,
+    adaptiveSettings.pointerCalibration,
   ]);
 
   useEffect(() => {
@@ -517,7 +543,7 @@ export function useAlwaysOnGestureRuntime({
       performance.now() - pointerTrackingStateRef.current.lastPointSeenAtMs;
     const remainingMs = Math.max(
       0,
-      defaultGesturePointerCalibration.trackingLossGraceMs - elapsedMs,
+      adaptiveSettings.pointerCalibration.trackingLossGraceMs - elapsedMs,
     );
     const timeout = window.setTimeout(() => {
       const result = advanceGesturePointerTracking({
@@ -525,6 +551,7 @@ export function useAlwaysOnGestureRuntime({
         classification: classifyPointPose(null, thresholds.minDetectionConfidence),
         display,
         nowMs: performance.now(),
+        calibration: adaptiveSettings.pointerCalibration,
       });
       pointerTrackingStateRef.current = result.state;
       setGesturePointer(result.pointer);
@@ -535,6 +562,7 @@ export function useAlwaysOnGestureRuntime({
     };
   }, [
     display,
+    adaptiveSettings.pointerCalibration,
     gesturePointer?.phase,
     gesturePointer?.sourceFrameId,
     thresholds.minDetectionConfidence,
@@ -617,7 +645,8 @@ export function useAlwaysOnGestureRuntime({
       doubleAirTap,
       lockRequest,
       pointerDisplay: display,
-      pointerCalibration: defaultGesturePointerCalibration,
+      pointerCalibration: adaptiveSettings.pointerCalibration,
+      adaptiveSettings,
       smoothedGesture,
       visualAnchor: gestureVisualAnchor,
       updatedAt: handLandmarkFrame?.capturedAt ?? new Date().toISOString(),
@@ -641,6 +670,7 @@ export function useAlwaysOnGestureRuntime({
       pinchClassification,
       pointPoseClassification,
       display,
+      adaptiveSettings,
       smoothedGesture,
     ],
   );

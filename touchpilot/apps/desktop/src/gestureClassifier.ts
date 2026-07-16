@@ -6,7 +6,7 @@ import type {
   HandLandmarkPoint,
 } from "@toki/shared";
 
-const pinchThreshold = 0.34;
+const defaultPinchThreshold = 0.34;
 const openPalmMinExtendedFingers = 4;
 const openPalmMinSpread = 0.72;
 
@@ -25,9 +25,10 @@ export type OpenPalmClassification = GestureClassification & {
 export function classifyPinchGesture(
   frame: HandLandmarkFrame | null,
   thresholds: GestureThresholds,
+  pinchThreshold = defaultPinchThreshold,
 ): PinchClassification {
   if (!frame || frame.confidence < thresholds.minDetectionConfidence) {
-    return createPinchClassification("none", "inactive", 0, null);
+    return createPinchClassification("none", "inactive", 0, null, pinchThreshold);
   }
 
   const thumbTip = findLandmark(frame, "thumb_tip");
@@ -36,13 +37,25 @@ export function classifyPinchGesture(
   const middleMcp = findLandmark(frame, "middle_mcp");
 
   if (!thumbTip || !indexTip || !wrist || !middleMcp) {
-    return createPinchClassification("none", "inactive", frame.confidence, null);
+    return createPinchClassification(
+      "none",
+      "inactive",
+      frame.confidence,
+      null,
+      pinchThreshold,
+    );
   }
 
   const palmSize = distance2d(wrist, middleMcp);
 
   if (palmSize <= 0) {
-    return createPinchClassification("none", "inactive", frame.confidence, null);
+    return createPinchClassification(
+      "none",
+      "inactive",
+      frame.confidence,
+      null,
+      pinchThreshold,
+    );
   }
 
   const normalizedDistance = distance2d(thumbTip, indexTip) / palmSize;
@@ -65,6 +78,7 @@ function createPinchClassification(
   phase: "inactive" | "candidate",
   confidence: number,
   normalizedDistance: number | null,
+  activePinchThreshold = defaultPinchThreshold,
 ): PinchClassification {
   return {
     label,
@@ -73,7 +87,7 @@ function createPinchClassification(
     holdMs: 0,
     cooldownRemainingMs: 0,
     normalizedDistance,
-    pinchThreshold,
+    pinchThreshold: activePinchThreshold,
   };
 }
 
