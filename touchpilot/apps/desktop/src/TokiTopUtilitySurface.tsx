@@ -15,11 +15,13 @@ export function TokiTopUtilitySurface({
   voiceActive,
   voiceLabel,
   voiceMessage,
+  pointerExplanationSpeechMuted,
   idleStatusText,
   onVoicePressStart,
   onVoicePressEnd,
   onRefreshCapture,
   onPauseToggle,
+  onPointerExplanationSpeechMuteToggle,
   onRevealTarget,
   onStartDrag,
   onClose,
@@ -31,11 +33,13 @@ export function TokiTopUtilitySurface({
   voiceActive: boolean;
   voiceLabel: string;
   voiceMessage: string;
+  pointerExplanationSpeechMuted: boolean;
   idleStatusText: string;
   onVoicePressStart: () => void;
   onVoicePressEnd: () => void;
   onRefreshCapture: () => void;
   onPauseToggle: () => void;
+  onPointerExplanationSpeechMuteToggle: () => void;
   onRevealTarget: () => void;
   onStartDrag: () => void;
   onClose: () => void;
@@ -171,6 +175,16 @@ export function TokiTopUtilitySurface({
                   <strong>{voiceLabel}</strong>
                   <small>{voiceMessage}</small>
                 </span>
+              </button>
+              <button
+                className="toki-top-utility__speech-toggle"
+                type="button"
+                aria-pressed={pointerExplanationSpeechMuted}
+                onClick={onPointerExplanationSpeechMuteToggle}
+              >
+                {pointerExplanationSpeechMuted
+                  ? "Pointer explanations muted"
+                  : "Pointer explanations spoken"}
               </button>
             </div>
           ) : (

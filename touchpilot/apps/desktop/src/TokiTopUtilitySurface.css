@@ -244,6 +244,25 @@
   cursor: wait;
 }
 
+.toki-top-utility__speech-toggle {
+  width: 100%;
+  min-height: 28px;
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.66);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.toki-top-utility__speech-toggle[aria-pressed="false"] {
+  border-color: rgba(83, 210, 230, 0.28);
+  color: rgba(188, 241, 249, 0.86);
+}
+
 .toki-top-utility__reveal-panel {
   min-height: 146px;
   display: grid;
