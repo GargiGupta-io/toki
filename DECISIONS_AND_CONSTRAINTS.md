@@ -149,6 +149,19 @@
 13. A droplet may render only from the accepted-guidance motion gate and the same visible accepted target supplied to the ring. Raw, rejected, hidden, missing, refreshing, and errored target state must never animate toward a location.
 14. JavaScript-driven motion must check `prefers-reduced-motion` inside the motion calculation; CSS-only reduced-motion rules are insufficient for inline transforms.
 
+## Gesture Pointer-Explanation Constraints
+
+1. Pointing alone never selects, calls a provider, displays a guidance ring, or clicks.
+2. Two valid air taps copy an immutable coordinate; later pointer movement cannot change it.
+3. A deictic explanation requires the matching frozen lock. Without one, Toki clarifies; ordinary non-deictic voice remains on the existing command route.
+4. The screen is recaptured and the active-window receipt is revalidated when the lock is used, not merely when it was created.
+5. Current OCR, Accessibility, and DOM evidence may be combined near the point, but equally near distinct candidates are ambiguous and must be refused.
+6. The provider receives the exact mapped point and a bounded focus region. It cannot substitute a nearby control; the returned target must still contain the point.
+7. Pointer explanations require specific semantics, current supporting evidence, and confidence of at least 70%. Generic, unsupported, stale, conflicting, or moved results clarify.
+8. Pointer explanations use a separate passive card. They never become generic guidance results or borrow the accepted-target ring.
+9. Spoken explanation starts only after microphone capture, listening, and transcription are idle. A persistent mute control is required.
+10. Gesture explanations remain guidance-only and have no click authority.
+
 ## Engineering Workflow Constraints
 
 1. Inspect and explain the plan before source edits.

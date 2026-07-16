@@ -13,6 +13,39 @@ This ledger uses repository scripts, terminal output recorded in the conversatio
 
 No command in this section manually controlled Toki or issued a guidance request. The latest installation step replaced and launched the app for user-owned acceptance.
 
+### Gesture Step 9 — Frozen Pointer Explanation (2026-07-16)
+
+No command in this step issued a Toki guidance, voice, click, or gesture command. The rebuilt installed app was launched only for user-owned live pointer/voice/explanation acceptance.
+
+| Command | Result |
+| --- | --- |
+| `npm run test:gesture-pointer-explanation` | `PASS` — 9/9 deictic intent, explicit-object parsing, no-lock routing, unique/ambiguous evidence, grounded result, provider refusal, native bridge, side-effect, and App ordering/render-boundary checks |
+| `npm run test:gesture-control-voice` | `PASS` — 9/9 |
+| `npm run test:gesture-target-lock` | `PASS` — 8/8 |
+| `npm run test:gesture-two-hand` | `PASS` — 6/6 |
+| `npm run test:gesture-pointing` | `PASS` — 9/9 |
+| `npm run test:gesture-runtime` | `PASS` — 6/6 |
+| `npm run test:gesture-contracts` | `PASS` — 7/7 |
+| `npm run test:gesture-adaptive-profile` | `PASS` — 6/6 |
+| `npm run test:capture-access` | `PASS` — 2/2 |
+| `npm run test:coordinates` | `PASS` — 6/6 |
+| `npm run test:provider-image` | `PASS` — 5/5 |
+| `npm run test:candidate-fusion` | `PASS` — 4/4 |
+| `npm run test:target-verification` | `PASS` — 23/23 |
+| `npm run test:voice-hold` | `PASS` — 3/3 |
+| `npm run test:gesture-assets` | `PASS` — 7/7 |
+| `npm run test:command-corpus` | `PASS` — 3/3 and 120 unique manual cases |
+| `npm run qa:visual:motion` | `PASS` — 18/18 |
+| `npm run typecheck` | `PASS` — all TypeScript workspaces |
+| `npm run rust:check` | `PASS` |
+| `npm run desktop:web:build` | `PASS` — existing Vite chunk-size warning only |
+| `git diff --check` | `PASS` |
+| `npm run desktop:release:mac` | `PASS` — production web/native app bundle built and ad-hoc signed; existing Vite chunk-size warning only |
+| `npm run desktop:install:mac` | `PASS` — previous app replaced, installed bundle strictly verified, and app launched |
+| Built/installed executable SHA-256 comparison | `PASS` — both `4c63cbd0fb26edb56e29e48773507a7a1b397ac2d3e249a222591585b4eeb293` |
+
+Installed process observed at final verification: PID `57842`.
+
 ### Gesture Step 8 — Locked Control-Hand Hold-to-Talk (2026-07-16)
 
 No command in this step issued a Toki guidance, voice, click, or gesture command. The rebuilt installed app was launched only for user-owned live gesture acceptance.

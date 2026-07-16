@@ -223,6 +223,23 @@ Generated `dist/`, `target/`, and `.app` outputs were rebuilt but remain generat
 
 Generated production frontend/native outputs and `/Applications/Toki.app` were rebuilt and replaced but remain outside tracked source. `touchpilot/learnings/` remains pre-existing and untracked.
 
+## Gesture Step 9 Frozen Pointer Explanation Delta
+
+| Path | State | Purpose |
+| --- | --- | --- |
+| `touchpilot/apps/desktop/src/gesturePointerExplanation.ts` | Added in `0adb06a` | Recognizes deictic explanation intent, preserves ordinary voice, disambiguates current evidence, invokes the existing subscription vision bridge, and rejects moved, generic, unsupported, conflicting, stale, ambiguous, or low-confidence targets |
+| `touchpilot/apps/desktop/src/App.tsx` | Committed in `09e0ae4` | Consumes the frozen lock once, recaptures/revalidates the active window, gathers combined evidence, maps the exact point/focus region, coordinates provider state/speech, and exposes Debug diagnostics without entering generic guidance rendering |
+| `touchpilot/apps/desktop/src/TokiPointerExplanationCard.tsx` | Added in `1deec2c` | Passive processing/grounded/clarification card anchored beside the frozen point |
+| `touchpilot/apps/desktop/src/TokiPointerExplanationCard.css` | Added in `1deec2c` | Pointer-transparent card presentation and reduced-motion behavior |
+| `touchpilot/apps/desktop/src/TokiTopUtilitySurface.tsx` | Committed in `6ccf27a` | Adds the persistent spoken-pointer-explanation mute control |
+| `touchpilot/apps/desktop/src/TokiTopUtilitySurface.css` | Committed in `6ccf27a` | Styles the compact mute control without changing normal overlay target visuals |
+| `touchpilot/scripts/gesture-pointer-explanation.test.mjs` | Added in `ca04de0` | Covers approved phrases, routing, evidence uniqueness, provider/result defenses, bridge payload, no side effects, and App revalidation/render boundaries |
+| `touchpilot/package.json` | Committed in `ca04de0` | Adds `test:gesture-pointer-explanation` |
+| `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md` | Modified outside repository | Records Step 9 behavior, evidence/provider boundaries, verification, installed hash, and next step |
+| `/Users/pumba/Documents/Codex/clicky/steps.md` | Modified outside repository | Records the one-step completion and manual acceptance checklist |
+
+Generated production frontend/native outputs and `/Applications/Toki.app` were rebuilt and replaced but remain outside tracked source. `touchpilot/learnings/` remains pre-existing and untracked and was not modified or staged.
+
 ## Gesture Step 8 Locked Control-Hand Voice Delta
 
 | Path | State | Purpose |

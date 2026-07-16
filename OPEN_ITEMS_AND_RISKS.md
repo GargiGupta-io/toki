@@ -16,6 +16,8 @@ Required remaining work:
 6. Verify the intended installed/main artifact, not only the dev app.
 7. Verify `Invite collaborators` shows its target immediately with the access/editing warning.
 8. Verify a strong-risk test shows no ring before `Show target`, reveals only the ring afterward, and performs no application action.
+9. Verify a frozen pointer plus “Explain this” produces a passive explanation for only that current control, with no click and no target ring.
+10. Verify no-lock, stale-screen, equally near candidate, and explicit pointer/speech conflict cases clarify safely; verify spoken output waits for the microphone and respects mute.
 
 ## Known Bugs and Product Failures
 
@@ -77,7 +79,8 @@ Required remaining work:
 - Stable two-hand identities, pointer/control roles, and visual-only split/merge are implemented and covered by deterministic tests.
 - Secondary-hand pinch hold-to-talk is connected only after a validated pointer lock. Release submits once through the existing voice controller; two seconds of control-hand loss cancels without submission.
 - Live two-hand crossing, temporary occlusion, split comfort, and performance are not yet proven across normal installed-app use.
-- Live control-pinch comfort, microphone startup timing, recovery, and cancellation are not yet proven in the installed app; pointer-grounded explanation remains intentionally deferred to Gesture Step 9.
+- Pointer-grounded explanation is implemented: approved deictic phrases consume the matching frozen lock once, recapture current combined evidence, refuse ambiguity/conflict/staleness/provider retargeting, and use a separate passive card plus optional post-microphone speech.
+- Live control-pinch comfort, microphone startup timing, recovery, explanation grounding, stale-screen refusal, speech timing, mute behavior, and cancellation are not yet proven in the installed app.
 
 ## Unfinished Implementation
 
@@ -99,7 +102,7 @@ Required remaining work:
 
 ## Unverified Assumptions
 
-- The currently installed `/Applications/Toki.app` matches the signed Gesture Step 8 build at executable SHA-256 `85998867a42f6cc76ff781a469882b28d5bb54fc5d0e1bf1e7c3557a300f4e05`; it was launched after installation and observed running as PID `50371` at that verification point. The source commit is added after this recorded build gate.
+- The currently installed `/Applications/Toki.app` matches the signed Gesture Step 9 build at executable SHA-256 `4c63cbd0fb26edb56e29e48773507a7a1b397ac2d3e249a222591585b4eeb293`; it was launched after installation and observed running as PID `57842` at that verification point. The matching source is committed through `ca04de0`.
 - All tests executed in the documented 2026-07-15 repair matrix pass. Unexecuted platform/manual cases remain unknown.
 - Codex CLI `0.144.4` is installed and subscription authentication is ready in the development environment.
 - FreeLLMAPI is currently running/configured: `UNKNOWN`.

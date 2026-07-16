@@ -6,11 +6,12 @@
 - Application workspace: `/Users/pumba/Documents/ Codex Projects/clicky/touchpilot`
 - Current branch: `main`
 - Pre-gesture repair checkpoint: commits `315e49e` through `71a2ebe` on `main`.
+- Gesture Step 9 source checkpoint: commits `0adb06a` through `ca04de0` on `main`; documentation is committed separately afterward.
 - Baseline before the repair: `d4234bf00104ad973e694fc3564cf98a21a12f30`.
 - Upstream state after checkpoint publication: the repair and this migration pack are included on `origin/main`.
 - Tracked worktree state before this migration pack: clean.
 - Pre-existing untracked state: `touchpilot/learnings/`.
-- Installed application source state: the installed executable was built from the same source later committed through `de7d2b6`; the bundle does not yet embed a Git commit identifier.
+- Installed application source state: the installed executable was built from the same Gesture Step 9 source now committed through `ca04de0`; the bundle does not yet embed a Git commit identifier.
 
 ## Project Objective
 
@@ -77,7 +78,7 @@ These are two different runtime artifacts and must never be treated as interchan
 - macOS signing command: `npm run desktop:sign:mac`
 - macOS install command: `npm run desktop:install:mac`
 - The installed app can remain stale until it is rebuilt, signed, installed, the old process is stopped, and the installed application is relaunched.
-- `/Applications/Toki.app` was replaced on 2026-07-15 with the signed build from the source later committed through `de7d2b6` and launched for user-owned acceptance.
+- `/Applications/Toki.app` was replaced on 2026-07-16 with the signed Gesture Step 9 build and launched for user-owned acceptance.
 
 ## Work Completed
 
@@ -104,6 +105,8 @@ Repository evidence confirms implementation work in these areas:
 
 The pre-gesture repair adds provider-neutral structured vision output, the Codex-subscription bridge, race-safe hold-to-talk state handling, accepted-target-only ring rendering, capture-integrity enforcement, and deterministic regressions. It is committed in `315e49e` through `de7d2b6`; the architecture documentation is committed in `71a2ebe`.
 
+Gesture Steps 1 through 9 now add deterministic contracts, an Overlay-owned offline camera runtime, reliable pointing, immutable double-air-tap locking, bounded local calibration, stable two-hand tracking and liquid split/merge, secondary-hand hold-to-talk, and frozen-pointer explanation. Step 9 uses a separate passive result card and cannot click, retarget, or display the verified-guidance ring.
+
 ## Current Runtime Behavior
 
 ### Confirmed From Repository
@@ -120,6 +123,8 @@ The pre-gesture repair adds provider-neutral structured vision output, the Codex
 - Generic or symbolic structured candidates can now combine their exact current geometry with specific high-confidence provider semantics. This augmentation is forbidden when the structured evidence already expresses a conflicting action or object.
 - Read-only commands normalize `see`, `show`, and `view` to the shared `open` action. Narrow UI-context and media-history phrases let controls such as `Recently played tab` ground as `open + media` without app-specific rules or treating generic history as media.
 - Provider and local-candidate risk normalization now share one policy helper. `account_change` and `permission_change` are warning-only; strong-risk targets are accepted for Debug but excluded from overlay state and the target ring until the user clicks `Show target` in the top utility.
+- Approved deictic phrases with a frozen gesture lock recapture and revalidate the current active window, combine nearby OCR/Accessibility/DOM evidence, and call the existing Codex subscription vision bridge with the exact locked point plus a bounded focus region.
+- Pointer explanations refuse stale, ambiguous, conflicting, generic, unsupported, low-confidence, or provider-retargeted answers. Grounded answers use a passive card and optional post-microphone speech with a persistent mute control; they do not enter generic guidance state.
 
 ### Last User-Observed Behavior
 
@@ -139,7 +144,7 @@ The 12% observation directly triggered the latest current-image grounding repair
 
 ## Next Unfinished Step
 
-The unfinished step is user-owned live acceptance. The implementation and deterministic gates are complete, but neither the new hold gesture nor real-model targeting has been claimed successful without a manual run.
+Gesture Step 9 is complete at the implementation/build gate. The next action is user-owned installed-app acceptance of the frozen pointer, control-hand voice, explanation card, and optional speech. Step 10 later gestures must not start until that check is reported.
 
 Required acceptance conditions:
 
@@ -150,6 +155,9 @@ Required acceptance conditions:
 5. Prove that different commands on the same screen select different appropriate regions.
 6. Expose raw provider output, original box, chosen evidence, grounding verdict, coordinate transform, and rejection reason in Debug.
 7. Confirm permission/account targets appear immediately with a clear warning, while strong-risk targets show no ring before `Show target` and reveal only the ring afterward.
+8. Lock one clearly visible control, pinch/hold with the other hand, say “Explain this,” and confirm only that current control is described in the passive card with no target ring and no click.
+9. Confirm “What happens if I use this?” works with a valid lock; no-lock, stale-screen, equally near candidates, and explicit pointer/speech conflicts clarify safely.
+10. Confirm speech begins only after recording/transcription stop and the persistent mute control suppresses it.
 
 ## Exact Recommended Next Action
 
@@ -201,3 +209,13 @@ The 96% `Invite collaborators` trace then isolated a provider/safety contract mi
 - Verification passes all workspace TypeScript checks, Rust workspace check, 23/23 semantic target tests, 2/2 capture-access tests, 4/4 cue-geometry tests, 17/17 visual-motion assertions, 5/5 native tests, the production web build, release build, signing, and installation.
 - `/Applications/Toki.app` was replaced and launched. Built and installed executable SHA-256 values match at `9289d3a776516c88c25ca0d9352d9cb1e6682912832ae615d7ca2522b2a4baf9`; the installed process was observed as PID `90673`.
 - User action remains: if macOS reports Screen Recording is not trusted, grant Screen Recording to Toki, quit/relaunch it, then manually retest. Codex did not issue a Toki command. No commit or push was made.
+
+## Latest Gesture Step 9 Checkpoint
+
+- `gesturePointerExplanation.ts` recognizes the approved deictic phrases, distinguishes explicit object names, preserves ordinary non-deictic voice, selects only unique current evidence near the frozen point, and defensively validates the subscription vision response.
+- `App.tsx` consumes the matching live lock once, recaptures and fingerprints the active window, checks the point remains inside that app, collects combined OCR/Accessibility/DOM evidence, maps the exact provider point and a 160 px focus region, and refuses ambiguity or screen drift before provider use.
+- The provider must return specific supported semantics at 70% or higher and a rectangle still containing the locked point. It cannot substitute another nearby control.
+- `TokiPointerExplanationCard` is a passive, pointer-transparent, reduced-motion-safe result surface. It is separate from guidance state and never renders the accepted-target ring. Optional speech waits for the microphone/transcriber to become idle and has a persistent top-utility mute control.
+- The focused suite passes 9/9. Selected gesture, voice, capture, coordinate, provider-image, candidate-fusion, target-verification, asset, corpus, visual-motion, TypeScript, Rust, and production web/native gates pass.
+- `/Applications/Toki.app` was replaced, strictly verified, and launched. Built and installed executables match at SHA-256 `4c63cbd0fb26edb56e29e48773507a7a1b397ac2d3e249a222591585b4eeb293`; the installed process was observed as PID `57842`.
+- Manual pointer/voice/explanation acceptance remains user-owned. Codex issued no Toki command or gesture. Step 10 has not started.

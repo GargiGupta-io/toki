@@ -321,7 +321,7 @@ Evidence: `touchpilot/docs/phase-15-evals.md` records deterministic eval closure
 29. Accepted-target droplet travel — `COMPLETED` implementation/automated gate: one transient droplet can travel only when the existing accepted-guidance motion gate and a visible target are both present.
 30. Living-visual installed-app acceptance — `PENDING`, user-owned: confirm the liquid motion is visible and tasteful, processing does not look idle, the droplet reaches the verified target, and rejected/hidden targets remain invisible.
 
-## Adaptive Gesture Control Plan — IN PROGRESS, STEP 8 COMPLETE
+## Adaptive Gesture Control Plan — IN PROGRESS, STEP 9 COMPLETE
 
 The detailed design and rationale are preserved in `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md`. Execution uses one step at a time, with a pause for user review after every completed step.
 
@@ -333,8 +333,8 @@ The detailed design and rationale are preserved in `/Users/pumba/Documents/Codex
 6. Add a bounded, resettable local adaptive profile with two-second human grace windows — `COMPLETED` at the implementation/build gate in Gesture Step 6; the three-stage Debug calibration requires 6 approved point samples, 5 approved tap-flex samples, and 5 approved pinch-distance samples, keeps samples in memory, persists only versioned median/MAD/count statistics, clamps every derived setting, and restores defaults through Reset. Correct and Wrong gesture are explicit user decisions. Confidence, action mappings, safety, provider verification, permissions, timing grace, and click behavior remain fixed. The focused gate passes 6/6; manual comfort/tuning remains user-owned acceptance.
 7. Add stable two-hand identity plus liquid split/merge visuals — `COMPLETED` at the implementation/build gate in Gesture Step 7; the bundled landmark runtime now returns up to two hands, stable track IDs survive detector reordering, crossing, and a two-second loss window, pointer/control roles do not swap while retained, and palm-separation hysteresis drives a reduced-motion-safe liquid split/merge presentation. The control hand has no action authority in this step. The focused gate passes 6/6 and the prior gesture gates remain 43/43; live two-hand comfort/lighting acceptance remains user-owned.
 8. Compose a locked pointer with secondary-hand pinch hold-to-talk; release submits exactly once and tracking loss cancels safely — `COMPLETED` at the implementation/build gate in Gesture Step 8; the control hand uses adaptive press distance, hysteretic release distance, stable holds, and its retained track. A press is accepted only with a screen-validated lock and idle recorder, then freezes that receipt into the voice request. Two seconds of missing-hand recovery resume without release; expiry cancels native capture and never submits. The focused gate passes 9/9, voice hold passes 3/3, prior gesture gates pass 49/49, and visual-motion QA remains 18/18. Manual camera/microphone acceptance remains user-owned.
-9. Add pointer-grounded “explain this” using the locked region and current screen evidence — `NEXT`.
-10. Add later gestures only after the basic composition is reliable — `PENDING`.
+9. Add pointer-grounded “explain this” using the locked region and current screen evidence — `COMPLETED` at the implementation/build gate in Gesture Step 9. Approved deictic phrases consume the matching frozen lock once, recapture and fingerprint the active window, combine nearby OCR/Accessibility/DOM evidence, and refuse stale, ambiguous, conflicting, generic, unsupported, low-confidence, or moved targets. The provider receives the exact point plus a bounded 160 px focus region through the existing Codex subscription bridge. Results use a separate passive card and optional post-microphone speech with persistent mute; they never click, become guidance targets, or show the verified-target ring. The focused gate passes 9/9, all selected prior regressions and the 120-case corpus remain green, and visual-motion QA remains 18/18. Manual pointer/voice/explanation acceptance remains user-owned.
+10. Add later gestures only after the basic composition is reliable — `NEXT` after the user accepts Step 9.
 11. Run the full regression matrix, rebuild/install/launch, and hand manual gesture acceptance to the user — `PENDING`.
 
 The command-testing foundation is already committed: `touchpilot/docs/manual-command-acceptance-matrix.md` contains 120 cases across 11 edge-case categories, and `npm run test:command-corpus` validates uniqueness, completeness, and supported parser expectations.
@@ -351,6 +351,7 @@ The command-testing foundation is already committed: `touchpilot/docs/manual-com
 8. The temporary Codex adapter depends on an installed and authenticated Codex CLI. The future product provider should be swapped behind the same adapter boundary.
 9. Local ad-hoc builds change code identity and invalidate stored macOS grants. A stable Developer ID/development signing identity is required for durable permissions across future binaries.
 10. Continuous liquid animation remains a small performance risk until the user observes CPU/lag during normal installed-app use; motion is limited to two small blob elements and disabled for reduced motion.
+11. Pointer explanations require a fresh active-window recapture, unique current evidence near the frozen point, and a provider answer that leaves that point unchanged. Live camera, ambiguity, stale-screen, speech, and mute behavior remain user-owned acceptance.
 
 ## 2026-07-15 Capture-Integrity and Target-Cue Repair — IMPLEMENTED, MANUAL ACCEPTANCE PENDING
 
@@ -361,4 +362,4 @@ The command-testing foundation is already committed: `touchpilot/docs/manual-com
 5. Broader verification and release — `COMPLETED`: all workspace TypeScript, Rust check, semantic verifier 23/23, production web build, app release, signing, install, hash match, and launch pass.
 6. Installed-app permission and live behavior acceptance — `PENDING`, user-owned. Grant Screen Recording to the exact current `/Applications/Toki.app` if prompted, relaunch, then run the known commands manually.
 
-Current installed executable SHA-256: `85998867a42f6cc76ff781a469882b28d5bb54fc5d0e1bf1e7c3557a300f4e05`. Gesture Step 8 installed-app PID at verification: `50371`.
+Current installed executable SHA-256: `4c63cbd0fb26edb56e29e48773507a7a1b397ac2d3e249a222591585b4eeb293`. Gesture Step 9 installed-app PID at verification: `57842`.
