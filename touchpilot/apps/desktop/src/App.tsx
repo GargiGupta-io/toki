@@ -15,6 +15,7 @@ import {
 import type {
   ActiveWindowBounds,
   ActiveWindowCaptureSnapshot,
+  AdaptiveGestureProfile,
   CaptureMetadata,
   ClickAwareNativeClick,
   ClickAwareRuntimeState,
@@ -49,6 +50,19 @@ import type {
   WorkflowStep,
   WorkflowVerificationResult,
 } from "@toki/shared";
+import {
+  acceptGestureCalibrationCandidate,
+  clearAdaptiveGestureProfile,
+  createIdleGestureCalibrationSession,
+  getGestureCalibrationStageProgress,
+  loadAdaptiveGestureProfile,
+  offerGestureCalibrationCandidate,
+  rejectGestureCalibrationCandidate,
+  saveAdaptiveGestureProfile,
+  startGestureCalibration,
+  type GestureCalibrationCandidate,
+  type GestureCalibrationSession,
+} from "./gestureAdaptiveProfile";
 import { createScreenshotCropFromDisplayRect } from "./coordinateTransforms";
 import {
   canRevealGuidanceTarget,
@@ -167,6 +181,8 @@ type OverlaySnapshot = {
 
 type DebugSnapshot = OverlaySnapshot & {
   gestureDiagnostics: GestureRuntimeDiagnostics;
+  adaptiveGestureProfile: AdaptiveGestureProfile | null;
+  gestureCalibration: GestureCalibrationSession;
   guidanceTrace: GuidanceTrace | null;
   guidanceProviderMode: GuidanceProviderMode;
   guidanceProviderName: string | null;
@@ -216,6 +232,10 @@ type OverlayCommand =
   | { type: "set-camera-enabled"; enabled: boolean }
   | { type: "refresh-camera-devices" }
   | { type: "set-gestures-enabled"; enabled: boolean }
+  | { type: "start-gesture-calibration" }
+  | { type: "accept-gesture-calibration-sample" }
+  | { type: "reject-gesture-calibration-sample" }
+  | { type: "reset-gesture-profile" }
   | { type: "start-voice-listening"; source: VoiceActivationSource }
   | { type: "submit-voice-listening" }
   | { type: "stop-voice-listening" };
@@ -1458,6 +1478,8 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     gestureDiagnostics: createEmptyGestureRuntimeDiagnostics(
       gestureRuntime.thresholds,
     ),
+    adaptiveGestureProfile: null,
+    gestureCalibration: createIdleGestureCalibrationSession(),
     voiceRuntime: createDefaultVoiceRuntimeState(),
     topStatus: null,
     guidanceTrace: null,
@@ -1485,6 +1507,74 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
       updatedAt: "1970-01-01T00:00:00.000Z",
     },
   };
+}
+
+function getBrowserStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function getGestureCalibrationCandidate(
+  session: GestureCalibrationSession,
+  diagnostics: GestureRuntimeDiagnostics,
+): GestureCalibrationCandidate | null {
+  const hand = diagnostics.hand;
+  if (
+    session.status !== "collecting" ||
+    hand == null ||
+    hand.confidence < 0.6
+  ) {
+    return null;
+  }
+
+  if (
+    session.stage === "point_range" &&
+    diagnostics.pointPose.label === "point" &&
+    diagnostics.pointPose.pointerTip != null
+  ) {
+    return {
+      stage: "point_range",
+      frameId: hand.frameId,
+      capturedAt: hand.capturedAt,
+      handedness: hand.handedness,
+      confidence: hand.confidence,
+      point: { ...diagnostics.pointPose.pointerTip },
+    };
+  }
+
+  if (
+    session.stage === "tap_flexion" &&
+    diagnostics.airTapPose.indexExtensionRatio != null &&
+    diagnostics.airTapPose.foldedFingerCount >= 2
+  ) {
+    return {
+      stage: "tap_flexion",
+      frameId: hand.frameId,
+      capturedAt: hand.capturedAt,
+      handedness: hand.handedness,
+      confidence: hand.confidence,
+      value: diagnostics.airTapPose.indexExtensionRatio,
+    };
+  }
+
+  if (
+    session.stage === "pinch_distance" &&
+    diagnostics.pinch.normalizedDistance != null
+  ) {
+    return {
+      stage: "pinch_distance",
+      frameId: hand.frameId,
+      capturedAt: hand.capturedAt,
+      handedness: hand.handedness,
+      confidence: hand.confidence,
+      value: diagnostics.pinch.normalizedDistance,
+    };
+  }
+
+  return null;
 }
 
 function OverlayWindowApp() {
@@ -1515,6 +1605,14 @@ function OverlayWindowApp() {
     createDefaultGestureRuntimeState(),
   );
   const [gestureDeviceRefreshToken, setGestureDeviceRefreshToken] = useState(0);
+  const [adaptiveGestureProfile, setAdaptiveGestureProfile] =
+    useState<AdaptiveGestureProfile | null>(() =>
+      loadAdaptiveGestureProfile(getBrowserStorage()),
+    );
+  const [gestureCalibration, setGestureCalibration] =
+    useState<GestureCalibrationSession>(() =>
+      createIdleGestureCalibrationSession(new Date().toISOString()),
+    );
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
   );
@@ -1579,7 +1677,34 @@ function OverlayWindowApp() {
     thresholds: gestureRuntime.thresholds,
     deviceRefreshToken: gestureDeviceRefreshToken,
     display: gesturePointerDisplay,
+    adaptiveProfile: adaptiveGestureProfile,
   });
+  useEffect(() => {
+    const candidate = getGestureCalibrationCandidate(
+      gestureCalibration,
+      alwaysOnGestureRuntime.diagnostics,
+    );
+    if (candidate == null) {
+      return;
+    }
+
+    setGestureCalibration((current) =>
+      offerGestureCalibrationCandidate(
+        current,
+        candidate,
+        new Date().toISOString(),
+      ),
+    );
+  }, [
+    alwaysOnGestureRuntime.diagnostics.airTapPose.foldedFingerCount,
+    alwaysOnGestureRuntime.diagnostics.airTapPose.indexExtensionRatio,
+    alwaysOnGestureRuntime.diagnostics.hand,
+    alwaysOnGestureRuntime.diagnostics.pinch.normalizedDistance,
+    alwaysOnGestureRuntime.diagnostics.pointPose.label,
+    alwaysOnGestureRuntime.diagnostics.pointPose.pointerTip,
+    gestureCalibration.stage,
+    gestureCalibration.status,
+  ]);
   const gesturePointerShadow = useMemo(() => {
     const pointer = alwaysOnGestureRuntime.pointer;
 
@@ -2033,6 +2158,8 @@ function OverlayWindowApp() {
     () => ({
       ...overlaySnapshot,
       gestureDiagnostics: alwaysOnGestureRuntime.diagnostics,
+      adaptiveGestureProfile,
+      gestureCalibration,
       guidanceTrace,
       guidanceProviderMode,
       guidanceProviderName,
@@ -2057,6 +2184,8 @@ function OverlayWindowApp() {
     [
       overlaySnapshot,
       alwaysOnGestureRuntime.diagnostics,
+      adaptiveGestureProfile,
+      gestureCalibration,
       guidanceTrace,
       guidanceProviderMode,
       guidanceProviderName,
@@ -3589,6 +3718,45 @@ function OverlayWindowApp() {
         return;
       }
 
+      if (event.payload.type === "start-gesture-calibration") {
+        setGestureCalibration(startGestureCalibration(new Date().toISOString()));
+        return;
+      }
+
+      if (event.payload.type === "accept-gesture-calibration-sample") {
+        const now = new Date().toISOString();
+        const result = acceptGestureCalibrationCandidate({
+          session: gestureCalibration,
+          now,
+          profileId:
+            adaptiveGestureProfile?.profileId ??
+            `gesture-profile-${crypto.randomUUID()}`,
+          existingProfile: adaptiveGestureProfile,
+        });
+        setGestureCalibration(result.session);
+        if (result.profile != null) {
+          saveAdaptiveGestureProfile(getBrowserStorage(), result.profile);
+          setAdaptiveGestureProfile(result.profile);
+        }
+        return;
+      }
+
+      if (event.payload.type === "reject-gesture-calibration-sample") {
+        setGestureCalibration((current) =>
+          rejectGestureCalibrationCandidate(current, new Date().toISOString()),
+        );
+        return;
+      }
+
+      if (event.payload.type === "reset-gesture-profile") {
+        clearAdaptiveGestureProfile(getBrowserStorage());
+        setAdaptiveGestureProfile(null);
+        setGestureCalibration(
+          createIdleGestureCalibrationSession(new Date().toISOString()),
+        );
+        return;
+      }
+
       if (event.payload.type === "start-voice-listening") {
         if (voiceCapturePhaseRef.current !== "idle") {
           return;
@@ -4049,6 +4217,11 @@ function DebugWindowApp() {
   const gesturePointerLock = snapshot.gesturePointerLock;
   const gesturePointerLockFeedback = snapshot.gesturePointerLockFeedback;
   const smoothedGesture = gestureDiagnostics.smoothedGesture;
+  const gestureCalibration = snapshot.gestureCalibration;
+  const gestureCalibrationProgress = getGestureCalibrationStageProgress(
+    gestureCalibration,
+  );
+  const adaptiveGestureSettings = gestureDiagnostics.adaptiveSettings;
   const cameraLabelsMayBeHidden =
     cameraProbeStatus === "ready" &&
     cameraDevices.length > 0 &&
@@ -5170,7 +5343,135 @@ function DebugWindowApp() {
                 <dt>Current gesture</dt>
                 <dd>{snapshot.gestureRuntime.currentGesture.phase}</dd>
               </div>
+              <div>
+                <dt>Profile</dt>
+                <dd>
+                  {adaptiveGestureSettings.source === "adaptive_profile"
+                    ? adaptiveGestureSettings.profileId
+                    : "Default bounded settings"}
+                </dd>
+              </div>
+              <div>
+                <dt>Fixed baseline</dt>
+                <dd>X 0.12–0.88 / Y 0.08–0.72 / tap 1.30 / pinch 0.34</dd>
+              </div>
+              <div>
+                <dt>Point range</dt>
+                <dd>
+                  X {gestureDiagnostics.pointerCalibration.cameraMinX.toFixed(2)}–
+                  {gestureDiagnostics.pointerCalibration.cameraMaxX.toFixed(2)} / Y{" "}
+                  {gestureDiagnostics.pointerCalibration.cameraMinY.toFixed(2)}–
+                  {gestureDiagnostics.pointerCalibration.cameraMaxY.toFixed(2)}
+                </dd>
+              </div>
+              <div>
+                <dt>Tap / pinch</dt>
+                <dd>
+                  {adaptiveGestureSettings.tapFlexionRatioThreshold.toFixed(2)} /{" "}
+                  {adaptiveGestureSettings.pinchDistanceThreshold.toFixed(2)}
+                </dd>
+              </div>
             </dl>
+          </section>
+
+          <section className="debug-section debug-section-wide">
+            <h2>Adaptive Gesture Calibration</h2>
+            <div className="debug-section-header-row">
+              <span>{gestureCalibration.status}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "start-gesture-calibration" });
+                }}
+                disabled={
+                  !snapshot.gestureRuntime.camera.enabled ||
+                  !snapshot.gestureRuntime.enabled ||
+                  gestureCalibration.status === "reviewing"
+                }
+              >
+                {gestureCalibration.status === "idle" ? "Start" : "Restart"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({
+                    type: "accept-gesture-calibration-sample",
+                  });
+                }}
+                disabled={gestureCalibration.pending == null}
+              >
+                Correct
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({
+                    type: "reject-gesture-calibration-sample",
+                  });
+                }}
+                disabled={gestureCalibration.pending == null}
+              >
+                Wrong gesture
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sendOverlayCommand({ type: "reset-gesture-profile" });
+                }}
+                disabled={
+                  snapshot.adaptiveGestureProfile == null &&
+                  gestureCalibration.status === "idle"
+                }
+              >
+                Reset
+              </button>
+            </div>
+            <p>{gestureCalibration.instruction}</p>
+            <dl>
+              <div>
+                <dt>Stage</dt>
+                <dd>{gestureCalibration.stage}</dd>
+              </div>
+              <div>
+                <dt>Stage progress</dt>
+                <dd>
+                  {gestureCalibration.stage === "complete"
+                    ? "Complete"
+                    : `${gestureCalibrationProgress.accepted} / ${gestureCalibrationProgress.required}`}
+                </dd>
+              </div>
+              <div>
+                <dt>Accepted total</dt>
+                <dd>{gestureCalibration.acceptedCount}</dd>
+              </div>
+              <div>
+                <dt>Rejected total</dt>
+                <dd>{gestureCalibration.rejectedCount}</dd>
+              </div>
+              <div>
+                <dt>Pending sample</dt>
+                <dd>
+                  {gestureCalibration.pending?.point
+                    ? `${gestureCalibration.pending.point.x.toFixed(3)}, ${gestureCalibration.pending.point.y.toFixed(3)}`
+                    : gestureCalibration.pending?.value != null
+                      ? gestureCalibration.pending.value.toFixed(3)
+                      : "Move into the instructed pose"}
+                </dd>
+              </div>
+              <div>
+                <dt>Preferred hand</dt>
+                <dd>
+                  {snapshot.adaptiveGestureProfile?.preferredPointerHand ??
+                    "Learned after completion"}
+                </dd>
+              </div>
+            </dl>
+            <p className="debug-muted">
+              Every sample requires an explicit Correct decision. Wrong gesture
+              discards the sample. Toki stores only the completed median and
+              variation values locally—never camera frames or hand landmarks. Reset
+              immediately restores the fixed defaults.
+            </p>
           </section>
 
             </>
