@@ -147,6 +147,17 @@ check(
   ),
 );
 
+check(
+  "two-hand split is liquid, visual-only, and reduced-motion safe",
+  blobPuck.includes('data-split-visual-only={splitVisual?.visualOnly ? "true" : "false"}') &&
+    blobPuck.includes('className="blob-puck__split-bridge"') &&
+    blobPuck.includes('className="blob-puck__secondary-lobe"') &&
+    blobPuckCss.includes(".blob-puck__split-bridge") &&
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.blob-puck__split-bridge,[\s\S]*transition:\s*none/.test(
+      blobPuckCss,
+    ),
+);
+
 const failed = checks.filter((item) => !item.passed);
 
 console.log("Toki visual motion QA");
