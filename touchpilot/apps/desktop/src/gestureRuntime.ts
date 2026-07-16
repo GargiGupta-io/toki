@@ -9,9 +9,12 @@ import type {
   DoubleAirTapState,
   GestureActionEvent,
   GestureClassification,
+  GestureHandRole,
   GesturePointerSample,
   GestureThresholds,
   HandLandmarkFrame,
+  HandTrackId,
+  MultiHandLandmarkFrame,
 } from "@toki/shared";
 import {
   deriveAdaptiveGestureSettings,
@@ -52,6 +55,22 @@ import {
   getHandLandmarker,
   handLandmarkerAssetMode,
 } from "./handLandmarker";
+import {
+  advanceHandTracking,
+  createInitialHandTrackingState,
+  getRetainedHandTrackIds,
+  type HandTrackingState,
+} from "./gestureHandTracking";
+import {
+  advanceCreatureSplit,
+  advanceGestureHandRoles,
+  createCreatureSplitVisualState,
+  createInitialCreatureSplitState,
+  createInitialGestureHandRoleState,
+  type CreatureSplitState,
+  type CreatureSplitVisualState,
+  type GestureHandRoleState,
+} from "./gestureTwoHand";
 
 export type GestureRuntimeOwner = "overlay";
 export type CameraProbeStatus =
@@ -70,8 +89,12 @@ export type HandLandmarkerStatus =
 export type HandLandmarkSummary = {
   frameId: number;
   capturedAt: string;
+  trackId: HandTrackId;
+  role: GestureHandRole;
   handedness: HandLandmarkFrame["handedness"];
   confidence: number;
+  trackingConfidence: number;
+  sequence: number;
   landmarkCount: number;
 };
 
@@ -89,6 +112,9 @@ export type GestureRuntimeDiagnostics = {
   handLandmarkerAssetMode: typeof handLandmarkerAssetMode;
   handLandmarkerError: string | null;
   hand: HandLandmarkSummary | null;
+  hands: HandLandmarkSummary[];
+  handRoles: Partial<Record<HandTrackId, GestureHandRole>>;
+  split: CreatureSplitState;
   pinch: PinchClassification;
   openPalm: OpenPalmClassification;
   pointPose: PointPoseClassification;
@@ -108,6 +134,7 @@ export type AlwaysOnGestureRuntime = {
   camera: CameraRuntimeState;
   classification: GestureClassification;
   pointer: GesturePointerSample | null;
+  splitVisual: CreatureSplitVisualState | null;
   doubleAirTap: DoubleAirTapState;
   lockRequest: PointerLockRequest | null;
   visualAnchor: GestureVisualAnchor | null;
@@ -173,6 +200,9 @@ export function createEmptyGestureRuntimeDiagnostics(
     handLandmarkerAssetMode,
     handLandmarkerError: null,
     hand: null,
+    hands: [],
+    handRoles: {},
+    split: createInitialCreatureSplitState(),
     pinch: classifyPinchGesture(null, thresholds),
     openPalm: classifyOpenPalmGesture(null, thresholds),
     pointPose: classifyPointPose(null, thresholds.minDetectionConfidence),
@@ -226,8 +256,16 @@ export function useAlwaysOnGestureRuntime({
   const [handLandmarkerStatus, setHandLandmarkerStatus] =
     useState<HandLandmarkerStatus>("idle");
   const [handLandmarkerError, setHandLandmarkerError] = useState<string | null>(null);
-  const [handLandmarkFrame, setHandLandmarkFrame] =
-    useState<HandLandmarkFrame | null>(null);
+  const [multiHandLandmarkFrame, setMultiHandLandmarkFrame] =
+    useState<MultiHandLandmarkFrame | null>(null);
+  const [handRoleState, setHandRoleState] = useState<GestureHandRoleState>(
+    createInitialGestureHandRoleState,
+  );
+  const [handRoles, setHandRoles] = useState<
+    Partial<Record<HandTrackId, GestureHandRole>>
+  >({});
+  const [creatureSplitState, setCreatureSplitState] =
+    useState<CreatureSplitState>(createInitialCreatureSplitState);
   const [smoothedGesture, setSmoothedGesture] = useState<GestureClassification>(
     createInactiveGestureClassification,
   );
@@ -239,6 +277,15 @@ export function useAlwaysOnGestureRuntime({
   const [lockRequest, setLockRequest] = useState<PointerLockRequest | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const handFrameIdRef = useRef(0);
+  const handTrackingStateRef = useRef<HandTrackingState>(
+    createInitialHandTrackingState(),
+  );
+  const handRoleStateRef = useRef<GestureHandRoleState>(
+    createInitialGestureHandRoleState(),
+  );
+  const creatureSplitStateRef = useRef<CreatureSplitState>(
+    createInitialCreatureSplitState(),
+  );
   const gestureSmoothingStateRef = useRef(initialGestureSmoothingState);
   const pointerTrackingStateRef = useRef(resetGesturePointerTracking());
   const doubleAirTapStateRef = useRef(initialDoubleAirTapControllerState);
@@ -292,7 +339,13 @@ export function useAlwaysOnGestureRuntime({
     videoRef.current = video;
 
     function resetRecognition() {
-      setHandLandmarkFrame(null);
+      setMultiHandLandmarkFrame(null);
+      handTrackingStateRef.current = createInitialHandTrackingState();
+      handRoleStateRef.current = createInitialGestureHandRoleState();
+      setHandRoleState(handRoleStateRef.current);
+      setHandRoles({});
+      creatureSplitStateRef.current = createInitialCreatureSplitState();
+      setCreatureSplitState(creatureSplitStateRef.current);
       setHandLandmarkerStatus("idle");
       setHandLandmarkerError(null);
       gestureSmoothingStateRef.current = initialGestureSmoothingState;
@@ -373,7 +426,13 @@ export function useAlwaysOnGestureRuntime({
   useEffect(() => {
     if (cameraStatus !== "active" || !gesturesEnabled) {
       setHandLandmarkerStatus("idle");
-      setHandLandmarkFrame(null);
+      setMultiHandLandmarkFrame(null);
+      handTrackingStateRef.current = createInitialHandTrackingState();
+      handRoleStateRef.current = createInitialGestureHandRoleState();
+      setHandRoleState(handRoleStateRef.current);
+      setHandRoles({});
+      creatureSplitStateRef.current = createInitialCreatureSplitState();
+      setCreatureSplitState(creatureSplitStateRef.current);
       setHandLandmarkerError(null);
       return;
     }
@@ -400,18 +459,51 @@ export function useAlwaysOnGestureRuntime({
             const video = videoRef.current;
 
             if (video) {
-              const frame = detectHandLandmarksForVideo(
+              const detections = detectHandLandmarksForVideo(
                 landmarker,
                 video,
                 handFrameIdRef.current + 1,
               );
               handFrameIdRef.current += 1;
+              const capturedAt =
+                detections[0]?.capturedAt ?? new Date().toISOString();
+              const tracking = advanceHandTracking({
+                previousState: handTrackingStateRef.current,
+                detections,
+                frameId: handFrameIdRef.current,
+                capturedAt,
+                sourceWidth: video.videoWidth,
+                sourceHeight: video.videoHeight,
+                mirrored: true,
+                nowMs: now,
+                trackingLossGraceMs:
+                  adaptiveSettings.pointerCalibration.trackingLossGraceMs,
+              });
+              handTrackingStateRef.current = tracking.state;
+              const roles = advanceGestureHandRoles({
+                previousState: handRoleStateRef.current,
+                frame: tracking.frame,
+                retainedTrackIds: getRetainedHandTrackIds(tracking.state),
+                preferredPointerHand:
+                  adaptiveProfile?.preferredPointerHand ?? "unknown",
+                minDetectionConfidence: thresholds.minDetectionConfidence,
+              });
+              handRoleStateRef.current = roles.state;
+              const split = advanceCreatureSplit({
+                previousState: creatureSplitStateRef.current,
+                pointerHand: roles.pointerHand,
+                controlHand: roles.controlHand,
+                nowMs: now,
+              });
+              creatureSplitStateRef.current = split;
+              setMultiHandLandmarkFrame(tracking.frame);
+              setHandRoleState(roles.state);
+              setHandRoles(roles.roles);
+              setCreatureSplitState(split);
 
-              if (frame) {
-                setHandLandmarkFrame(frame);
+              if (tracking.frame.hands.length > 0) {
                 setHandLandmarkerStatus("running");
               } else {
-                setHandLandmarkFrame(null);
                 setHandLandmarkerStatus("no_hand");
               }
             }
@@ -435,7 +527,25 @@ export function useAlwaysOnGestureRuntime({
       cancelled = true;
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [cameraStatus, gesturesEnabled]);
+  }, [
+    adaptiveProfile?.preferredPointerHand,
+    adaptiveSettings.pointerCalibration.trackingLossGraceMs,
+    cameraStatus,
+    gesturesEnabled,
+    thresholds.minDetectionConfidence,
+  ]);
+
+  const handLandmarkFrame = useMemo<HandLandmarkFrame | null>(() => {
+    if (multiHandLandmarkFrame == null || handRoleState.pointerTrackId == null) {
+      return null;
+    }
+
+    return (
+      multiHandLandmarkFrame.hands.find(
+        (hand) => hand.trackId === handRoleState.pointerTrackId,
+      ) ?? null
+    );
+  }, [handRoleState.pointerTrackId, multiHandLandmarkFrame]);
 
   const pinchClassification = useMemo(
     () =>
@@ -603,6 +713,20 @@ export function useAlwaysOnGestureRuntime({
       : null;
   }, [gesturesEnabled, handLandmarkFrame, smoothedGesture.label, smoothedGesture.phase]);
 
+  const creatureSplitVisual = useMemo(
+    () =>
+      createCreatureSplitVisualState({
+        state: creatureSplitState,
+        display,
+        calibration: adaptiveSettings.pointerCalibration,
+      }),
+    [
+      adaptiveSettings.pointerCalibration,
+      creatureSplitState,
+      display,
+    ],
+  );
+
   const camera = useMemo<CameraRuntimeState>(
     () => ({
       enabled: cameraEnabled,
@@ -632,11 +756,40 @@ export function useAlwaysOnGestureRuntime({
         ? {
             frameId: handLandmarkFrame.frameId,
             capturedAt: handLandmarkFrame.capturedAt,
+            trackId:
+              "trackId" in handLandmarkFrame
+                ? String(handLandmarkFrame.trackId)
+                : "primary-hand",
+            role: "pointer",
             handedness: handLandmarkFrame.handedness,
             confidence: handLandmarkFrame.confidence,
+            trackingConfidence:
+              "trackingConfidence" in handLandmarkFrame &&
+              typeof handLandmarkFrame.trackingConfidence === "number"
+                ? handLandmarkFrame.trackingConfidence
+                : handLandmarkFrame.confidence,
+            sequence:
+              "sequence" in handLandmarkFrame &&
+              typeof handLandmarkFrame.sequence === "number"
+                ? handLandmarkFrame.sequence
+                : 1,
             landmarkCount: handLandmarkFrame.landmarks.length,
           }
         : null,
+      hands:
+        multiHandLandmarkFrame?.hands.map((hand) => ({
+          frameId: hand.frameId,
+          capturedAt: hand.capturedAt,
+          trackId: hand.trackId,
+          role: handRoles[hand.trackId] ?? "unassigned",
+          handedness: hand.handedness,
+          confidence: hand.confidence,
+          trackingConfidence: hand.trackingConfidence,
+          sequence: hand.sequence,
+          landmarkCount: hand.landmarks.length,
+        })) ?? [],
+      handRoles,
+      split: creatureSplitState,
       pinch: pinchClassification,
       openPalm: openPalmClassification,
       pointPose: pointPoseClassification,
@@ -649,7 +802,8 @@ export function useAlwaysOnGestureRuntime({
       adaptiveSettings,
       smoothedGesture,
       visualAnchor: gestureVisualAnchor,
-      updatedAt: handLandmarkFrame?.capturedAt ?? new Date().toISOString(),
+      updatedAt:
+        multiHandLandmarkFrame?.capturedAt ?? new Date().toISOString(),
     }),
     [
       cameraDevices,
@@ -662,8 +816,11 @@ export function useAlwaysOnGestureRuntime({
       gesturePointer,
       airTapPoseClassification,
       doubleAirTap,
+      creatureSplitState,
+      handRoles,
       lockRequest,
       handLandmarkFrame,
+      multiHandLandmarkFrame,
       handLandmarkerError,
       handLandmarkerStatus,
       openPalmClassification,
@@ -679,6 +836,7 @@ export function useAlwaysOnGestureRuntime({
     camera,
     classification: smoothedGesture,
     pointer: gesturePointer,
+    splitVisual: creatureSplitVisual,
     doubleAirTap,
     lockRequest,
     visualAnchor: gestureVisualAnchor,

@@ -65,7 +65,7 @@ async function createHandLandmarker(): Promise<HandLandmarker> {
 
   const options = {
     runningMode: "VIDEO" as const,
-    numHands: 1,
+    numHands: 2,
     minHandDetectionConfidence: 0.6,
     minHandPresenceConfidence: 0.6,
     minTrackingConfidence: 0.5,
@@ -94,37 +94,35 @@ export function detectHandLandmarksForVideo(
   landmarker: HandLandmarker,
   video: HTMLVideoElement,
   frameId: number,
-): HandLandmarkFrame | null {
+): HandLandmarkFrame[] {
   if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-    return null;
+    return [];
   }
 
   const result = landmarker.detectForVideo(video, performance.now());
-  const landmarks = result.landmarks[0];
+  const capturedAt = new Date().toISOString();
 
-  if (!landmarks) {
-    return null;
-  }
+  return result.landmarks.slice(0, 2).map((landmarks, handIndex) => {
+    const handednessCategory = result.handedness[handIndex]?.[0];
+    const handedness = normalizeHandedness(handednessCategory?.categoryName);
+    const confidence = handednessCategory?.score ?? 0;
 
-  const handednessCategory = result.handedness[0]?.[0];
-  const handedness = normalizeHandedness(handednessCategory?.categoryName);
-  const confidence = handednessCategory?.score ?? 0;
-
-  return {
-    frameId,
-    capturedAt: new Date().toISOString(),
-    handedness,
-    confidence,
-    landmarks: landmarks.map(
-      (landmark, index): HandLandmarkPoint => ({
-        index: index as HandLandmarkIndex,
-        name: handLandmarkNames[index] ?? "wrist",
-        x: landmark.x,
-        y: landmark.y,
-        z: landmark.z,
-      }),
-    ),
-  };
+    return {
+      frameId,
+      capturedAt,
+      handedness,
+      confidence,
+      landmarks: landmarks.map(
+        (landmark, index): HandLandmarkPoint => ({
+          index: index as HandLandmarkIndex,
+          name: handLandmarkNames[index] ?? "wrist",
+          x: landmark.x,
+          y: landmark.y,
+          z: landmark.z,
+        }),
+      ),
+    } satisfies HandLandmarkFrame;
+  });
 }
 
 function normalizeHandedness(value: string | undefined): Handedness {
