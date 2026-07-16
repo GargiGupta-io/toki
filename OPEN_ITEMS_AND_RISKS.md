@@ -75,8 +75,9 @@ Required remaining work:
 - Gesture foundation exists.
 - Current Mac camera/lighting/threshold acceptance is pending.
 - Stable two-hand identities, pointer/control roles, and visual-only split/merge are implemented and covered by deterministic tests.
+- Secondary-hand pinch hold-to-talk is connected only after a validated pointer lock. Release submits once through the existing voice controller; two seconds of control-hand loss cancels without submission.
 - Live two-hand crossing, temporary occlusion, split comfort, and performance are not yet proven across normal installed-app use.
-- Secondary-hand voice control is intentionally not connected until Gesture Step 8.
+- Live control-pinch comfort, microphone startup timing, recovery, and cancellation are not yet proven in the installed app; pointer-grounded explanation remains intentionally deferred to Gesture Step 9.
 
 ## Unfinished Implementation
 
@@ -98,7 +99,7 @@ Required remaining work:
 
 ## Unverified Assumptions
 
-- The currently installed `/Applications/Toki.app` matches the signed build produced from source later committed through `de7d2b6` at executable SHA-256 `9289d3a776516c88c25ca0d9352d9cb1e6682912832ae615d7ca2522b2a4baf9`; it was launched after installation and observed running as PID `90673` at that verification point.
+- The currently installed `/Applications/Toki.app` matches the signed Gesture Step 8 build at executable SHA-256 `85998867a42f6cc76ff781a469882b28d5bb54fc5d0e1bf1e7c3557a300f4e05`; it was launched after installation and observed running as PID `50371` at that verification point. The source commit is added after this recorded build gate.
 - All tests executed in the documented 2026-07-15 repair matrix pass. Unexecuted platform/manual cases remain unknown.
 - Codex CLI `0.144.4` is installed and subscription authentication is ready in the development environment.
 - FreeLLMAPI is currently running/configured: `UNKNOWN`.

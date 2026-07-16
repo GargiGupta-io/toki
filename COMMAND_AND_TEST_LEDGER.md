@@ -13,6 +13,30 @@ This ledger uses repository scripts, terminal output recorded in the conversatio
 
 No command in this section manually controlled Toki or issued a guidance request. The latest installation step replaced and launched the app for user-owned acceptance.
 
+### Gesture Step 8 — Locked Control-Hand Hold-to-Talk (2026-07-16)
+
+No command in this step issued a Toki guidance, voice, click, or gesture command. The rebuilt installed app was launched only for user-owned live gesture acceptance.
+
+| Command | Result |
+| --- | --- |
+| `npm run test:gesture-control-voice` | `PASS` — 9/9 lock gate, press/release hysteresis, one-shot events, two-second recovery, cancellation, immutable context, voice-controller composition, and ownership tests |
+| `npm run test:voice-hold` | `PASS` — 3/3 |
+| `npm run test:gesture-runtime` | `PASS` — 6/6 |
+| `npm run test:gesture-two-hand` | `PASS` — 6/6 |
+| `npm run test:gesture-target-lock` | `PASS` — 8/8 |
+| `npm run test:gesture-pointing` | `PASS` — 9/9 |
+| `npm run test:gesture-contracts` | `PASS` — 7/7 |
+| `npm run test:gesture-adaptive-profile` | `PASS` — 6/6 |
+| `npm run test:gesture-assets` | `PASS` — 7/7 |
+| `npm run typecheck` | `PASS` — all TypeScript workspaces |
+| `npm run rust:check` | `PASS` |
+| `npm run qa:visual:motion` | `PASS` — 18/18 |
+| `npm run desktop:release:mac` | `PASS` — production web/native app bundle built and ad-hoc signed; existing Vite chunk-size warning only |
+| `npm run desktop:install:mac` | `PASS` — previous app replaced, installed bundle strictly verified, and app launched |
+| Built/installed executable SHA-256 comparison | `PASS` — both `85998867a42f6cc76ff781a469882b28d5bb54fc5d0e1bf1e7c3557a300f4e05` |
+
+Installed process observed at final verification: PID `50371`.
+
 ### Gesture Step 7 — Stable Two-Hand Split/Merge (2026-07-16)
 
 No command in this step issued a Toki guidance, voice, click, or gesture command. The rebuilt installed app was launched only for user-owned live two-hand acceptance.

@@ -223,6 +223,20 @@ Generated `dist/`, `target/`, and `.app` outputs were rebuilt but remain generat
 
 Generated production frontend/native outputs and `/Applications/Toki.app` were rebuilt and replaced but remain outside tracked source. `touchpilot/learnings/` remains pre-existing and untracked.
 
+## Gesture Step 8 Locked Control-Hand Voice Delta
+
+| Path | State | Purpose |
+| --- | --- | --- |
+| `touchpilot/apps/desktop/src/gestureControlVoice.ts` | Added | Pure stable control-pinch lifecycle, adaptive press and hysteretic release, two-second recovery/cancel, lock gate, and immutable gesture voice receipt |
+| `touchpilot/apps/desktop/src/gestureRuntime.ts` | Modified | Feeds only the stable control hand into the new pure controller and publishes sanitized control diagnostics while legacy classifiers remain pointer-only |
+| `touchpilot/apps/desktop/src/App.tsx` | Modified | Requires a validated pointer lock, freezes it at voice press, reuses the existing hold controller, submits once on release, cancels on persistent loss/invalidation, and shows Debug state |
+| `touchpilot/packages/shared/src/index.ts` | Modified | Adds the immutable gesture voice context to the voice command request contract |
+| `touchpilot/scripts/gesture-control-voice.test.mjs` | Added | Covers lock gating, hysteresis, event deduplication, immutable receipt, recovery/cancel, hand ownership, voice composition, and side-effect boundaries |
+| `touchpilot/package.json` | Modified | Adds `test:gesture-control-voice` |
+| `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md` | Modified outside repository | Records Step 8 behavior, reasoning, safety boundaries, verification, installed hash, and next step |
+
+Generated production frontend/native outputs and `/Applications/Toki.app` were rebuilt and replaced but remain outside tracked source. `touchpilot/learnings/` remains pre-existing and untracked.
+
 ## Gesture Step 6 Adaptive-Profile Delta
 
 | Path | State | Purpose |
