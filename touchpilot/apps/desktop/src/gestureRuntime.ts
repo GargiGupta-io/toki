@@ -71,6 +71,11 @@ import {
   type CreatureSplitVisualState,
   type GestureHandRoleState,
 } from "./gestureTwoHand";
+import {
+  advanceControlPinch,
+  createInitialControlPinchState,
+  type ControlPinchState,
+} from "./gestureControlVoice";
 
 export type GestureRuntimeOwner = "overlay";
 export type CameraProbeStatus =
@@ -115,6 +120,7 @@ export type GestureRuntimeDiagnostics = {
   hands: HandLandmarkSummary[];
   handRoles: Partial<Record<HandTrackId, GestureHandRole>>;
   split: CreatureSplitState;
+  controlPinch: ControlPinchState;
   pinch: PinchClassification;
   openPalm: OpenPalmClassification;
   pointPose: PointPoseClassification;
@@ -135,6 +141,7 @@ export type AlwaysOnGestureRuntime = {
   classification: GestureClassification;
   pointer: GesturePointerSample | null;
   splitVisual: CreatureSplitVisualState | null;
+  controlPinch: ControlPinchState;
   doubleAirTap: DoubleAirTapState;
   lockRequest: PointerLockRequest | null;
   visualAnchor: GestureVisualAnchor | null;
@@ -203,6 +210,7 @@ export function createEmptyGestureRuntimeDiagnostics(
     hands: [],
     handRoles: {},
     split: createInitialCreatureSplitState(),
+    controlPinch: createInitialControlPinchState(),
     pinch: classifyPinchGesture(null, thresholds),
     openPalm: classifyOpenPalmGesture(null, thresholds),
     pointPose: classifyPointPose(null, thresholds.minDetectionConfidence),
@@ -266,6 +274,9 @@ export function useAlwaysOnGestureRuntime({
   >({});
   const [creatureSplitState, setCreatureSplitState] =
     useState<CreatureSplitState>(createInitialCreatureSplitState);
+  const [controlPinchState, setControlPinchState] = useState<ControlPinchState>(
+    createInitialControlPinchState,
+  );
   const [smoothedGesture, setSmoothedGesture] = useState<GestureClassification>(
     createInactiveGestureClassification,
   );
@@ -285,6 +296,9 @@ export function useAlwaysOnGestureRuntime({
   );
   const creatureSplitStateRef = useRef<CreatureSplitState>(
     createInitialCreatureSplitState(),
+  );
+  const controlPinchStateRef = useRef<ControlPinchState>(
+    createInitialControlPinchState(),
   );
   const gestureSmoothingStateRef = useRef(initialGestureSmoothingState);
   const pointerTrackingStateRef = useRef(resetGesturePointerTracking());
@@ -346,6 +360,10 @@ export function useAlwaysOnGestureRuntime({
       setHandRoles({});
       creatureSplitStateRef.current = createInitialCreatureSplitState();
       setCreatureSplitState(creatureSplitStateRef.current);
+      controlPinchStateRef.current = createInitialControlPinchState(
+        adaptiveSettings.pinchDistanceThreshold,
+      );
+      setControlPinchState(controlPinchStateRef.current);
       setHandLandmarkerStatus("idle");
       setHandLandmarkerError(null);
       gestureSmoothingStateRef.current = initialGestureSmoothingState;
@@ -433,6 +451,10 @@ export function useAlwaysOnGestureRuntime({
       setHandRoles({});
       creatureSplitStateRef.current = createInitialCreatureSplitState();
       setCreatureSplitState(creatureSplitStateRef.current);
+      controlPinchStateRef.current = createInitialControlPinchState(
+        adaptiveSettings.pinchDistanceThreshold,
+      );
+      setControlPinchState(controlPinchStateRef.current);
       setHandLandmarkerError(null);
       return;
     }
@@ -496,10 +518,23 @@ export function useAlwaysOnGestureRuntime({
                 nowMs: now,
               });
               creatureSplitStateRef.current = split;
+              const controlPinch = advanceControlPinch({
+                previousState: controlPinchStateRef.current,
+                controlHand: roles.controlHand,
+                thresholds,
+                pressThreshold: adaptiveSettings.pinchDistanceThreshold,
+                nowMs: Date.now(),
+                trackingLossGraceMs:
+                  adaptiveSettings.pointerCalibration.trackingLossGraceMs,
+              });
+              controlPinchStateRef.current = controlPinch;
               setMultiHandLandmarkFrame(tracking.frame);
               setHandRoleState(roles.state);
               setHandRoles(roles.roles);
               setCreatureSplitState(split);
+              setControlPinchState((current) =>
+                sameControlPinchState(current, controlPinch) ? current : controlPinch,
+              );
 
               if (tracking.frame.hands.length > 0) {
                 setHandLandmarkerStatus("running");
@@ -530,9 +565,10 @@ export function useAlwaysOnGestureRuntime({
   }, [
     adaptiveProfile?.preferredPointerHand,
     adaptiveSettings.pointerCalibration.trackingLossGraceMs,
+    adaptiveSettings.pinchDistanceThreshold,
     cameraStatus,
     gesturesEnabled,
-    thresholds.minDetectionConfidence,
+    thresholds,
   ]);
 
   const handLandmarkFrame = useMemo<HandLandmarkFrame | null>(() => {
@@ -790,6 +826,7 @@ export function useAlwaysOnGestureRuntime({
         })) ?? [],
       handRoles,
       split: creatureSplitState,
+      controlPinch: controlPinchState,
       pinch: pinchClassification,
       openPalm: openPalmClassification,
       pointPose: pointPoseClassification,
@@ -817,6 +854,7 @@ export function useAlwaysOnGestureRuntime({
       airTapPoseClassification,
       doubleAirTap,
       creatureSplitState,
+      controlPinchState,
       handRoles,
       lockRequest,
       handLandmarkFrame,
@@ -837,11 +875,30 @@ export function useAlwaysOnGestureRuntime({
     classification: smoothedGesture,
     pointer: gesturePointer,
     splitVisual: creatureSplitVisual,
+    controlPinch: controlPinchState,
     doubleAirTap,
     lockRequest,
     visualAnchor: gestureVisualAnchor,
     diagnostics,
   };
+}
+
+function sameControlPinchState(
+  left: ControlPinchState,
+  right: ControlPinchState,
+): boolean {
+  return (
+    left.phase === right.phase &&
+    left.controlHandTrackId === right.controlHandTrackId &&
+    left.candidateSinceMs === right.candidateSinceMs &&
+    left.missingSinceMs === right.missingSinceMs &&
+    left.lastSeenAtMs === right.lastSeenAtMs &&
+    left.normalizedDistance === right.normalizedDistance &&
+    left.pressThreshold === right.pressThreshold &&
+    left.releaseThreshold === right.releaseThreshold &&
+    left.eventSequence === right.eventSequence &&
+    left.lastEvent?.id === right.lastEvent?.id
+  );
 }
 
 function sameDoubleAirTapState(
