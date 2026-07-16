@@ -894,11 +894,19 @@ export type VoiceTranscript = {
   traceId?: string;
 };
 
+export type GestureVoiceContext = {
+  readonly sessionId: string;
+  readonly controlHandTrackId: HandTrackId;
+  readonly startedAt: string;
+  readonly lock: PointerLockSnapshot;
+};
+
 export type VoiceCommandRequest = {
   text: string;
   source: VoiceActivationSource | "debug_text";
   createdAt: string;
   traceId?: string;
+  gestureContext?: GestureVoiceContext;
 };
 
 export type VoiceRuntimeState = {
