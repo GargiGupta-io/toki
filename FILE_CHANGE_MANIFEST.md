@@ -205,6 +205,21 @@ Whether all generated outputs are ignored by Git is `UNKNOWN`; verify `.gitignor
 
 Generated `dist/`, `target/`, and `.app` outputs were rebuilt but remain generated artifacts and must not be committed as source.
 
+## Gesture Step 6 Adaptive-Profile Delta
+
+| Path | State | Purpose |
+| --- | --- | --- |
+| `touchpilot/apps/desktop/src/gestureAdaptiveProfile.ts` | Added | Versioned local profile storage, explicit guided calibration state, robust median/MAD derivation, and bounded runtime settings |
+| `touchpilot/apps/desktop/src/gestureClassifier.ts` | Modified | Accepts the clamped active pinch threshold while preserving the fixed default |
+| `touchpilot/apps/desktop/src/gestureTargetLock.ts` | Modified | Accepts the clamped active air-tap flexion threshold while preserving the fixed default |
+| `touchpilot/apps/desktop/src/gestureRuntime.ts` | Modified | Applies one derived profile to pointer mapping, pinch, and tap classifiers and publishes sanitized active settings |
+| `touchpilot/apps/desktop/src/App.tsx` | Modified | Owns profile/session state, persists only completed statistics, and adds Debug Start/Correct/Wrong gesture/Reset controls |
+| `touchpilot/scripts/gesture-adaptive-profile.test.mjs` | Added | Covers explicit approval, rejection, versioning, privacy, reset, robust statistics, hard clamps, and classifier application |
+| `touchpilot/package.json` | Modified | Adds `test:gesture-adaptive-profile` |
+| `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md` | Modified outside repository | Records the Step 6 implementation, boundaries, verification, build hash, and next step |
+
+Generated production frontend/native outputs and `/Applications/Toki.app` were rebuilt and replaced but remain outside tracked source. `touchpilot/learnings/` remains pre-existing and untracked.
+
 ## 2026-07-15 Capture-Integrity and Target-Cue Repair
 
 | Path | State | Purpose |

@@ -13,6 +13,27 @@ This ledger uses repository scripts, terminal output recorded in the conversatio
 
 No command in this section manually controlled Toki or issued a guidance request. The latest installation step replaced and launched the app for user-owned acceptance.
 
+### Gesture Step 6 — Bounded Adaptive Profile (2026-07-16)
+
+No command in this step issued a Toki guidance or gesture command. The rebuilt installed app was launched only for user-owned live calibration acceptance.
+
+| Command | Result |
+| --- | --- |
+| `npm run test:gesture-adaptive-profile` | `PASS` — 6/6 explicit approval, storage/privacy, robust statistics, clamp, classifier, and boundary tests |
+| `npm run test:gesture-target-lock` | `PASS` — 8/8 |
+| `npm run test:gesture-runtime` | `PASS` — 6/6 |
+| `npm run test:gesture-pointing` | `PASS` — 9/9 |
+| `npm run test:gesture-contracts` | `PASS` — 7/7 |
+| `npm run typecheck` | `PASS` — all TypeScript workspaces |
+| `npm run rust:check` | `PASS` |
+| `npm run desktop:web:build` | `PASS` — existing Vite chunk-size warning only |
+| `npm run qa:visual:motion` | `PASS` — 17/17 |
+| `npm --workspace @toki/desktop run tauri build -- --bundles app` | `PASS` |
+| `npm run desktop:install:mac` | `PASS` — built and installed bundles signed and strictly verified; installed app launched |
+| Built/installed executable SHA-256 comparison | `PASS` — both `a9937035f144364b5415f118320f5ffe98c12ef3bfb205b7c914ee1a0c7e7077` |
+
+Installed process observed at final verification: PID `39950`.
+
 | Command | Result |
 | --- | --- |
 | `npm run typecheck` | `PASS` |
