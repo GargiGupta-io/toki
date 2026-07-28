@@ -1,0 +1,18 @@
+{
+  "name": "@toki/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Toki guidance and transcription service. Runs in fixture mode until provider credentials exist.",
+  "scripts": {
+    "dev": "node --import tsx src/server.ts",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@toki/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.4"
+  }
+}

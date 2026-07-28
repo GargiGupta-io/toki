@@ -13,7 +13,7 @@
     "build": "npm run desktop:build",
     "check": "npm run typecheck && npm run rust:check",
     "check:fast": "npm run desktop:typecheck && npm run rust:check",
-    "typecheck": "npm --workspace @toki/desktop run typecheck && npm --workspace @toki/shared run typecheck && npm --workspace @toki/ai run typecheck && npm --workspace @toki/ui run typecheck && npm --workspace @toki/evals run typecheck && npm --workspace @toki/design run typecheck",
+    "typecheck": "npm --workspace @toki/desktop run typecheck && npm --workspace @toki/shared run typecheck && npm --workspace @toki/ai run typecheck && npm --workspace @toki/ui run typecheck && npm --workspace @toki/evals run typecheck && npm --workspace @toki/design run typecheck && npm --workspace @toki/api run typecheck",
     "desktop:typecheck": "npm --workspace @toki/desktop run typecheck",
     "desktop:web:build": "npm --workspace @toki/desktop run build",
     "browser-extension:check": "npm --workspace @toki/browser-extension run check",
@@ -64,6 +64,7 @@
     "test:openai-key": "node --import tsx --test scripts/openai-key-storage.test.mjs",
     "test:csp": "node --test scripts/content-security-policy.test.mjs",
     "test:app-updates": "node --import tsx --test scripts/app-updates.test.mjs",
+    "test:api": "node --import tsx --test scripts/api-service.test.mjs",
     "test:version-consistency": "node --test scripts/version-consistency.test.mjs",
     "test:performance-budget": "node --test scripts/performance-budget.test.mjs",
     "toki:debug": "node scripts/read-toki-debug.mjs",
@@ -91,6 +92,7 @@
     "qa:mac:ocr:candidates": "node scripts/macos-vision-ocr-candidate-probe.mjs",
     "qa:windows:runtime": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-runtime-qa.ps1",
     "qa:windows:visual": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-visual-qa.ps1",
-    "test:camera-reframing": "node --import tsx --test scripts/camera-reframing.test.mjs"
+    "test:camera-reframing": "node --import tsx --test scripts/camera-reframing.test.mjs",
+    "api:dev": "npm --workspace @toki/api run dev"
   }
 }
