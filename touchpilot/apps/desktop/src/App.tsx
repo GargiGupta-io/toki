@@ -174,10 +174,18 @@ import {
   transitionVoiceHold,
 } from "./voiceHoldController";
 import {
+  clearTokiDebugExport,
   getTokiDebugExportStatus,
   useTokiDebugExport,
   type TokiDebugExportStatus,
 } from "./debugExport";
+import {
+  loadDiagnosticsSettings,
+  normalizeDiagnosticsSettings,
+  saveDiagnosticsSettings,
+  shouldClearDiagnosticsOnChange,
+  type DiagnosticsSettings,
+} from "./diagnosticsSettings";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
@@ -304,6 +312,8 @@ type OverlayCommand =
       gestureContext?: GestureVoiceContext;
     }
   | { type: "set-pointer-explanation-speech-muted"; muted: boolean }
+  | { type: "set-diagnostics-settings"; settings: DiagnosticsSettings }
+  | { type: "clear-diagnostics" }
   | { type: "submit-voice-listening" }
   | { type: "stop-voice-listening" };
 
@@ -2047,6 +2057,8 @@ function OverlayWindowApp() {
     useState<PointerExplanationState | null>(null);
   const [pointerExplanationSpeechMuted, setPointerExplanationSpeechMuted] =
     useState(loadPointerExplanationSpeechMuted);
+  const [diagnosticsSettings, setDiagnosticsSettings] =
+    useState<DiagnosticsSettings>(loadDiagnosticsSettings);
   const [workflowRuntime, setWorkflowRuntime] = useState<WorkflowRuntimeState>(() =>
     createEmptyWorkflowRuntimeState(),
   );
@@ -3020,6 +3032,8 @@ function OverlayWindowApp() {
     snapshot: debugSnapshot,
     transitionState: debugExportTransitionState,
     screenshot: screenshotCapture,
+    diagnosticsEnabled: diagnosticsSettings.diagnosticsEnabled,
+    screenCapturesEnabled: diagnosticsSettings.screenCapturesEnabled,
   });
 
   async function publishRuntimeSnapshots(
@@ -5189,6 +5203,25 @@ function OverlayWindowApp() {
         return;
       }
 
+      if (event.payload.type === "set-diagnostics-settings") {
+        const previous = loadDiagnosticsSettings();
+        const next = saveDiagnosticsSettings(
+          normalizeDiagnosticsSettings(event.payload.settings),
+        );
+        setDiagnosticsSettings(next);
+        // Withdrawing consent has to take the collected files with it,
+        // otherwise "off" only means "stops growing".
+        if (shouldClearDiagnosticsOnChange(previous, next)) {
+          void clearTokiDebugExport().catch(() => undefined);
+        }
+        return;
+      }
+
+      if (event.payload.type === "clear-diagnostics") {
+        void clearTokiDebugExport().catch(() => undefined);
+        return;
+      }
+
       if (event.payload.type === "start-voice-listening") {
         await startVoiceListening(
           event.payload.source,
@@ -5614,6 +5647,8 @@ function DebugWindowApp() {
   const [debugExportStatus, setDebugExportStatus] =
     useState<TokiDebugExportStatus | null>(null);
   const [debugExportError, setDebugExportError] = useState<string | null>(null);
+  const [diagnosticsSettings, setDiagnosticsSettings] =
+    useState<DiagnosticsSettings>(loadDiagnosticsSettings);
   const gestureDiagnostics = snapshot.gestureDiagnostics;
   const cameraDevices = gestureDiagnostics.cameraDevices;
   const cameraProbeStatus = gestureDiagnostics.cameraProbeStatus;
@@ -5762,6 +5797,18 @@ function DebugWindowApp() {
         setVoiceProbeStatus("error");
         setVoiceProbeError(error instanceof Error ? error.message : String(error));
       });
+  }
+
+  function applyDiagnosticsSettings(next: DiagnosticsSettings) {
+    // The overlay owns the export, so it owns the write to storage and the
+    // clearing of any collected files. This window mirrors the value locally
+    // so the checkboxes respond immediately rather than after a round trip.
+    const normalized = normalizeDiagnosticsSettings(next);
+    setDiagnosticsSettings(normalized);
+    emitTo("overlay", "toki://overlay-command", {
+      type: "set-diagnostics-settings",
+      settings: normalized,
+    } satisfies OverlayCommand).catch(() => undefined);
   }
 
   function refreshDebugExportStatus() {
@@ -5943,10 +5990,54 @@ function DebugWindowApp() {
             <h2>Local Diagnostics Export</h2>
             <div className="debug-section-header-row">
               <span>
-                {debugExportStatus?.snapshotExists ? "ready" : "waiting"}
+                {diagnosticsSettings.diagnosticsEnabled
+                  ? debugExportStatus?.snapshotExists
+                    ? "ready"
+                    : "waiting"
+                  : "off"}
               </span>
               <button type="button" onClick={refreshDebugExportStatus}>
                 Refresh
+              </button>
+            </div>
+            <div className="debug-section-header-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={diagnosticsSettings.diagnosticsEnabled}
+                  onChange={(event) =>
+                    applyDiagnosticsSettings({
+                      ...diagnosticsSettings,
+                      diagnosticsEnabled: event.target.checked,
+                    })
+                  }
+                />{" "}
+                Share diagnostics
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={diagnosticsSettings.screenCapturesEnabled}
+                  disabled={!diagnosticsSettings.diagnosticsEnabled}
+                  onChange={(event) =>
+                    applyDiagnosticsSettings({
+                      ...diagnosticsSettings,
+                      screenCapturesEnabled: event.target.checked,
+                    })
+                  }
+                />{" "}
+                Include screen captures
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  emitTo("overlay", "toki://overlay-command", {
+                    type: "clear-diagnostics",
+                  } satisfies OverlayCommand).catch(() => undefined);
+                  window.setTimeout(refreshDebugExportStatus, 250);
+                }}
+              >
+                Clear
               </button>
             </div>
             <dl>
@@ -5975,7 +6066,11 @@ function DebugWindowApp() {
             </dl>
             <p className="debug-muted">
               {debugExportError ??
-                "Machine-readable state is local-only. Binary image and audio payloads are omitted from JSON."}
+                (diagnosticsSettings.diagnosticsEnabled
+                  ? diagnosticsSettings.screenCapturesEnabled
+                    ? "Writing state and screen captures locally. Binary image and audio payloads are omitted from JSON. Turning diagnostics off deletes everything collected."
+                    : "Writing state locally, no screen captures. Binary image and audio payloads are omitted from JSON."
+                  : "Off. Nothing is written to disk, and no diagnostics folder is created.")}
             </p>
           </section>
 

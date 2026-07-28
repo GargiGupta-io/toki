@@ -2057,12 +2057,21 @@ fn set_private_file_permissions(path: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-fn toki_debug_export_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let directory = app
+/// Where diagnostics would live, without bringing it into existence.
+///
+/// Asking whether diagnostics exist must not be what creates them. Only an
+/// actual write should, so that a user who never enables diagnostics never
+/// acquires the folder at all.
+fn toki_debug_export_directory_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app
         .path()
         .app_data_dir()
         .map_err(|error| format!("failed to resolve Toki app data: {error}"))?
-        .join("diagnostics");
+        .join("diagnostics"))
+}
+
+fn toki_debug_export_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let directory = toki_debug_export_directory_path(app)?;
     fs::create_dir_all(&directory)
         .map_err(|error| format!("failed to create Toki diagnostics directory: {error}"))?;
     set_private_directory_permissions(&directory)?;
@@ -2150,7 +2159,7 @@ fn file_modified_ms(path: &std::path::Path) -> Option<u128> {
 }
 
 fn build_toki_debug_export_status(app: &tauri::AppHandle) -> Result<TokiDebugExportStatus, String> {
-    let directory = toki_debug_export_directory(app)?;
+    let directory = toki_debug_export_directory_path(app)?;
     let snapshot_path = directory.join("latest.json");
     let history_path = directory.join("history.ndjson");
     let capture_path = toki_debug_capture_path(&directory);
@@ -2168,6 +2177,24 @@ fn build_toki_debug_export_status(app: &tauri::AppHandle) -> Result<TokiDebugExp
 
 #[tauri::command]
 fn toki_debug_export_status(app: tauri::AppHandle) -> Result<TokiDebugExportStatus, String> {
+    build_toki_debug_export_status(&app)
+}
+
+/// Delete everything diagnostics has collected.
+///
+/// Switching diagnostics off withdraws consent, and files gathered under the
+/// old setting should not outlive it. Removing a directory that is already
+/// absent is success, not an error, so turning the setting off when it was
+/// never on is silent rather than noisy.
+#[tauri::command]
+fn clear_toki_debug_export(app: tauri::AppHandle) -> Result<TokiDebugExportStatus, String> {
+    let directory = toki_debug_export_directory_path(&app)?;
+
+    if directory.exists() {
+        fs::remove_dir_all(&directory)
+            .map_err(|error| format!("failed to clear Toki diagnostics: {error}"))?;
+    }
+
     build_toki_debug_export_status(&app)
 }
 
@@ -3264,6 +3291,7 @@ pub fn run() {
             set_overlay_surface_mode,
             set_top_utility_mode,
             toki_debug_export_status,
+            clear_toki_debug_export,
             transcribe_voice_capture,
             write_toki_debug_export
         ])

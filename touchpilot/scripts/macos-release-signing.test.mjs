@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(scriptsDirectory, "..");
 const signingScriptPath = path.join(scriptsDirectory, "macos-sign-app.sh");
+const packageScriptPath = path.join(scriptsDirectory, "macos-package-dmg.sh");
+const notarizeScriptPath = path.join(scriptsDirectory, "macos-notarize-dmg.sh");
 const entitlementsPath = path.join(
   workspaceRoot,
   "apps",
@@ -147,6 +149,47 @@ test("release verification rejects the failures codesign --verify cannot see", (
     /is_release_identity/u,
     "verify_signed_app must apply the release checks on the Developer ID path",
   );
+});
+
+test("packaging refuses to wrap an app that is not properly signed", () => {
+  const script = readFileSync(packageScriptPath, "utf8");
+
+  // A disk image built around an unsigned app looks perfectly fine locally and
+  // is rejected minutes later by Apple. Failing here costs seconds instead.
+  assert.match(script, /codesign --verify --deep --strict "\$BUILT_APP"/u);
+  assert.match(script, /Authority=\$SIGNING_IDENTITY/u);
+  assert.match(
+    script,
+    /is_release_identity && \[\[ "\$signing_metadata" != \*"\(runtime\)"\*/u,
+    "a release image must not be built around an app lacking the hardened runtime",
+  );
+});
+
+test("packaging signs the disk image itself and preserves the bundle", () => {
+  const script = stripComments(readFileSync(packageScriptPath, "utf8"));
+
+  // Gatekeeper checks the image the user downloaded, not only the app inside.
+  assert.match(script, /codesign "\$\{dmg_flags\[@\]\}" "\$DMG_PATH"/u);
+  assert.match(script, /codesign --verify --strict "\$DMG_PATH"/u);
+
+  // A signature does not survive a naive copy; ditto preserves the extended
+  // attributes and symlinks a signed bundle depends on.
+  assert.match(script, /ditto "\$BUILT_APP" "\$stage_dir\/\$APP_NAME"/u);
+  assert.doesNotMatch(script, /cp -r "\$BUILT_APP"/u);
+  assert.match(script, /ln -s \/Applications/u, "drag-to-install target");
+});
+
+test("notarization refuses a self-signed build and staples what it submits", () => {
+  const script = readFileSync(notarizeScriptPath, "utf8");
+
+  assert.match(script, /!= "Developer ID Application:"\*/u);
+  // --wait turns a rejection into a non-zero exit rather than a queued job
+  // that silently never completes.
+  assert.match(script, /notarytool submit[\s\S]*--wait/u);
+  assert.match(script, /stapler staple/u);
+  assert.match(script, /stapler validate/u);
+  // Stapling succeeding is not the same as Gatekeeper accepting the result.
+  assert.match(script, /spctl --assess --type open/u);
 });
 
 test("the script and the entitlements file agree on the claimed capabilities", () => {

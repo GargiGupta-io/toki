@@ -8,6 +8,8 @@
     "packages/*"
   ],
   "scripts": {
+    "test": "node --import tsx --test scripts/*.test.mjs",
+    "verify": "npm run check && npm test",
     "build": "npm run desktop:build",
     "check": "npm run typecheck && npm run rust:check",
     "check:fast": "npm run desktop:typecheck && npm run rust:check",
@@ -58,6 +60,8 @@
     "test:gesture-diagnostics": "node --import tsx --test scripts/gesture-diagnostics.test.mjs",
     "test:gesture-intent-arbiter": "node --import tsx --test scripts/gesture-intent-arbiter.test.mjs",
     "test:debug-export": "node --import tsx --test scripts/debug-export.test.mjs",
+    "test:diagnostics-settings": "node --import tsx --test scripts/diagnostics-settings.test.mjs",
+    "test:version-consistency": "node --test scripts/version-consistency.test.mjs",
     "test:performance-budget": "node --test scripts/performance-budget.test.mjs",
     "toki:debug": "node scripts/read-toki-debug.mjs",
     "toki:footprint": "node scripts/runtime-footprint.mjs",
@@ -70,6 +74,8 @@
     "desktop:release:mac": "npm --workspace @toki/desktop run tauri -- build --bundles app && npm run desktop:sign:mac",
     "desktop:sign:mac": "bash scripts/macos-sign-app.sh",
     "desktop:install:mac": "bash scripts/macos-sign-app.sh --install",
+    "desktop:package:mac": "bash scripts/macos-package-dmg.sh",
+    "desktop:notarize:mac": "bash scripts/macos-notarize-dmg.sh",
     "desktop:build:windows": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-tauri-build.ps1",
     "desktop:release:windows:exe": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-tauri-build.ps1 -NoBundle",
     "desktop:release:exe": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-tauri-build.ps1 -NoBundle",

@@ -99,14 +99,22 @@ export function getTokiDebugExportStatus(): Promise<TokiDebugExportStatus> {
   return invoke<TokiDebugExportStatus>("toki_debug_export_status");
 }
 
+export function clearTokiDebugExport(): Promise<void> {
+  return invoke<void>("clear_toki_debug_export");
+}
+
 export function useTokiDebugExport({
   snapshot,
   transitionState,
   screenshot,
+  diagnosticsEnabled,
+  screenCapturesEnabled,
 }: {
   snapshot: unknown;
   transitionState: unknown;
   screenshot: ScreenshotCapture | null;
+  diagnosticsEnabled: boolean;
+  screenCapturesEnabled: boolean;
 }) {
   const sequenceRef = useRef(0);
   const lastTransitionSignatureRef = useRef<string | null>(null);
@@ -117,10 +125,16 @@ export function useTokiDebugExport({
   const writeInFlightRef = useRef(false);
   const lastWriteAtRef = useRef(0);
   const mountedRef = useRef(true);
+  // A write can already be scheduled when consent is withdrawn. flush() runs
+  // from a timer rather than from the effect, so it needs its own view of the
+  // current setting instead of the value captured when it was scheduled.
+  const diagnosticsEnabledRef = useRef(diagnosticsEnabled);
+  diagnosticsEnabledRef.current = diagnosticsEnabled;
 
   async function flush() {
     if (
       !mountedRef.current ||
+      !diagnosticsEnabledRef.current ||
       writeInFlightRef.current ||
       pendingRef.current == null
     ) {
@@ -191,6 +205,21 @@ export function useTokiDebugExport({
   }, []);
 
   useEffect(() => {
+    // Nothing is queued and nothing already queued survives. Without dropping
+    // the pending payload here, whatever was captured before consent was
+    // withdrawn would still be sitting in memory waiting to be written the
+    // moment diagnostics were switched back on.
+    if (!diagnosticsEnabled) {
+      pendingRef.current = null;
+      pendingHistoryRef.current = [];
+      lastTransitionSignatureRef.current = null;
+      lastCaptureSignatureRef.current = null;
+      if (timerRef.current != null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
 
     const sequence = sequenceRef.current + 1;
     sequenceRef.current = sequence;
@@ -209,11 +238,14 @@ export function useTokiDebugExport({
       );
     }
 
-    const captureSignature = screenshot
-      ? `${screenshot.format}:${screenshot.capturedAt}:${screenshot.byteLength}`
-      : null;
+    const captureSignature =
+      screenCapturesEnabled && screenshot
+        ? `${screenshot.format}:${screenshot.capturedAt}:${screenshot.byteLength}`
+        : null;
     const capture =
-      screenshot != null && captureSignature !== lastCaptureSignatureRef.current
+      screenCapturesEnabled &&
+      screenshot != null &&
+      captureSignature !== lastCaptureSignatureRef.current
         ? {
             format: screenshot.format,
             imageBase64: screenshot.imageBase64,
@@ -238,7 +270,12 @@ export function useTokiDebugExport({
         ...(previousPending?.historyEntries ?? []),
         ...pendingHistoryRef.current,
       ].slice(-MAX_PENDING_HISTORY_ENTRIES),
-      capture: capture ?? previousPending?.capture ?? null,
+      // Carrying a previously queued image forward would let a screenshot
+      // taken while captures were enabled land on disk after they were turned
+      // off, so the switch discards it rather than merely stopping new ones.
+      capture: screenCapturesEnabled
+        ? (capture ?? previousPending?.capture ?? null)
+        : null,
     };
     pendingHistoryRef.current = [];
 
@@ -253,5 +290,11 @@ export function useTokiDebugExport({
       }, remaining);
     }
 
-  }, [screenshot, snapshot, transitionState]);
+  }, [
+    diagnosticsEnabled,
+    screenCapturesEnabled,
+    screenshot,
+    snapshot,
+    transitionState,
+  ]);
 }
