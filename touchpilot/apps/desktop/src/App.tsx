@@ -194,6 +194,14 @@ import {
   unknownOpenAiKeyStatus,
   type OpenAiKeyStatus,
 } from "./openAiKey";
+import {
+  checkForUpdate,
+  describeUpdateState,
+  downloadAndInstallUpdate,
+  initialUpdateCheckState,
+  restartToFinishUpdate,
+  type UpdateCheckState,
+} from "./appUpdates";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
@@ -7874,12 +7882,37 @@ function PreferencesWindowApp() {
   const [keyBusy, setKeyBusy] = useState(false);
   const [diagnosticsSettings, setDiagnosticsSettings] =
     useState<DiagnosticsSettings>(loadDiagnosticsSettings);
+  const [updateState, setUpdateState] = useState<UpdateCheckState>(
+    initialUpdateCheckState,
+  );
+  const pendingUpdateRef = useRef<Awaited<
+    ReturnType<typeof import("@tauri-apps/plugin-updater").check>
+  > | null>(null);
 
   useEffect(() => {
     getOpenAiKeyStatus()
       .then(setKeyStatus)
       .catch(() => setKeyStatus(unknownOpenAiKeyStatus));
   }, []);
+
+  async function runUpdateCheck() {
+    setUpdateState({ status: "checking" });
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const next = await checkForUpdate(async () => {
+      const update = await check();
+      pendingUpdateRef.current = update;
+      return update;
+    });
+    setUpdateState(next);
+  }
+
+  async function installPendingUpdate() {
+    const update = pendingUpdateRef.current;
+    if (update == null) {
+      return;
+    }
+    setUpdateState(await downloadAndInstallUpdate(update, setUpdateState));
+  }
 
   async function saveKey() {
     setKeyBusy(true);
@@ -7919,6 +7952,36 @@ function PreferencesWindowApp() {
 
   return (
     <main className="debug-shell" aria-label="Toki preferences">
+      <section className="debug-section">
+        <h2>Updates</h2>
+        <p className="debug-muted">
+          {describeUpdateState(updateState) ||
+            "Toki checks for updates when you ask it to."}
+        </p>
+        <div className="debug-section-header-row">
+          <button
+            type="button"
+            disabled={
+              updateState.status === "checking" ||
+              updateState.status === "downloading"
+            }
+            onClick={() => void runUpdateCheck()}
+          >
+            Check for updates
+          </button>
+          {updateState.status === "available" && (
+            <button type="button" onClick={() => void installPendingUpdate()}>
+              Install version {updateState.version}
+            </button>
+          )}
+          {updateState.status === "ready" && (
+            <button type="button" onClick={() => void restartToFinishUpdate()}>
+              Restart now
+            </button>
+          )}
+        </div>
+      </section>
+
       <section className="debug-section">
         <h2>Voice</h2>
         <p className="debug-muted">{describeOpenAiKeyStatus(keyStatus)}</p>

@@ -11,5 +11,15 @@ dist/
 .env.*
 !.env.example
 
+# Signing key material. The updater private key can sign anything the app will
+# install, and the Developer ID private key can sign anything as Toki. Neither
+# belongs in a repository, least of all a public one. These live outside the
+# repo; this is the second line of defence, and scripts/app-updates.test.mjs is
+# the third.
+*.key
+*.pem
+*.p12
+!*.key.pub
+
 .DS_Store
 Thumbs.db

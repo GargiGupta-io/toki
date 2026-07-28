@@ -3319,6 +3319,11 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // The updater fetches and verifies in Rust, not the webview, so the
+        // content security policy does not apply to it and github.com does not
+        // need to be allowed in connect-src.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(Mutex::new(VoiceCaptureStore::default()))
         .manage(native_click_monitor_state.clone())
         .setup(|app| {
