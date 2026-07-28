@@ -4,6 +4,8 @@
 <dict>
   <key>LSUIElement</key>
   <true/>
+  <key>NSCameraUsageDescription</key>
+  <string>Toki uses the camera only when you enable gestures to track hand movement locally. Toki does not record or store camera frames.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Toki uses the microphone only while push-to-talk is held to understand your guidance request.</string>
   <key>NSScreenCaptureUsageDescription</key>

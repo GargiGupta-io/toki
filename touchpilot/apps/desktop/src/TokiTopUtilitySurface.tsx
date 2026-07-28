@@ -1,5 +1,9 @@
 import { useState } from "react";
 import type {
+  CameraPermissionState,
+  CameraStreamStatus,
+} from "@toki/shared";
+import type {
   TokiTopStatusModel,
   TopUtilityMode,
 } from "./topUtility";
@@ -16,11 +20,16 @@ export function TokiTopUtilitySurface({
   voiceLabel,
   voiceMessage,
   pointerExplanationSpeechMuted,
+  cameraGesturesEnabled,
+  cameraStatus,
+  cameraPermission,
+  cameraError,
   idleStatusText,
   onVoicePressStart,
   onVoicePressEnd,
   onRefreshCapture,
   onPauseToggle,
+  onCameraGesturesToggle,
   onPointerExplanationSpeechMuteToggle,
   onRevealTarget,
   onStartDrag,
@@ -34,11 +43,16 @@ export function TokiTopUtilitySurface({
   voiceLabel: string;
   voiceMessage: string;
   pointerExplanationSpeechMuted: boolean;
+  cameraGesturesEnabled: boolean;
+  cameraStatus: CameraStreamStatus;
+  cameraPermission: CameraPermissionState;
+  cameraError: string | null;
   idleStatusText: string;
   onVoicePressStart: () => void;
   onVoicePressEnd: () => void;
   onRefreshCapture: () => void;
   onPauseToggle: () => void;
+  onCameraGesturesToggle: () => void;
   onPointerExplanationSpeechMuteToggle: () => void;
   onRevealTarget: () => void;
   onStartDrag: () => void;
@@ -53,6 +67,12 @@ export function TokiTopUtilitySurface({
       label: isPaused ? "Toki paused" : "Toki",
       message: idleStatusText,
     } satisfies TokiTopStatusModel);
+  const cameraControlMessage = getCameraControlMessage({
+    enabled: cameraGesturesEnabled,
+    status: cameraStatus,
+    permission: cameraPermission,
+    error: cameraError,
+  });
 
   return (
     <section
@@ -75,24 +95,28 @@ export function TokiTopUtilitySurface({
           }
         }}
       >
-        <span className="toki-top-utility__signal" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-          <i />
+        <span className="toki-top-utility__identity" aria-hidden="true">
+          <span className="toki-top-utility__signal">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
         </span>
         <span className="toki-top-utility__status-copy" aria-live="polite">
           <strong>{visibleStatus.label}</strong>
-          <small>{visibleStatus.message}</small>
+          <small><span>Toki</span> · {visibleStatus.message}</small>
         </span>
-        {expanded && (
-          <span className="toki-top-utility__window-actions">
-            <span>{isPaused ? "Paused" : "Active"}</span>
+        <span className="toki-top-utility__window-actions">
+            <span className="toki-top-utility__activity" data-paused={isPaused}>
+              {isPaused ? "Paused" : "Active"}
+            </span>
+          {expanded && (
             <button type="button" onClick={onClose} aria-label="Close Toki controls">
               &times;
             </button>
-          </span>
-        )}
+          )}
+        </span>
       </header>
 
       {expanded && visibleStatus.mode === "confirming" ? (
@@ -189,9 +213,24 @@ export function TokiTopUtilitySurface({
             </div>
           ) : (
             <div className="toki-top-utility__tab-panel" role="tabpanel">
-              <p className="toki-top-utility__hint">
-                Screen context and assistant state.
-              </p>
+              <button
+                className="toki-top-utility__camera-toggle"
+                type="button"
+                aria-pressed={cameraGesturesEnabled}
+                data-state={cameraStatus}
+                onClick={onCameraGesturesToggle}
+              >
+                <span className="toki-top-utility__camera-indicator" aria-hidden="true" />
+                <span>
+                  <strong>
+                    {getCameraControlLabel({
+                      enabled: cameraGesturesEnabled,
+                      status: cameraStatus,
+                    })}
+                  </strong>
+                  <small>{cameraControlMessage}</small>
+                </span>
+              </button>
               <div className="toki-top-utility__commands">
                 <button type="button" onClick={onRefreshCapture} disabled={isBusy}>
                   {isBusy ? "Updating..." : "Update screen"}
@@ -206,4 +245,68 @@ export function TokiTopUtilitySurface({
       ) : null}
     </section>
   );
+}
+
+function getCameraControlMessage({
+  enabled,
+  status,
+  permission,
+  error,
+}: {
+  enabled: boolean;
+  status: CameraStreamStatus;
+  permission: CameraPermissionState;
+  error: string | null;
+}): string {
+  if (!enabled || status === "disabled") {
+    return "Camera is off. No hand frames are processed.";
+  }
+
+  if (status === "requesting_permission" || permission === "prompt") {
+    return "Approve the macOS camera prompt to continue.";
+  }
+
+  if (status === "permission_denied" || permission === "denied") {
+    return "Camera access is blocked in macOS System Settings.";
+  }
+
+  if (status === "no_camera") {
+    return "No available camera was found.";
+  }
+
+  if (status === "error") {
+    return error ?? "Camera + gestures could not start.";
+  }
+
+  if (status === "active") {
+    return "On-device tracking active. Hold two fists for 2s to turn off.";
+  }
+
+  return "Preparing local hand tracking…";
+}
+
+function getCameraControlLabel({
+  enabled,
+  status,
+}: {
+  enabled: boolean;
+  status: CameraStreamStatus;
+}): string {
+  if (!enabled || status === "disabled") {
+    return "Turn camera + gestures on";
+  }
+
+  if (status === "idle" || status === "requesting_permission") {
+    return "Starting camera + gestures";
+  }
+
+  if (
+    status === "permission_denied" ||
+    status === "no_camera" ||
+    status === "error"
+  ) {
+    return "Camera + gestures need attention";
+  }
+
+  return "Camera + gestures on";
 }

@@ -7,9 +7,19 @@ import {
   advanceGesturePointerTracking,
   classifyPointPose,
   defaultGesturePointerCalibration,
+  isPointPoseContinuation,
   mapCameraPointToDisplay,
+  pointerVisualRecoveryGraceMs,
   resetGesturePointerTracking,
 } from "../apps/desktop/src/gesturePointing.ts";
+import {
+  clampPuckCenterToViewport,
+  cursorPointerSeparation,
+  gesturePointerSeparation,
+  getDetachedGesturePointerShadowPosition,
+  getPointerShadowPosition,
+  pointerShadowGeometry,
+} from "../apps/desktop/src/overlayGeometry.ts";
 
 const display = {
   id: "test-display",
@@ -62,6 +72,94 @@ test("open palm, pinch, neutral, and low-confidence hands do not point", () => {
   );
 });
 
+test("point continuation tolerates a softened same-hand pose without weakening entry", () => {
+  const strict = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", frameId: 1 }),
+    0.6,
+  );
+  const softened = {
+    ...strict,
+    label: "none",
+    phase: "inactive",
+    confidence: 0,
+    sourceFrameId: 2,
+    indexExtensionRatio: 1.5,
+    indexPipAngle: 140,
+    indexDipAngle: 135,
+    foldedFingerCount: 2,
+  };
+  const calibration = {
+    ...defaultGesturePointerCalibration,
+    pointHoldMs: 140,
+  };
+  const started = advanceGesturePointerTracking({
+    previousState: resetGesturePointerTracking(),
+    classification: strict,
+    display,
+    nowMs: 1_000,
+    calibration,
+  });
+  const continued = advanceGesturePointerTracking({
+    previousState: started.state,
+    classification: softened,
+    display,
+    nowMs: 1_140,
+    calibration,
+  });
+
+  assert.equal(strict.label, "point");
+  assert.equal(isPointPoseContinuation(softened), true);
+  assert.equal(continued.pointer?.phase, "active");
+  assert.equal(continued.pointer?.handTrackId, strict.handTrackId);
+});
+
+test("point continuation rejects a relaxed pose from another hand or an open palm", () => {
+  const strict = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", trackId: "pointer-hand" }),
+    0.6,
+  );
+  const started = advanceGesturePointerTracking({
+    previousState: resetGesturePointerTracking(),
+    classification: strict,
+    display,
+    nowMs: 1_000,
+    calibration: {
+      ...defaultGesturePointerCalibration,
+      pointHoldMs: 0,
+    },
+  });
+  const otherHand = {
+    ...strict,
+    label: "none",
+    phase: "inactive",
+    handTrackId: "other-hand",
+    sourceFrameId: 2,
+    indexExtensionRatio: 1.5,
+    indexPipAngle: 140,
+    indexDipAngle: 135,
+    foldedFingerCount: 2,
+  };
+  const openPalm = classifyPointPose(
+    createSyntheticTrackedHand({
+      pose: "open_palm",
+      trackId: "pointer-hand",
+      frameId: 3,
+    }),
+    0.6,
+  );
+
+  assert.equal(
+    advanceGesturePointerTracking({
+      previousState: started.state,
+      classification: otherHand,
+      display,
+      nowMs: 1_050,
+    }).pointer?.phase,
+    "recovering",
+  );
+  assert.equal(isPointPoseContinuation(openPalm), false);
+});
+
 test("personal camera range maps to the full active display and mirrors x", () => {
   const calibration = {
     ...defaultGesturePointerCalibration,
@@ -87,6 +185,23 @@ test("personal camera range maps to the full active display and mirrors x", () =
   assert.deepEqual(lowerLeft.normalized, { x: 0, y: 1 });
   assert.equal(lowerLeft.display.x, 0);
   assert.equal(lowerLeft.display.y, display.height - 1);
+});
+
+test("default mapping is one-to-one across the complete camera frame", () => {
+  const mapped = mapCameraPointToDisplay({ x: 0.25, y: 0.4 }, display);
+
+  assert.deepEqual(mapped.normalized, { x: 0.75, y: 0.4 });
+  assert.equal(mapped.display.x, 0.75 * (display.width - 1));
+  assert.equal(mapped.display.y, 0.4 * (display.height - 1));
+  assert.deepEqual(
+    {
+      minX: defaultGesturePointerCalibration.cameraMinX,
+      maxX: defaultGesturePointerCalibration.cameraMaxX,
+      minY: defaultGesturePointerCalibration.cameraMinY,
+      maxY: defaultGesturePointerCalibration.cameraMaxY,
+    },
+    { minX: 0, maxX: 1, minY: 0, maxY: 1 },
+  );
 });
 
 test("mapping clamps out-of-range movement inside the display", () => {
@@ -131,12 +246,10 @@ test("pointing waits for a stable hold before producing a screen pointer", () =>
   assert.equal(active.pointer?.display.displayId, display.id);
 });
 
-test("dead-zone and smoothing suppress jitter without blocking real movement", () => {
+test("adaptive timing attenuates resting jitter without freezing the pointer", () => {
   const calibration = {
     ...defaultGesturePointerCalibration,
     pointHoldMs: 0,
-    smoothingAlpha: 0.5,
-    deadZone: 0.01,
   };
   const firstPose = classifyPointPose(
     createSyntheticTrackedHand({ pose: "point", frameId: 1, centerX: 0.5 }),
@@ -150,16 +263,21 @@ test("dead-zone and smoothing suppress jitter without blocking real movement", (
     calibration,
   });
   const tinyMovePose = classifyPointPose(
-    createSyntheticTrackedHand({ pose: "point", frameId: 2, centerX: 0.501 }),
+    createSyntheticTrackedHand({ pose: "point", frameId: 2, centerX: 0.502 }),
     0.6,
   );
   const tinyMove = advanceGesturePointerTracking({
     previousState: first.state,
     classification: tinyMovePose,
     display,
-    nowMs: 1_067,
+    nowMs: 1_042,
     calibration,
   });
+  const rawTinyMove = mapCameraPointToDisplay(
+    tinyMovePose.pointerTip,
+    display,
+    calibration,
+  );
   const largeMovePose = classifyPointPose(
     createSyntheticTrackedHand({ pose: "point", frameId: 3, centerX: 0.7 }),
     0.6,
@@ -168,11 +286,21 @@ test("dead-zone and smoothing suppress jitter without blocking real movement", (
     previousState: tinyMove.state,
     classification: largeMovePose,
     display,
-    nowMs: 1_134,
+    nowMs: 1_084,
     calibration,
   });
 
-  assert.deepEqual(tinyMove.pointer?.normalized, first.pointer?.normalized);
+  const rawJitterDistance = Math.hypot(
+    rawTinyMove.normalized.x - first.pointer.normalized.x,
+    rawTinyMove.normalized.y - first.pointer.normalized.y,
+  );
+  const filteredJitterDistance = Math.hypot(
+    tinyMove.pointer.normalized.x - first.pointer.normalized.x,
+    tinyMove.pointer.normalized.y - first.pointer.normalized.y,
+  );
+
+  assert.ok(filteredJitterDistance > 0);
+  assert.ok(filteredJitterDistance < rawJitterDistance * 0.5);
   assert.notDeepEqual(largeMove.pointer?.normalized, first.pointer?.normalized);
   assert.notDeepEqual(
     largeMove.pointer?.normalized,
@@ -180,7 +308,328 @@ test("dead-zone and smoothing suppress jitter without blocking real movement", (
   );
 });
 
-test("brief tracking loss preserves the point for two seconds and then clears it", () => {
+test("default smoothing catches up quickly on deliberate movement", () => {
+  const calibration = {
+    ...defaultGesturePointerCalibration,
+    pointHoldMs: 0,
+  };
+  const firstPose = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", frameId: 1, centerX: 0.5 }),
+    0.6,
+  );
+  const first = advanceGesturePointerTracking({
+    previousState: resetGesturePointerTracking(),
+    classification: firstPose,
+    display,
+    nowMs: 1_000,
+    calibration,
+  });
+  const movedPose = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", frameId: 2, centerX: 0.7 }),
+    0.6,
+  );
+  const moved = advanceGesturePointerTracking({
+    previousState: first.state,
+    classification: movedPose,
+    display,
+    nowMs: 1_042,
+    calibration,
+  });
+  const rawMoved = mapCameraPointToDisplay(
+    movedPose.pointerTip,
+    display,
+    calibration,
+  );
+  const fullDelta = Math.abs(
+    rawMoved.normalized.x - first.pointer.normalized.x,
+  );
+  const followedDelta = Math.abs(
+    moved.pointer.normalized.x - first.pointer.normalized.x,
+  );
+
+  assert.ok(followedDelta / fullDelta >= 0.8);
+});
+
+test("adaptive pointer response is stable across inference frame rates", () => {
+  const calibration = {
+    ...defaultGesturePointerCalibration,
+    pointHoldMs: 0,
+  };
+  const runStepResponse = (framesPerSecond) => {
+    let state = resetGesturePointerTracking();
+    const initialPose = classifyPointPose(
+      createSyntheticTrackedHand({
+        pose: "point",
+        frameId: 1,
+        centerX: 0.5,
+      }),
+      0.6,
+    );
+    let result = advanceGesturePointerTracking({
+      previousState: state,
+      classification: initialPose,
+      display,
+      nowMs: 0,
+      calibration,
+    });
+    state = result.state;
+    const movedPose = classifyPointPose(
+      createSyntheticTrackedHand({
+        pose: "point",
+        frameId: 2,
+        centerX: 0.7,
+      }),
+      0.6,
+    );
+    const intervalMs = 1_000 / framesPerSecond;
+    const durationMs = 250;
+
+    for (let nowMs = intervalMs; nowMs < durationMs; nowMs += intervalMs) {
+      result = advanceGesturePointerTracking({
+        previousState: state,
+        classification: movedPose,
+        display,
+        nowMs,
+        calibration,
+      });
+      state = result.state;
+    }
+
+    return advanceGesturePointerTracking({
+      previousState: state,
+      classification: movedPose,
+      display,
+      nowMs: durationMs,
+      calibration,
+    }).pointer.normalized;
+  };
+
+  const at24Fps = runStepResponse(24);
+  const at60Fps = runStepResponse(60);
+
+  assert.ok(Math.abs(at24Fps.x - at60Fps.x) < 0.005);
+  assert.ok(Math.abs(at24Fps.y - at60Fps.y) < 0.005);
+});
+
+test("adaptive filtering never overshoots and resets after a long frame gap", () => {
+  const calibration = {
+    ...defaultGesturePointerCalibration,
+    pointHoldMs: 0,
+  };
+  const initialPose = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", frameId: 1, centerX: 0.5 }),
+    0.6,
+  );
+  const initial = advanceGesturePointerTracking({
+    previousState: resetGesturePointerTracking(),
+    classification: initialPose,
+    display,
+    nowMs: 1_000,
+    calibration,
+  });
+  const movedPose = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", frameId: 2, centerX: 0.7 }),
+    0.6,
+  );
+  const rawMoved = mapCameraPointToDisplay(
+    movedPose.pointerTip,
+    display,
+    calibration,
+  );
+  const moved = advanceGesturePointerTracking({
+    previousState: initial.state,
+    classification: movedPose,
+    display,
+    nowMs: 1_042,
+    calibration,
+  });
+  const lowerX = Math.min(initial.pointer.normalized.x, rawMoved.normalized.x);
+  const upperX = Math.max(initial.pointer.normalized.x, rawMoved.normalized.x);
+
+  assert.ok(moved.pointer.normalized.x >= lowerX);
+  assert.ok(moved.pointer.normalized.x <= upperX);
+
+  const afterGapPose = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", frameId: 3, centerX: 0.3 }),
+    0.6,
+  );
+  const afterGapRaw = mapCameraPointToDisplay(
+    afterGapPose.pointerTip,
+    display,
+    calibration,
+  );
+  const afterGap = advanceGesturePointerTracking({
+    previousState: moved.state,
+    classification: afterGapPose,
+    display,
+    nowMs: 1_042 + calibration.filterResetAfterMs,
+    calibration,
+  });
+
+  assert.deepEqual(afterGap.pointer.normalized, afterGapRaw.normalized);
+});
+
+test("cursor blob keeps a visible right-side gap without jumping at screen edges", () => {
+  const viewport = {
+    width: 1_000,
+    height: 800,
+    devicePixelRatio: 2,
+    updatedAt: "2026-07-20T00:00:00.000Z",
+  };
+  const puckRadius = 24;
+  const renderedCenter = (x, y) => {
+    const shadow = getPointerShadowPosition(x, y, viewport);
+
+    return {
+      x: clampPuckCenterToViewport(
+        shadow.x + pointerShadowGeometry.width / 2,
+        puckRadius,
+        viewport.width,
+      ),
+      y: clampPuckCenterToViewport(
+        shadow.y + pointerShadowGeometry.height / 2,
+        puckRadius,
+        viewport.height,
+      ),
+    };
+  };
+  const openPointer = { x: 500, y: 400 };
+  const openCenter = renderedCenter(openPointer.x, openPointer.y);
+  const openDistance = Math.hypot(
+    cursorPointerSeparation.horizontal,
+    cursorPointerSeparation.vertical,
+  );
+
+  assert.deepEqual(openCenter, {
+    x: openPointer.x + cursorPointerSeparation.horizontal,
+    y: openPointer.y + cursorPointerSeparation.vertical,
+  });
+  assert.equal(
+    Math.hypot(
+      openCenter.x - openPointer.x,
+      openCenter.y - openPointer.y,
+    ),
+    openDistance,
+  );
+
+  for (const pointer of [
+    { x: 0, y: 400 },
+    { x: viewport.width, y: 400 },
+    { x: 500, y: 0 },
+    { x: 500, y: viewport.height },
+    { x: viewport.width, y: 0 },
+  ]) {
+    const center = renderedCenter(pointer.x, pointer.y);
+    const edgeDistance = Math.hypot(
+      center.x - pointer.x,
+      center.y - pointer.y,
+    );
+
+    assert.ok(edgeDistance <= openDistance + Number.EPSILON * 100);
+    assert.ok(center.x >= puckRadius);
+    assert.ok(center.x <= viewport.width - puckRadius);
+    assert.ok(center.y >= puckRadius);
+    assert.ok(center.y <= viewport.height - puckRadius);
+  }
+
+  const nearRight = renderedCenter(viewport.width - 1, 400);
+  const atRight = renderedCenter(viewport.width, 400);
+  assert.ok(Math.abs(atRight.x - nearRight.x) <= 1);
+  assert.ok(Math.abs(atRight.y - nearRight.y) <= 1);
+});
+
+test("gesture blob keeps open-space separation and compresses naturally at screen edges", () => {
+  const viewport = {
+    width: 1_000,
+    height: 800,
+    devicePixelRatio: 2,
+    updatedAt: "2026-07-18T00:00:00.000Z",
+  };
+  const detached = getDetachedGesturePointerShadowPosition(500, 400, viewport);
+  const detachedCenter = {
+    x: detached.x + pointerShadowGeometry.width / 2,
+    y: detached.y + pointerShadowGeometry.height / 2,
+  };
+  const puckRadius = 34;
+  const openSpaceDistance = Math.hypot(
+    gesturePointerSeparation.horizontal,
+    gesturePointerSeparation.vertical,
+  );
+  const edgePointers = [
+    { x: 0, y: viewport.height / 2, edge: "left", expected: puckRadius },
+    {
+      x: viewport.width,
+      y: viewport.height / 2,
+      edge: "right",
+      expected: viewport.width - puckRadius,
+    },
+    { x: viewport.width / 2, y: 0, edge: "top", expected: puckRadius },
+    {
+      x: viewport.width / 2,
+      y: viewport.height,
+      edge: "bottom",
+      expected: viewport.height - puckRadius,
+    },
+  ];
+
+  assert.equal(detachedCenter.x - 500, gesturePointerSeparation.horizontal);
+  assert.equal(400 - detachedCenter.y, gesturePointerSeparation.vertical);
+  assert.equal(
+    Math.hypot(detachedCenter.x - 500, detachedCenter.y - 400),
+    openSpaceDistance,
+  );
+
+  for (const edgePointer of edgePointers) {
+    const shadow = getDetachedGesturePointerShadowPosition(
+      edgePointer.x,
+      edgePointer.y,
+      viewport,
+    );
+    const rawCenterX = shadow.x + pointerShadowGeometry.width / 2;
+    const rawCenterY = shadow.y + pointerShadowGeometry.height / 2;
+    const centerX = clampPuckCenterToViewport(
+      rawCenterX,
+      puckRadius,
+      viewport.width,
+    );
+    const centerY = clampPuckCenterToViewport(
+      rawCenterY,
+      puckRadius,
+      viewport.height,
+    );
+    const edgeCoordinate =
+      edgePointer.edge === "left" || edgePointer.edge === "right"
+        ? centerX
+        : centerY;
+    assert.equal(edgeCoordinate, edgePointer.expected);
+    const edgeDistance = Math.hypot(
+      centerX - edgePointer.x,
+      centerY - edgePointer.y,
+    );
+    assert.ok(edgeDistance >= 45);
+    assert.ok(edgeDistance < openSpaceDistance);
+  }
+
+
+  const corner = getDetachedGesturePointerShadowPosition(0, 0, viewport);
+  const cornerCenter = {
+    x: clampPuckCenterToViewport(
+      corner.x + pointerShadowGeometry.width / 2,
+      puckRadius,
+      viewport.width,
+    ),
+    y: clampPuckCenterToViewport(
+      corner.y + pointerShadowGeometry.height / 2,
+      puckRadius,
+      viewport.height,
+    ),
+  };
+  const cornerDistance = Math.hypot(cornerCenter.x, cornerCenter.y);
+  assert.equal(cornerDistance, Math.hypot(puckRadius, puckRadius));
+  assert.ok(cornerDistance < openSpaceDistance);
+});
+
+test("brief loss keeps internal recovery for two seconds without freezing the visible pointer", () => {
   const calibration = {
     ...defaultGesturePointerCalibration,
     pointHoldMs: 0,
@@ -196,22 +645,32 @@ test("brief tracking loss preserves the point for two seconds and then clears it
     calibration,
   });
   const missing = classifyPointPose(null, 0.6);
-  const recovering = advanceGesturePointerTracking({
+  const visiblyRecovering = advanceGesturePointerTracking({
     previousState: active.state,
     classification: missing,
     display,
-    nowMs: 6_999,
+    nowMs: 5_000 + pointerVisualRecoveryGraceMs - 1,
+    calibration,
+  });
+  const visuallyCleared = advanceGesturePointerTracking({
+    previousState: visiblyRecovering.state,
+    classification: missing,
+    display,
+    nowMs: 5_000 + pointerVisualRecoveryGraceMs,
     calibration,
   });
   const stale = advanceGesturePointerTracking({
-    previousState: recovering.state,
+    previousState: visuallyCleared.state,
     classification: missing,
     display,
     nowMs: 7_000,
     calibration,
   });
 
-  assert.equal(recovering.pointer?.phase, "recovering");
+  assert.equal(visiblyRecovering.pointer?.phase, "recovering");
+  assert.equal(visuallyCleared.pointer, null);
+  assert.equal(visuallyCleared.state.active, true);
+  assert.equal(visuallyCleared.state.pointer?.phase, "recovering");
   assert.equal(stale.pointer, null);
   assert.equal(stale.state.active, false);
 });
@@ -224,7 +683,50 @@ test("runtime clears pointing when camera access is unavailable", () => {
 
 test("gesture pointer replaces only the blob position and never locks or clicks", () => {
   assert.match(appSource, /gesturePointerShadow \?\? pointerShadow/);
+  assert.match(appSource, /getDetachedGesturePointerShadowPosition/);
   assert.match(blobSource, /data-pointer-source/);
+  assert.match(blobSource, /gestureBlobFollowDurationSeconds = 0\.025/);
   assert.doesNotMatch(runtimeSource, /createPointerLockSnapshot/);
   assert.doesNotMatch(runtimeSource, /native_click/);
+});
+
+test("an active pointer keeps being measured through a dip in detection confidence", () => {
+  const strong = createSyntheticTrackedHand({
+    pose: "point",
+    trackId: "hand-1",
+    frameId: 1,
+  });
+  const dipped = {
+    ...createSyntheticTrackedHand({
+      pose: "point",
+      trackId: "hand-1",
+      frameId: 2,
+    }),
+    confidence: 0.5,
+  };
+
+  // No active pointer: the dip is rejected outright and nothing is measured.
+  const cold = classifyPointPose(dipped, 0.6);
+  assert.equal(cold.label, "none");
+  assert.equal(cold.indexExtensionRatio, null);
+
+  // The same frame while that track already drives the pointer stays measured.
+  const warm = classifyPointPose(dipped, 0.6, "hand-1");
+  assert.equal(warm.label, "point");
+  assert.ok(warm.indexExtensionRatio > 0);
+  assert.equal(warm.handTrackId, "hand-1");
+
+  // A different hand gets no such credit.
+  const other = classifyPointPose(dipped, 0.6, "hand-2");
+  assert.equal(other.label, "none");
+  assert.equal(other.indexExtensionRatio, null);
+
+  // A rejected frame still names its track, so diagnostics can tell a
+  // confidence rejection from a genuinely absent hand.
+  assert.equal(other.handTrackId, "hand-1");
+  assert.equal(classifyPointPose(null, 0.6).handTrackId, null);
+
+  // The floor is a dip, not an open door.
+  const collapsed = { ...strong, confidence: 0.2 };
+  assert.equal(classifyPointPose(collapsed, 0.6, "hand-1").label, "none");
 });

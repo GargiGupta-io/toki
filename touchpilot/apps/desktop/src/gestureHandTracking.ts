@@ -29,8 +29,20 @@ export type HandTrackingResult = {
 };
 
 export const maxTrackedHands = 2;
-const maximumAssignmentDistance = 0.36;
-const handednessMismatchPenalty = 0.12;
+
+export const handTrackingPolicy = Object.freeze({
+  maximumAssignmentDistance: 0.36,
+  handednessMismatchPenalty: 0.12,
+  singleHandReacquisitionDistance: 0.62,
+  singleHandReacquisitionGraceMs: 450,
+});
+
+const {
+  maximumAssignmentDistance,
+  handednessMismatchPenalty,
+  singleHandReacquisitionDistance,
+  singleHandReacquisitionGraceMs,
+} = handTrackingPolicy;
 
 export function createInitialHandTrackingState(): HandTrackingState {
   return {
@@ -69,7 +81,11 @@ export function advanceHandTracking({
     .slice(0, maxTrackedHands)
     .map((detection) => ({ detection, center: getHandPalmCenter(detection) }))
     .sort((left, right) => left.center.x - right.center.x);
-  const assignments = assignDetectionsToTracks(currentDetections, liveTracks);
+  const assignments = assignDetectionsToTracks(
+    currentDetections,
+    liveTracks,
+    nowMs,
+  );
   const nextTracks: Record<HandTrackId, HandTrackHistory> = { ...liveTracks };
   let nextTrackNumber = previousState.nextTrackNumber;
   const hands: TrackedHandLandmarkFrame[] = [];
@@ -158,16 +174,36 @@ function assignDetectionsToTracks(
     center: NormalizedGesturePoint;
   }>,
   tracks: Record<HandTrackId, HandTrackHistory>,
+  nowMs: number,
 ): Map<HandLandmarkFrame, HandTrackHistory> {
   const assignment = new Map<HandLandmarkFrame, HandTrackHistory>();
   const usedTrackIds = new Set<HandTrackId>();
+  const liveTrackList = Object.values(tracks);
+
+  if (detections.length === 1 && liveTrackList.length === 1) {
+    const current = detections[0];
+    const track = liveTrackList[0];
+    const distance = getAssignmentDistance(current.center, track);
+    const recentlySeen =
+      nowMs - track.lastSeenAtMs <= singleHandReacquisitionGraceMs;
+
+    if (
+      recentlySeen &&
+      distance <= singleHandReacquisitionDistance &&
+      handednessCanMatch(current.detection.handedness, track.handedness)
+    ) {
+      assignment.set(current.detection, track);
+      return assignment;
+    }
+  }
+
   const candidates = detections.flatMap((current) =>
-    Object.values(tracks).map((track) => ({
+    liveTrackList.map((track) => ({
       current,
       track,
-      distance: normalizedDistance(current.center, predictCenter(track)),
+      distance: getAssignmentDistance(current.center, track),
       score:
-        normalizedDistance(current.center, predictCenter(track)) +
+        getAssignmentDistance(current.center, track) +
         getHandednessPenalty(current.detection.handedness, track.handedness),
     })),
   );
@@ -190,6 +226,16 @@ function assignDetectionsToTracks(
   return assignment;
 }
 
+function getAssignmentDistance(
+  center: NormalizedGesturePoint,
+  track: HandTrackHistory,
+): number {
+  return Math.min(
+    normalizedDistance(center, track.center),
+    normalizedDistance(center, predictCenter(track)),
+  );
+}
+
 function predictCenter(track: HandTrackHistory): NormalizedGesturePoint {
   return {
     x: clamp01(track.center.x + track.velocity.x),
@@ -204,6 +250,17 @@ function getHandednessPenalty(
   return detected !== "unknown" && tracked !== "unknown" && detected !== tracked
     ? handednessMismatchPenalty
     : 0;
+}
+
+function handednessCanMatch(
+  detected: Handedness,
+  tracked: Handedness,
+): boolean {
+  return (
+    detected === "unknown" ||
+    tracked === "unknown" ||
+    detected === tracked
+  );
 }
 
 function normalizedDistance(

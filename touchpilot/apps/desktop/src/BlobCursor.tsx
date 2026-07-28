@@ -8,6 +8,8 @@ type BlobCursorPosition = {
   clientY: number;
 };
 
+export const blobAmbientFramesPerSecond = 30;
+
 type BlobFrame = {
   x: number;
   y: number;
@@ -77,6 +79,10 @@ export default function BlobCursor({
   const lastClientPositionRef = useRef<BlobCursorPosition | null>(null);
   const blobFramesRef = useRef<BlobFrame[]>([]);
   const animationFrameRef = useRef<number | null>(null);
+  const animationIsAmbientOnlyRef = useRef(false);
+  const lastRenderedAtRef = useRef(0);
+  const targetRevisionRef = useRef(0);
+  const lastRenderedTargetRevisionRef = useRef(-1);
   const offsetRef = useRef({ left: 0, top: 0 });
   const trailVectorRef = useRef({ x: -1, y: 0.18 });
   const reducedMotionRef = useRef(false);
@@ -101,16 +107,32 @@ export default function BlobCursor({
     const target = targetPositionRef.current;
 
     if (target == null) {
+      animationIsAmbientOnlyRef.current = false;
       animationFrameRef.current = null;
       return;
     }
 
+    const targetChanged =
+      targetRevisionRef.current !== lastRenderedTargetRevisionRef.current;
+    const ambientFrameIntervalMs = 1_000 / blobAmbientFramesPerSecond;
+    if (
+      animationIsAmbientOnlyRef.current &&
+      !targetChanged &&
+      timestamp - lastRenderedAtRef.current < ambientFrameIntervalMs
+    ) {
+      animationFrameRef.current = window.requestAnimationFrame(applyFrame);
+      return;
+    }
+
+    lastRenderedAtRef.current = timestamp;
+    lastRenderedTargetRevisionRef.current = targetRevisionRef.current;
     const trailVector = trailVectorRef.current;
     const rotation = Math.atan2(-trailVector.y, -trailVector.x) * (180 / Math.PI);
     const ambientMotionIsActive =
       !reducedMotionRef.current && ambientMotion > 0 && ambientSpeed > 0;
     const elapsed = timestamp / 1000;
     let shouldContinue = false;
+    let movementIsActive = false;
 
     blobsRef.current.forEach((el, i) => {
       if (!el) {
@@ -183,8 +205,13 @@ export default function BlobCursor({
       if (ambientMotionIsActive || remainingDistance > 0.35) {
         shouldContinue = true;
       }
+      if (remainingDistance > 0.35) {
+        movementIsActive = true;
+      }
     });
 
+    animationIsAmbientOnlyRef.current =
+      shouldContinue && ambientMotionIsActive && !movementIsActive;
     animationFrameRef.current = shouldContinue ? window.requestAnimationFrame(applyFrame) : null;
   }, [
     ambientDeform,
@@ -222,10 +249,19 @@ export default function BlobCursor({
       }
 
       lastClientPositionRef.current = { clientX, clientY };
-      targetPositionRef.current = {
+      const nextTarget = {
         x: clientX - left,
         y: clientY - top,
       };
+      const previousTarget = targetPositionRef.current;
+      targetPositionRef.current = nextTarget;
+      if (
+        previousTarget == null ||
+        previousTarget.x !== nextTarget.x ||
+        previousTarget.y !== nextTarget.y
+      ) {
+        targetRevisionRef.current += 1;
+      }
       startAnimationLoop();
     },
     [startAnimationLoop, updateOffset],
@@ -268,6 +304,7 @@ export default function BlobCursor({
 
     const syncReducedMotion = () => {
       reducedMotionRef.current = reducedMotionQuery.matches;
+      animationIsAmbientOnlyRef.current = false;
       startAnimationLoop();
     };
 

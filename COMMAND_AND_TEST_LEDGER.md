@@ -2,16 +2,144 @@
 
 ## Ledger Limits
 
-This ledger uses repository scripts, terminal output recorded in the conversation, and tracked phase documentation. It was updated after the 2026-07-15 repair verification.
+This ledger uses repository scripts, terminal output recorded in the conversation, and tracked phase documentation. It was updated through the single-bend/pinch live-acceptance repair on 2026-07-18.
 
 - Exact full command history: `UNKNOWN`.
-- Exact last successful app-bundle source: the repair source later committed through `de7d2b6`, as described in `FILE_CHANGE_MANIFEST.md`.
+- Exact last successful app-bundle source: committed Gesture Step 9 plus the uncommitted camera-privacy, Gesture Experience Repair, diagnostics, and single-bend/pinch repairs described in `FILE_CHANGE_MANIFEST.md`.
 - Current automated result: all listed repair, typecheck, compile, visual-motion, browser-extension, smoke, and deterministic known-screen gates pass.
-- Installed main-app source state: the repair source later committed through `de7d2b6`; the bundle does not embed a commit identifier.
+- Installed main-app source state: the signed 2026-07-18 single-bend/pinch repair source; the bundle does not embed a commit identifier.
 
 ## 2026-07-15 Repair Verification
 
 No command in this section manually controlled Toki or issued a guidance request. The latest installation step replaced and launched the app for user-owned acceptance.
+
+### Gesture Experience Repair Phase 4 — Final Integrated Gate (2026-07-17)
+
+No command in this phase issued a Toki guidance, voice, click, camera, or gesture command. The unchanged runtime source was rebuilt and the installed app was launched only for user-owned acceptance.
+
+| Command/check | Result |
+| --- | --- |
+| All root `test:*` scripts | `PASS` — 206/206 tests across guidance, evidence, coordinates, capture, voice, target safety, corpus, and gestures |
+| `npm --workspace @toki/ai test` | `PASS` — 33/33 |
+| `cargo test --workspace` | `PASS` — 5/5 native tests; all crates/doc tests green |
+| Total automated tests | `PASS` — 244/244 |
+| `npm run qa:visual:motion` | `PASS` — 18/18 |
+| `npm run browser-extension:check` | `PASS` — syntax plus 6-label fixture and 6-candidate bridge smoke |
+| `npm run qa:browser:known-screen` | `PASS` — candidate count plus 4/4 command targets |
+| `npm run qa:fallback:known-screen` | `PASS` — 3/3 OCR/Accessibility targets plus source boundary |
+| `npm run qa:workflow:known-screen` | `PASS` — navigation, missing-state, completion, and risky-step gates |
+| `npm run qa:eval:known-screen` | `PASS` — 2/2 |
+| `npm run typecheck` | `PASS` — all TypeScript workspaces |
+| `npm run rust:check` | `PASS` — full Rust workspace |
+| `cargo fmt --all -- --check` | `PASS` |
+| `npm run desktop:web:build` | `PASS` — existing Vite chunk-size warning only |
+| `npm run guidance:provider:check` | `PASS` — Codex CLI `0.144.5`, subscription authentication ready |
+| `git diff --check` | `PASS` |
+| `npm run desktop:release:mac` | `PASS` — reproducible production bundle and signature |
+| `npm run desktop:install:mac` | `PASS` |
+| Installed privacy descriptions and strict signature | `PASS` |
+| Signed built vs installed executable SHA-256 | `MATCH` — `fed306fbb7e8e4e566dfc6b9ccd07afa7ccaf39dce4d2a4ec6d8771ccc9dd20a` |
+| Installed process check | `PASS` — exactly one process observed as PID `91133` |
+
+The canonical live checklist is `touchpilot/docs/gesture-experience-manual-acceptance.md`. No commit or push was made.
+
+### Gesture Experience Repair Phase 3 (2026-07-17)
+
+No command in this phase issued a Toki guidance, voice, click, camera, or gesture command. The rebuilt installed app was launched only for user-owned acceptance.
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:gesture-split-strand` | `PASS` — 7/7 geometry, persistence, reduced-motion, and no-authority checks |
+| `npm run test:gesture-two-hand` | `PASS` — 6/6 |
+| `npm run test:gesture-pointing` | `PASS` — 9/9 |
+| `npm run test:gesture-target-lock` | `PASS` — 8/8 |
+| `npm run test:gesture-control-voice` | `PASS` — 11/11 |
+| `npm run test:gesture-runtime` | `PASS` — 6/6 |
+| `npm run test:gesture-camera-control` | `PASS` — 7/7 |
+| `npm run test:gesture-input-stability` | `PASS` — 4/4 |
+| `npm run test:gesture-pointer-explanation` | `PASS` — 9/9 |
+| `npm run test:gesture-adaptive-profile` | `PASS` — 6/6 |
+| `npm run qa:visual:motion` | `PASS` — 18/18 |
+| `npm run typecheck` | `PASS` — all TypeScript workspaces |
+| `npm run rust:check` | `PASS` |
+| `npm run desktop:release:mac` | `PASS` |
+| `npm run desktop:install:mac` | `PASS` |
+| Installed privacy descriptions and strict signature | `PASS` |
+| Signed built vs installed executable SHA-256 | `MATCH` — `fed306fbb7e8e4e566dfc6b9ccd07afa7ccaf39dce4d2a4ec6d8771ccc9dd20a` |
+| Installed process check | `PASS` — exactly one process observed as PID `88799` |
+
+Manual strand appearance and gesture comfort remain user-owned. No commit or push was made.
+
+### Gesture Experience Repair Phase 2 (2026-07-17)
+
+No command in this phase issued a Toki guidance, voice, click, or gesture command. The rebuilt installed app was launched only for user-owned acceptance.
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:gesture-input-stability` | `PASS` — 4/4 frame freshness, candidate dropout, pointer precision, validation wait, and runtime wiring checks |
+| `npm run test:gesture-pointing` | `PASS` — 9/9 |
+| `npm run test:gesture-control-voice` | `PASS` — 11/11 |
+| `npm run test:gesture-two-hand` | `PASS` — 6/6 |
+| `npm run test:gesture-runtime` | `PASS` — 6/6 |
+| `npm run test:gesture-camera-control` | `PASS` — 7/7 |
+| `npm run test:gesture-pointer-explanation` | `PASS` — 9/9 |
+| `npm run test:gesture-target-lock` | Initial run `FAIL` 6/8 because the fixture passed the newly hidden visual pointer to the lock controller; corrected to use the retained internal pointer exactly as production does, then `PASS` 8/8 |
+| `npm run test:gesture-adaptive-profile` | `PASS` — 6/6 |
+| `npm run qa:visual:motion` | `PASS` — 18/18 |
+| `npm run typecheck` | `PASS` — all TypeScript workspaces |
+| `npm run rust:check` | `PASS` |
+| `npm run desktop:release:mac` | `PASS` |
+| `npm run desktop:install:mac` | `PASS` |
+| Installed privacy descriptions and strict signature | `PASS` |
+| Signed built vs installed executable SHA-256 | `MATCH` — `b3e1d2d50d2e887bc783772f1782d00718a9394bc672a45a86e1d07fac984b8f` |
+| Installed process check | `PASS` — exactly one process observed as PID `84774` |
+
+Manual pointer comfort, control-hand capture, camera-stall behavior, and hand-removal transitions remain user-owned. No commit or push was made.
+
+### Gesture Experience Repair Phase 1 (2026-07-17)
+
+No command in this phase issued a Toki guidance, voice, click, or gesture command. The rebuilt installed app was launched only for user-owned acceptance.
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:gesture-camera-control` | `PASS` — 7/7 atomic lifecycle, voice routing, pose isolation, hold/grace/cooldown, and UI-ownership checks |
+| `npm run test:gesture-runtime` | `PASS` — 6/6 |
+| `npm run test:gesture-two-hand` | `PASS` — 6/6 |
+| `npm run test:gesture-control-voice` | `PASS` — 9/9 |
+| `npm run test:gesture-pointer-explanation` | `PASS` — 9/9 |
+| `npm run qa:visual:motion` | `PASS` — 18/18 |
+| `npm run test:macos-privacy` | `PASS` — 2/2 |
+| `npm run typecheck` | `PASS` — all TypeScript workspaces |
+| `npm run rust:check` | `PASS` |
+| `npm run desktop:release:mac` | `PASS` — production app built and signed |
+| `npm run desktop:install:mac` | `PASS` — old app replaced and installed signature verified |
+| Installed Camera/Microphone/Screen Recording descriptions | `PASS` — all three present and non-empty |
+| `codesign --verify --deep --strict /Applications/Toki.app` | `PASS` |
+| Signed bundle vs installed executable SHA-256 | `MATCH` — `ba70cd998aba2e4f1588a49698ca95e74151f5f3da2d477376a28d68f71b6e76` |
+| Process cleanup/relaunch | `PASS` — older Toki processes stopped; exactly one installed process observed as PID `80461` |
+
+Live lifecycle, voice-on, two-fist shutdown, pointer, and pinch judgment remain user-owned. No commit or push was made.
+
+### Post-Step-9 Camera Privacy Crash Repair (2026-07-16)
+
+The user reproduced the crash manually by clicking `Turn camera on`. Codex did not operate Toki or request camera access. Two diagnostic reports at 19:47 proved macOS TCC terminated the process with `SIGABRT` because `NSCameraUsageDescription` was missing.
+
+| Command | Result |
+| --- | --- |
+| Crash-report inspection | `CONFIRMED` — TCC termination explicitly named the missing `NSCameraUsageDescription` key |
+| Source/built/installed plist inspection before repair | `CONFIRMED` — Microphone and Screen Recording descriptions existed; Camera did not |
+| `plutil -lint apps/desktop/src-tauri/Info.plist` | `PASS` |
+| `bash -n scripts/macos-sign-app.sh` | `PASS` |
+| `npm run test:macos-privacy` | `PASS` — 2/2 source declaration and pre-sign release-guard checks |
+| `npm run typecheck` | `PASS` — all TypeScript workspaces |
+| `npm run desktop:release:mac` | `PASS` — production bundle contains the Camera description and the privacy guard passed before signing |
+| `npm run desktop:install:mac` | `PASS` after authorized sandbox escalation — previous bundle replaced, installed bundle guarded, signed, strictly verified, and launch requested |
+| Installed Camera/Microphone/Screen Recording descriptions | `PASS` — all three are present and non-empty |
+| Built/installed executable SHA-256 comparison | `PASS` — both `245b78148fd70f4b960065951af9b8f32a95c6494d5cd95c207220abb050d92e` |
+| `codesign --verify --deep --strict /Applications/Toki.app` | `PASS` |
+| `git diff --check` | `PASS` |
+
+The live camera retry remains user-owned. No commit or push was made.
 
 ### Gesture Step 9 — Frozen Pointer Explanation (2026-07-16)
 
@@ -458,3 +586,244 @@ No real guidance command was issued. Live appearance and interaction acceptance 
 | Installed process check | PASS — `/Applications/Toki.app/Contents/MacOS/toki-desktop` observed as PID `90673` |
 
 No real guidance command was issued. Screen Recording authorization and live cue judgment remain user-owned. No commit or push was made.
+
+## 2026-07-18 Local Diagnostics Bridge Run
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:debug-export` | PASS — 3/3 sanitizer, binary-omission, secret-redaction, and circular-object cases |
+| `npm run desktop:typecheck` | PASS |
+| `npm run typecheck` | PASS — all workspaces |
+| `cargo check -p toki-desktop` | PASS |
+| `cargo fmt --all -- --check` | PASS |
+| `cargo test -p toki-desktop --lib` | PASS — 5/5 |
+| `npm run test:gesture-input-stability` | PASS — 6/6 |
+| `npm run test:gesture-runtime` | PASS — 6/6 |
+| `npm run desktop:web:build` | PASS |
+| `node --check scripts/read-toki-debug.mjs` | PASS |
+| `npm run desktop:release:mac` | PASS — release app built and signed |
+| `npm run desktop:install:mac` | PASS — `/Applications/Toki.app` replaced and verified |
+| `codesign --verify --deep --strict --verbose=2 /Applications/Toki.app` | PASS |
+| Built vs installed executable SHA-256 | MATCH — `97adea5bdf566ffcfe420b6a02e54ebf06eb6364ef8add7d112111b10b1acb19` |
+| Installed process check | PASS — exactly one `/Applications/Toki.app/Contents/MacOS/toki-desktop`, PID `7409` |
+| `npm run toki:debug` with visual Debug closed | PASS — read sequence 5 and current camera/hand/pointer/lock/pinch/voice/guidance state |
+| Diagnostics permissions | PASS — directory `0700`; `latest.json` and `history.ndjson` `0600` |
+
+No real guidance command or gesture was issued. The capture export was correctly absent because no capture/guidance flow was manually run. No commit or push was made.
+
+## 2026-07-18 Single-Bend Lock and Pinch-Stability Repair Run
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:gesture-contracts` | PASS — 7/7 |
+| `npm run test:gesture-target-lock` | PASS — 9/9 single-bend classifier, latch, interruption, ownership, freshness, and no-click cases |
+| `npm run test:gesture-control-voice` | PASS — 12/12 filtered pinch, noisy release, immutable receipt, and exact-once submission cases |
+| Selected pointing, input-stability, adaptive, runtime, two-hand, camera, strand, and explanation suites | PASS — 59/59; selected gesture total 87/87 |
+| `npm run qa:visual:motion` | PASS — 18/18 |
+| `npm run typecheck` | PASS — all workspaces |
+| `npm run test:debug-export` | PASS — 3/3 |
+| `cargo check -p toki-desktop` | PASS |
+| `cargo test -p toki-desktop --lib` | PASS — 5/5 |
+| `cargo fmt --all -- --check` | PASS |
+| `npm run desktop:web:build` | PASS |
+| `node --check scripts/read-toki-debug.mjs` | PASS |
+| `git diff --check` | PASS |
+| `npm run desktop:release:mac` | PASS — release app built and signed |
+| `npm run desktop:install:mac` | PASS — `/Applications/Toki.app` replaced and verified |
+| `codesign --verify --deep --strict --verbose=2 /Applications/Toki.app` | PASS |
+| Signed bundle vs installed executable SHA-256 | MATCH — `46cff0c9124ad14b7845909ac66e514de3c53923935ae873ff77c7261c343719` |
+| Installed process check | PASS — exactly one `/Applications/Toki.app/Contents/MacOS/toki-desktop`, PID `11734` |
+| `npm run toki:debug` with visual Debug closed | PASS — installed schema reports index-bend lock plus updated pinch thresholds |
+
+No real guidance command or gesture was issued. Manual camera, bend-lock, pinch-to-talk, and visual-spacing acceptance remain user-owned. No commit or push was made.
+
+## 2026-07-19 Persistent-Lock, Dual-Pinch, Edge, and Compact-Utility Run
+
+| Command/check | Result |
+| --- | --- |
+| Focused gesture pointing/lock/control-voice/runtime/camera tests | PASS — edge contact, ~128 px separation, limited-lock persistence, dual pinch ownership, pinch/bend exclusion, and collision guards |
+| `npm run typecheck` | PASS — all workspaces, including the final compact UI |
+| `node --import tsx scripts/gesture-camera-control.test.mjs` | PASS — 9/9, including fullscreen auxiliary and compact pitch-black source contract |
+| `node scripts/visual-motion-qa.mjs` | PASS — 18/18 |
+| `cargo fmt --all -- --check` | PASS |
+| `cargo check --workspace` | PASS |
+| `npm run desktop:release:mac` | PASS — production web/native app built and signed |
+| `npm run desktop:install:mac` | PASS — `/Applications/Toki.app` replaced and verified |
+| `codesign --verify --deep --strict /Applications/Toki.app` | PASS |
+| Signed bundle vs installed executable SHA-256 | MATCH — `8b58e1b2719de6cfcd57e5dc2bad1add7ac6fe35169aad85e13de47c632d1a5f` |
+| Installed process check | PASS — exactly one `/Applications/Toki.app/Contents/MacOS/toki-desktop`, PID `34312` |
+
+The first plain-Node camera test invocation hit the known extensionless TypeScript import-loader error; rerunning the same suite with the repository's `tsx` loader passed 9/9. This was a command-invocation issue, not an application failure. No real Toki command or gesture was issued. Manual live acceptance remains user-owned. No commit or push was made.
+
+## 2026-07-19 Wrist-Roll Lock and Deliberate-Split Run
+
+| Command/check | Result |
+| --- | --- |
+| Focused gesture selection | PASS — contracts 7/7, runtime 6/6, pointing 11/11, wrist-roll target lock 9/9, two-hand 7/7, split strand 7/7, control voice 12/12, pointer explanation 9/9, camera control 9/9, input stability 6/6, adaptive profile 6/6, debug export 3/3 |
+| `npm run typecheck` | PASS — all workspaces |
+| `npm run rust:check` | PASS |
+| `npm run qa:visual:motion` | PASS — 18/18 |
+| `npm run test:macos-privacy` | PASS — 2/2 |
+| `node --check scripts/read-toki-debug.mjs` | PASS |
+| `npm run test:debug-export` after reader label cleanup | PASS — 3/3 |
+| `npm run desktop:release:mac` | PASS — production web/native build and signing |
+| `npm run desktop:install:mac` | PASS — `/Applications/Toki.app` replaced and verified |
+| `codesign --verify --deep --strict --verbose=2 /Applications/Toki.app` | PASS |
+| Built vs installed executable SHA-256 | MATCH — `79742b6e7a1b7dd08bf06f0debf06160e2ad1d30aad2a3a73e9440e78897f820` |
+| Installed process check | PASS — exactly one `/Applications/Toki.app/Contents/MacOS/toki-desktop`, PID `43794` |
+| `npm run toki:debug` | PASS — current export contains `wristRollPose`, rotation degrees, roll ID, and lock phase |
+
+No real Toki command or gesture was issued. Manual wrist-roll, join-before-split, and contextual pinch acceptance remain user-owned. No commit or push was made.
+
+## 2026-07-19 Single-Creature Lock Run
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:gesture-target-lock` | PASS — 9/9, including exactly one `BlobPuck`, no `TokiPointerLockCue`, copied coordinate, and no-click boundaries |
+| `npm run qa:visual:motion` | PASS — 18/18 |
+| `npm run typecheck` | PASS — all workspaces |
+| `git diff --check` | PASS; pre-existing CRLF normalization warning remains for `tauri.conf.json` |
+| `npm run desktop:release:mac` | PASS — production web/native build and signing |
+| `npm run desktop:install:mac` | PASS — `/Applications/Toki.app` replaced and verified |
+| `codesign --verify --deep --strict --verbose=2 /Applications/Toki.app` | PASS |
+| Built vs installed executable SHA-256 | MATCH — `a96fd4ac4376755898e2659d61c3caac60689c40a28349d18025d9679185ac6d` |
+| Installed process check | PASS — exactly one `/Applications/Toki.app/Contents/MacOS/toki-desktop`, PID `47578` |
+| `npm run toki:debug` | PASS — installed runtime starts idle with one lock state and no command issued |
+
+No real Toki command or gesture was issued. Manual one-creature wrist-roll-lock acceptance remains user-owned. No commit or push was made.
+
+## 2026-07-19 Stable Local Identity and Edge-Compression Run
+
+| Command/check | Result |
+| --- | --- |
+| `npm run desktop:bootstrap-signing:mac` | PASS — imported one valid `Toki Local Development` identity into the login keychain |
+| `security find-identity -v -p codesigning ...` | PASS — SHA-1 `1E8EC8756338C5412FC99CAE92C5A611BC46800D` |
+| Shell syntax for both signing scripts | PASS |
+| `npm run test:macos-privacy` | PASS — 3/3 |
+| Build A release/sign | PASS — CDHash `10ced93909a8e41f9e3e49cb0d4777a8c10f9200` |
+| `npm run test:gesture-pointing` | PASS — 11/11 |
+| `npm run test:gesture-target-lock` | PASS — 9/9 |
+| `npm run qa:visual:motion` | PASS — 18/18 |
+| `npm run typecheck` | PASS — all workspaces |
+| Build B release/sign | PASS — CDHash `ea7176c4e2bc0b94a1d32eaa0c80bd7ff44feba5` |
+| Build A vs B designated requirement | PASS — identical certificate-rooted requirement; no `cdhash` requirement |
+| `TOKI_MACOS_SKIP_LAUNCH=1 npm run desktop:install:mac` | PASS — installed copy verified without re-signing |
+| Built vs installed executable SHA-256 | MATCH — `2edcbc0ab20f60d36a5dc0997f51de131367b968806e729a36ab9595e74fb86e` |
+| ScreenCapture/Microphone/Camera/ListenEvent/Accessibility TCC resets | PASS — all obsolete Toki records reset |
+| `codesign --verify --deep --strict --verbose=2 /Applications/Toki.app` | PASS |
+| Installed signature metadata | PASS — `Authority=Toki Local Development`, CDHash `ea7176c4e2bc0b94a1d32eaa0c80bd7ff44feba5` |
+| Installed process check | PASS — PID `55623` |
+
+The final Vite build retains the existing chunk-size warning only. Fresh permission approval and live edge-spacing judgment remain user-owned. No command, gesture, commit, or push was performed.
+
+## 2026-07-20 Pinch Release and Native Screen-Access Request Run
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:gesture-control-voice` | PASS — 13/13, including release latching through missing frames and matching owner termination |
+| `npm run test:capture-access` | PASS — 3/3, including preflight-before-native-request wiring |
+| `npm run test:gesture-target-lock` | PASS — 9/9 |
+| `npm run test:voice-hold` | PASS — 3/3 |
+| `npm run test:macos-privacy` | PASS — 3/3 |
+| `npm run test:gesture-runtime` | PASS — 6/6 |
+| `npm run test:gesture-input-stability` | PASS — 6/6 |
+| `npm run typecheck` | PASS — all workspaces |
+| `cargo check --workspace` | PASS |
+| `cargo test --workspace` | PASS — five native tests |
+| `cargo fmt --all -- --check` | PASS |
+| `git diff --check` | PASS; pre-existing CRLF normalization warning remains for `tauri.conf.json` |
+| `npm run desktop:release:mac` | PASS — production web/native build and certificate signing |
+| `npm run desktop:install:mac` | PASS — signed bundle copied without re-signing, strictly verified, and launched |
+| Installed executable SHA-256 | `83eeed91ba94611ce8d907669a88217dbd1c8107bc806436dba5776a10ade251` |
+| Installed signature | PASS — `Authority=Toki Local Development`, CDHash `7ede33456b09f8320066ca9e6b2e75bb442c5da9`, unchanged certificate-rooted requirement |
+| Installed process check | PASS — PID `63321` |
+| Fresh `npm run toki:debug` readback | PASS — current sequence starts clean and idle; no stale active capture/session |
+
+No TCC reset, real Toki command, gesture, commit, or push was performed. Live unpinch and first native Screen Recording request remain user-owned.
+
+## 2026-07-20 Direct Pinch Handoff and Full-Frame Pointer Run
+
+| Command/check | Result |
+| --- | --- |
+| Private diagnostics history inspection | PASS — same-track ordinary release was present while voice remained `listening`; recognition was ruled out |
+| `npm run test:gesture-control-voice` | PASS — 13/13, including source-level direct local handoff assertions |
+| `npm run test:gesture-pointing` | PASS — 12/12, including full-frame corner/center mapping |
+| `npm run test:gesture-input-stability` | PASS — 6/6 |
+| `npm run test:gesture-adaptive-profile` | PASS — 6/6, including invariant full-frame mapping |
+| `npm run test:voice-hold` | PASS — 3/3 |
+| `npm run test:gesture-runtime` | PASS — 6/6 |
+| `npm run typecheck` | PASS — all workspaces |
+| `git diff --check` | PASS; pre-existing CRLF normalization warning remains for `tauri.conf.json` |
+| `npm run desktop:release:mac` | PASS — production web/native build and stable certificate signing; existing Vite chunk warning only |
+| `npm run desktop:install:mac` | PASS — copied without re-signing and strictly verified |
+| Installed executable SHA-256 | `da7e81aa51aa06ca5c86220ded651c5abb164c1976dc6ebef269590931485bd7` |
+| Installed signature | PASS — CDHash `851d10b804875c16520e68fbe2f1a8db636085f1`, unchanged certificate-rooted requirement |
+| Installed process check | PASS — PID `66966` |
+| Fresh `npm run toki:debug` readback | PASS — current sequence clean and idle; camera disabled; voice idle |
+
+No TCC reset, real Toki command, gesture, commit, or push was performed. Live pointer feel and unpinch acceptance remain user-owned.
+
+## 2026-07-27 Gesture Polish Phase 5 Run
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:gesture-control-voice` | PASS — 16/16 |
+| `npm run test:voice-hold` | PASS — 3/3 |
+| `npm run test:gesture-runtime` | PASS — 6/6 |
+| `npm run test:gesture-diagnostics` | PASS — 6/6 |
+| `npm run test:gesture-input-stability` | PASS — 6/6 |
+| `npm run test:gesture-target-lock` | PASS — 10/10 |
+| `npm run test:gesture-pointing` | PASS — 15/15 |
+| `npm run test:gesture-camera-control` | PASS — 10/10 |
+| `npm run test:gesture-pointer-explanation` | PASS — 9/9 |
+| `npm run test:gesture-contracts` | PASS — 7/7 |
+| `npm run test:gesture-two-hand` | PASS — 7/7 |
+| `npm run test:gesture-split-strand` | PASS — 7/7 |
+| `npm run test:gesture-adaptive-profile` | PASS — 6/6 |
+| `npm run test:debug-export` | PASS — 3/3 |
+| `npm run qa:visual:motion` | PASS — 19/19 |
+| `npm run typecheck` | PASS — all workspaces |
+| `npm run desktop:web:build` | PASS — existing Vite chunk warning only |
+| `node --check scripts/read-toki-debug.mjs` | PASS |
+| `git diff --check` | PASS; pre-existing CRLF normalization warning remains for `tauri.conf.json` |
+| `npm run desktop:release:mac` | PASS — production build; signing completed with the persistent identity outside the restricted shell |
+| `npm run desktop:install:mac` | PASS — copied without re-signing, strictly verified, and launched |
+| Built vs installed executable SHA-256 | MATCH — `618babc7045e3b7d5f49530d320d1d3a6b74aed900071d246380ae4f5ab06644` |
+| Installed signature | PASS — `Authority=Toki Local Development`, CDHash `587537a0eb8c36c49aff9129a42e8a3cf1c79032`, unchanged certificate-rooted requirement |
+| Installed process check | PASS — exactly one process, PID `2545` |
+| Fresh `npm run toki:debug` readback | PASS — idle voice; capture/hold/release/owner/native-session/last-capture lifecycle fields present |
+
+No real Toki command, gesture, TCC reset, commit, or push was performed. Live physical pinch and speech acceptance remain user-owned.
+
+## 2026-07-27 Gesture Polish Phase 6 Final Run
+
+| Command/check | Result |
+| --- | --- |
+| `npm run test:performance-budget` | PASS — 4/4 |
+| `npm run test:gesture-pointing` | PASS — 15/15 |
+| `npm run test:gesture-runtime` | PASS — 6/6 |
+| `npm run test:gesture-input-stability` | PASS — 6/6 |
+| `npm run test:mediapipe-assets` | PASS — 7/7 |
+| `npm run qa:visual:motion` | PASS — 19/19 |
+| All root `test:*` scripts | PASS — 240 tests |
+| `npm --workspace @toki/ai test` | PASS — 33 tests |
+| `cargo test --workspace` | PASS — 5 tests |
+| All workspace TypeScript checks | PASS |
+| `cargo check --workspace` and `cargo fmt --all -- --check` | PASS |
+| Browser-extension syntax/fixture checks | PASS |
+| Guidance provider readiness | PASS — authenticated `codex-cli 0.145.0` |
+| Browser candidate fixture bridge and known-screen QA | PASS |
+| AX/OCR fallback, workflow known-screen, and eval QA | PASS — eval 2/2 |
+| `npm run desktop:web:build` | PASS — entry `469.09 KB`, lazy vision `135.99 KB`, CSS `28.61 KB`; no 500 KB warning |
+| `npm run toki:footprint -- --enforce` | PASS — app `30.89 MiB`, dist `40.27 MiB`, JS `0.58 MiB`, CSS `0.03 MiB`, MediaPipe `39.65 MiB` |
+| Camera-off process observation | INFO — settled RSS about `66.7–68.8 MiB`; ten-sample CPU mean about `2.9%` versus Phase 5 about `4.0%` |
+| `npm run desktop:release:mac` | PASS — production build and persistent-identity signing |
+| `npm run desktop:install:mac` | PASS — copied without re-signing, strictly verified, and launched |
+| Built vs installed executable SHA-256 | MATCH — `f7dbda8ecb5be43cc5a033cc8ad039c8d8b9699696118b51825193a38c5d527c` |
+| Installed signature | PASS — `Authority=Toki Local Development`, CDHash `102050a23efbe8aa9ee30fd70407cb0b4adbe14c`, unchanged certificate-rooted requirement |
+| Installed process check | PASS — exactly one app process, PID `8596`; launchd fallback also reports the same process when `pgrep`/`ps` is restricted |
+| Fresh `npm run toki:debug` readback | PASS — idle Overlay/voice, Camera + Gestures off, no stale lock or recorder |
+| `npm run toki:gesture-replay` | PASS — deterministic empty replay expected with Camera + Gestures off |
+| `git diff --check` | PASS; pre-existing CRLF normalization warning remains for `tauri.conf.json` |
+
+No real Toki command, gesture, TCC reset, commit, or push was performed. Camera-on thermals and the ordered live gesture/voice/guidance matrix remain user-owned.

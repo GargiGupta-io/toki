@@ -16,7 +16,7 @@ import {
 import { classifyPinchGesture } from "../apps/desktop/src/gestureClassifier.ts";
 import { createSyntheticTrackedHand } from "../apps/desktop/src/gestureFixtures.ts";
 import { classifyPointPose } from "../apps/desktop/src/gesturePointing.ts";
-import { classifyAirTapPose } from "../apps/desktop/src/gestureTargetLock.ts";
+import { classifyWristRollPose } from "../apps/desktop/src/gestureTargetLock.ts";
 
 const thresholds = {
   minDetectionConfidence: 0.6,
@@ -129,10 +129,10 @@ test("six point, five tap, and five pinch approvals complete one profile", () =>
   assert.equal(profile.tapFlexion.median, 1.18);
   assert.ok(Math.abs(profile.tapFlexion.medianAbsoluteDeviation - 0.02) < 1e-9);
   const settings = deriveAdaptiveGestureSettings(profile);
-  assert.ok(Math.abs(settings.pointerCalibration.cameraMinX - 0.115) < 1e-9);
-  assert.ok(Math.abs(settings.pointerCalibration.cameraMaxX - 0.865) < 1e-9);
-  assert.ok(Math.abs(settings.pointerCalibration.cameraMinY - 0.15) < 1e-9);
-  assert.ok(Math.abs(settings.pointerCalibration.cameraMaxY - 0.75) < 1e-9);
+  assert.equal(settings.pointerCalibration.cameraMinX, 0);
+  assert.equal(settings.pointerCalibration.cameraMaxX, 1);
+  assert.equal(settings.pointerCalibration.cameraMinY, 0);
+  assert.equal(settings.pointerCalibration.cameraMaxY, 1);
 });
 
 test("storage is versioned, local, derived-only, and resettable", () => {
@@ -152,7 +152,7 @@ test("storage is versioned, local, derived-only, and resettable", () => {
   assert.equal(storage.getItem(adaptiveGestureProfileStorageKey), null);
 });
 
-test("learned settings are bounded even for extreme valid statistics", () => {
+test("learned settings keep one-to-one pointer mapping even for extreme statistics", () => {
   const { profile } = completeCalibration();
   assert.ok(profile);
   const settings = deriveAdaptiveGestureSettings({
@@ -165,19 +165,13 @@ test("learned settings are bounded even for extreme valid statistics", () => {
 
   assert.equal(settings.tapFlexionRatioThreshold, 1.45);
   assert.equal(settings.pinchDistanceThreshold, 0.45);
-  assert.ok(
-    settings.pointerCalibration.cameraMaxX -
-      settings.pointerCalibration.cameraMinX >=
-      0.46 - Number.EPSILON,
-  );
-  assert.ok(
-    settings.pointerCalibration.cameraMaxY -
-      settings.pointerCalibration.cameraMinY >=
-      0.4 - Number.EPSILON,
-  );
+  assert.equal(settings.pointerCalibration.cameraMinX, 0);
+  assert.equal(settings.pointerCalibration.cameraMaxX, 1);
+  assert.equal(settings.pointerCalibration.cameraMinY, 0);
+  assert.equal(settings.pointerCalibration.cameraMaxY, 1);
 });
 
-test("adapted thresholds affect only the existing pinch and tap classifiers", () => {
+test("adapted pinch thresholds remain bounded while wrist roll uses a relative pose", () => {
   const pinchFrame = createSyntheticTrackedHand({ pose: "pinch" });
   const pinchDistance = classifyPinchGesture(pinchFrame, thresholds).normalizedDistance;
   assert.ok(pinchDistance != null);
@@ -190,32 +184,14 @@ test("adapted thresholds affect only the existing pinch and tap classifiers", ()
     "pinch",
   );
 
-  const flexed = createSyntheticTrackedHand({ pose: "tap_flexed" });
-  const pointPose = classifyPointPose(flexed, 0.6);
-  const ratio = classifyAirTapPose({
-    frame: flexed,
-    pointPose,
+  const rolled = createSyntheticTrackedHand({ pose: "wrist_rolled" });
+  const rollPose = classifyWristRollPose({
+    frame: rolled,
+    pointPose: classifyPointPose(rolled, 0.6),
     minDetectionConfidence: 0.6,
-  }).indexExtensionRatio;
-  assert.ok(ratio != null);
-  assert.equal(
-    classifyAirTapPose({
-      frame: flexed,
-      pointPose,
-      minDetectionConfidence: 0.6,
-      flexionRatioThreshold: ratio - 0.001,
-    }).label,
-    "none",
-  );
-  assert.equal(
-    classifyAirTapPose({
-      frame: flexed,
-      pointPose,
-      minDetectionConfidence: 0.6,
-      flexionRatioThreshold: ratio + 0.001,
-    }).label,
-    "flexed",
-  );
+  });
+  assert.ok(["pointing", "tracked"].includes(rollPose.label));
+  assert.equal(rollPose.rollStartDegrees, 70);
 });
 
 test("adaptive profile implementation never owns clicks, provider gates, or raw frames", () => {

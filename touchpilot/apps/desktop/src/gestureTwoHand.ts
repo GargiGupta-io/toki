@@ -29,6 +29,8 @@ export type GestureHandRoleResult = {
 
 export type CreatureSplitPhase =
   | "merged"
+  | "joining"
+  | "armed"
   | "splitting"
   | "split"
   | "recovering"
@@ -37,6 +39,7 @@ export type CreatureSplitPhase =
 export type CreatureSplitState = {
   phase: CreatureSplitPhase;
   candidateSinceMs: number | null;
+  armedAtMs: number | null;
   lastTwoHandsSeenAtMs: number | null;
   pointerTrackId: HandTrackId | null;
   controlTrackId: HandTrackId | null;
@@ -46,7 +49,7 @@ export type CreatureSplitState = {
 };
 
 export type CreatureSplitVisualState = {
-  phase: Exclude<CreatureSplitPhase, "merged">;
+  phase: Exclude<CreatureSplitPhase, "merged" | "joining" | "armed">;
   pointerTrackId: HandTrackId;
   controlTrackId: HandTrackId;
   primary: {
@@ -64,10 +67,18 @@ export type CreatureSplitVisualState = {
 };
 
 export const creatureSplitPolicy = Object.freeze({
+  joinSeparation: 0.72,
+  joinExitSeparation: 0.92,
   splitSeparation: 1.55,
   mergeSeparation: 0.95,
+  joinHoldMs: 240,
   splitHoldMs: 180,
   mergeHoldMs: 220,
+  joinInterruptionGraceMs: 450,
+  splitArmGraceMs: 2_000,
+  // Matches pointerVisualRecoveryGraceMs: the same model dropout hides both the
+  // pointer and the split lobes, so they must tolerate it identically.
+  visualRecoveryMs: 500,
   trackingLossGraceMs: defaultGestureTimingPolicy.trackingLossGraceMs,
 });
 
@@ -92,9 +103,16 @@ export function advanceGestureHandRoles({
   minDetectionConfidence: number;
 }): GestureHandRoleResult {
   const retained = new Set(retainedTrackIds);
-  const currentHands = frame.hands.filter(
+  const confidentHands = frame.hands.filter(
     (hand) => hand.confidence >= minDetectionConfidence,
   );
+  // Assigning a role is not a quality judgement — classifyPointPose still
+  // decides whether a hand is actually pointing. Discarding every hand here
+  // because the model's score dipped leaves no pointer hand at all, so the pose
+  // classifier is handed null and the pointer starves while a hand is plainly
+  // visible. A live trace showed 33 such frames.
+  const currentHands =
+    confidentHands.length > 0 ? confidentHands : frame.hands;
   const pointerTrackId = retained.has(previousState.pointerTrackId ?? "")
     ? previousState.pointerTrackId
     : choosePointerHand(currentHands, preferredPointerHand, minDetectionConfidence)
@@ -135,6 +153,7 @@ export function createInitialCreatureSplitState(): CreatureSplitState {
   return {
     phase: "merged",
     candidateSinceMs: null,
+    armedAtMs: null,
     lastTwoHandsSeenAtMs: null,
     pointerTrackId: null,
     controlTrackId: null,
@@ -175,25 +194,100 @@ export function advanceCreatureSplit({
     };
 
     if (previousState.phase === "merged") {
+      return normalizedSeparation <= creatureSplitPolicy.joinSeparation
+        ? {
+            ...observed,
+            phase: "joining",
+            candidateSinceMs: nowMs,
+            armedAtMs: null,
+          }
+        : {
+            ...observed,
+            phase: "merged",
+            candidateSinceMs: null,
+            armedAtMs: null,
+          };
+    }
+
+    if (previousState.phase === "joining") {
+      if (normalizedSeparation > creatureSplitPolicy.joinExitSeparation) {
+        return {
+          ...observed,
+          phase: "merged",
+          candidateSinceMs: null,
+          armedAtMs: null,
+        };
+      }
+
+      return nowMs - (previousState.candidateSinceMs ?? nowMs) >=
+        creatureSplitPolicy.joinHoldMs
+        ? {
+            ...observed,
+            phase: "armed",
+            candidateSinceMs: null,
+            armedAtMs: nowMs,
+          }
+        : observed;
+    }
+
+    if (previousState.phase === "armed") {
+      const armedAtMs = previousState.armedAtMs ?? nowMs;
+      if (nowMs - armedAtMs > creatureSplitPolicy.splitArmGraceMs) {
+        return {
+          ...observed,
+          phase: "merged",
+          candidateSinceMs: null,
+          armedAtMs: null,
+        };
+      }
+
       return normalizedSeparation >= creatureSplitPolicy.splitSeparation
-        ? { ...observed, phase: "splitting", candidateSinceMs: nowMs }
-        : { ...observed, candidateSinceMs: null };
+        ? {
+            ...observed,
+            phase: "splitting",
+            candidateSinceMs: nowMs,
+            armedAtMs,
+          }
+        : { ...observed, candidateSinceMs: null, armedAtMs };
     }
 
     if (previousState.phase === "splitting") {
       if (normalizedSeparation < creatureSplitPolicy.splitSeparation) {
-        return { ...observed, phase: "merged", candidateSinceMs: null };
+        const armedAtMs = previousState.armedAtMs ?? nowMs;
+        return nowMs - armedAtMs <= creatureSplitPolicy.splitArmGraceMs
+          ? {
+              ...observed,
+              phase: "armed",
+              candidateSinceMs: null,
+              armedAtMs,
+            }
+          : {
+              ...observed,
+              phase: "merged",
+              candidateSinceMs: null,
+              armedAtMs: null,
+            };
       }
 
       return nowMs - (previousState.candidateSinceMs ?? nowMs) >=
         creatureSplitPolicy.splitHoldMs
-        ? { ...observed, phase: "split", candidateSinceMs: null }
+        ? {
+            ...observed,
+            phase: "split",
+            candidateSinceMs: null,
+            armedAtMs: null,
+          }
         : observed;
     }
 
     if (previousState.phase === "merging") {
       if (normalizedSeparation > creatureSplitPolicy.mergeSeparation) {
-        return { ...observed, phase: "split", candidateSinceMs: null };
+        return {
+          ...observed,
+          phase: "split",
+          candidateSinceMs: null,
+          armedAtMs: null,
+        };
       }
 
       return nowMs - (previousState.candidateSinceMs ?? nowMs) >=
@@ -203,10 +297,50 @@ export function advanceCreatureSplit({
     }
 
     if (normalizedSeparation <= creatureSplitPolicy.mergeSeparation) {
-      return { ...observed, phase: "merging", candidateSinceMs: nowMs };
+      return {
+        ...observed,
+        phase: "merging",
+        candidateSinceMs: nowMs,
+        armedAtMs: null,
+      };
     }
 
-    return { ...observed, phase: "split", candidateSinceMs: null };
+    return {
+      ...observed,
+      phase: "split",
+      candidateSinceMs: null,
+      armedAtMs: null,
+    };
+  }
+
+  if (
+    previousState.phase === "joining" &&
+    previousState.lastTwoHandsSeenAtMs != null &&
+    nowMs - previousState.lastTwoHandsSeenAtMs <
+      creatureSplitPolicy.joinInterruptionGraceMs
+  ) {
+    return previousState;
+  }
+
+  // An arm only survives a brief dropout, not the second hand actually leaving.
+  // splitArmGraceMs is how long the user has to complete a split once both
+  // hands are together; reusing it here kept the creature armed for two seconds
+  // after a hand left the frame, so simply raising that hand again — anywhere,
+  // already far apart — split the creature with no join. Separating is a
+  // continuous motion, so an interruption grace is the right bound.
+  if (
+    (previousState.phase === "armed" || previousState.phase === "splitting") &&
+    previousState.armedAtMs != null &&
+    previousState.lastTwoHandsSeenAtMs != null &&
+    nowMs - previousState.lastTwoHandsSeenAtMs <
+      creatureSplitPolicy.joinInterruptionGraceMs &&
+    nowMs - previousState.armedAtMs < creatureSplitPolicy.splitArmGraceMs
+  ) {
+    return {
+      ...previousState,
+      phase: "armed",
+      candidateSinceMs: null,
+    };
   }
 
   if (
@@ -215,7 +349,7 @@ export function advanceCreatureSplit({
       previousState.phase === "recovering") &&
     previousState.lastTwoHandsSeenAtMs != null &&
     nowMs - previousState.lastTwoHandsSeenAtMs <
-      creatureSplitPolicy.trackingLossGraceMs
+      creatureSplitPolicy.visualRecoveryMs
   ) {
     return {
       ...previousState,
@@ -253,6 +387,8 @@ export function createCreatureSplitVisualState({
 }): CreatureSplitVisualState | null {
   if (
     state.phase === "merged" ||
+    state.phase === "joining" ||
+    state.phase === "armed" ||
     state.pointerTrackId == null ||
     state.controlTrackId == null ||
     state.pointerPoint == null ||

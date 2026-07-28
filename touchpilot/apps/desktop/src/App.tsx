@@ -90,7 +90,6 @@ import {
 } from "./gestureVisuals";
 import {
   createEmptyGestureRuntimeDiagnostics,
-  createInactiveGestureClassification,
   getGestureActionForClassification,
   useAlwaysOnGestureRuntime,
   type GestureRuntimeDiagnostics,
@@ -99,7 +98,19 @@ import { createPointerLockSnapshot } from "./gestureContracts";
 import {
   canStartGestureVoice,
   createGestureVoiceContext,
+  createGestureVoiceOwner,
+  isGestureVoiceTerminationForOwner,
+  type ControlPinchEvent,
+  type GestureVoiceDetector,
+  type GestureVoiceOwner,
 } from "./gestureControlVoice";
+import {
+  cameraShutdownGesturePolicy,
+  classifyCameraGestureVoiceCommand,
+  getCameraShutdownSecondsLeft,
+  reconcileCameraGestureRuntimeState,
+  setCameraGestureRuntimeEnabled,
+} from "./gestureCameraControl";
 import {
   classifyPointerExplanationCommand,
   explicitObjectConflictsWithLabel,
@@ -122,7 +133,21 @@ import {
   startNativeVoiceCapture,
   stopNativeVoiceCapture,
 } from "./nativeVoiceCapture";
-import { getPointerShadowPosition, pointerShadowGeometry } from "./overlayGeometry";
+import {
+  getDetachedGesturePointerShadowPosition,
+  getPointerShadowPosition,
+  pointerShadowGeometry,
+} from "./overlayGeometry";
+import {
+  createGesturePresentationDiagnostic,
+  createGestureWindowValidationDiagnostic,
+  type GesturePresentationDiagnostic,
+  type GestureWindowValidationDiagnostic,
+} from "./gestureDiagnostics";
+import {
+  createGesturePuckPresentation,
+  type GestureLockValidation,
+} from "./gesturePuckPresentation";
 import type {
   PointerShadowPosition,
   ViewportMetrics,
@@ -130,6 +155,11 @@ import type {
 import { createGuidanceProviderAdapter } from "./guidanceProvider";
 import { verifyGuidanceTarget } from "./targetVerification";
 import { requireScreenCaptureAccess } from "./captureAccess";
+import {
+  cameraReframingLabel,
+  cameraReframingMessage,
+  shouldWarnAboutCameraReframing,
+} from "./cameraReframing";
 import {
   createProviderImagePreparationPlan,
   type ProviderImagePreparationPlan,
@@ -143,18 +173,25 @@ import {
   createIdleVoiceHoldState,
   transitionVoiceHold,
 } from "./voiceHoldController";
+import {
+  getTokiDebugExportStatus,
+  useTokiDebugExport,
+  type TokiDebugExportStatus,
+} from "./debugExport";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
 import { TokiCreatureLayer } from "./TokiCreatureLayer";
 import { TokiTopUtilitySurface } from "./TokiTopUtilitySurface";
 import { TokiTaskProgress } from "./TokiTaskProgress";
-import { TokiPointerLockCue } from "./TokiPointerLockCue";
 import { TokiPointerExplanationCard } from "./TokiPointerExplanationCard";
 import {
   getPassiveTopUtilityMode,
+  isTransientVoiceTopStatus,
   isInsideExpandedTopUtility,
   isTopUtilityRevealPoint,
+  settleTransientVoiceTopStatus,
+  TOP_UTILITY_RESULT_NOTICE_MS,
   TOP_UTILITY_LEAVE_DELAY_MS,
   TOP_UTILITY_REVEAL_DWELL_MS,
   type TokiTopStatusModel,
@@ -225,11 +262,14 @@ type DebugSnapshot = OverlaySnapshot & {
   calibration: CoordinateCalibration;
   gesturePointerLock: PointerLockSnapshot | null;
   gesturePointerLockFeedback: GesturePointerLockFeedback;
+  gesturePresentationDiagnostics: GesturePresentationDiagnostic;
+  gestureWindowValidationDiagnostics: GestureWindowValidationDiagnostic | null;
   gestureVoiceContext: GestureVoiceContext | null;
+  gestureVoiceLifecycle: GestureVoiceLifecycleDiagnostic;
 };
 
 type GesturePointerLockFeedback = {
-  validation: "idle" | "checking" | "locked" | "invalidated";
+  validation: GestureLockValidation;
   reason: PointerLockInvalidationReason | null;
   updatedAt: string;
 };
@@ -252,9 +292,8 @@ type OverlayCommand =
   | { type: "advance-workflow-step" }
   | { type: "retreat-workflow-step" }
   | { type: "stop-workflow" }
-  | { type: "set-camera-enabled"; enabled: boolean }
+  | { type: "set-camera-gestures-enabled"; enabled: boolean }
   | { type: "refresh-camera-devices" }
-  | { type: "set-gestures-enabled"; enabled: boolean }
   | { type: "start-gesture-calibration" }
   | { type: "accept-gesture-calibration-sample" }
   | { type: "reject-gesture-calibration-sample" }
@@ -274,6 +313,26 @@ type NativeClickMonitorStatus = {
   source: ClickAwareNativeClick["source"];
 };
 
+type VoiceCapturePhase = "idle" | "starting" | "capturing" | "submitting";
+
+type GestureVoiceCaptureSummary = {
+  sessionId: string;
+  durationMs: number;
+  byteLength: number;
+};
+
+type GestureVoiceLifecycleDiagnostic = {
+  capturePhase: VoiceCapturePhase;
+  holdPhase: ReturnType<typeof createIdleVoiceHoldState>["phase"];
+  held: boolean;
+  releasePending: boolean;
+  owner: GestureVoiceOwner | null;
+  nativeSessionId: string | null;
+  lastCapture: GestureVoiceCaptureSummary | null;
+  lastTransition: string;
+  updatedAt: string;
+};
+
 function isHeldVoiceActivationSource(source: VoiceActivationSource): boolean {
   return source === "hotkey" || source === "gesture";
 }
@@ -291,6 +350,7 @@ const testTarget = {
 };
 
 const clickAwareHitPadding = 18;
+const voiceCaptureStartupTimeoutMs = 5_000;
 
 type RenderedGuidanceTarget = TargetBox & {
   instruction: string;
@@ -567,6 +627,12 @@ function getTokiTopStatusModel({
   instruction,
   safetyDecision,
   gestureClassification,
+  wristRollLock,
+  cameraShutdown,
+  cameraReframingActive,
+  splitPhase,
+  pointerLock,
+  pointerLockFeedback,
 }: {
   voiceRuntime: VoiceRuntimeState;
   overlayState: OverlayState;
@@ -578,6 +644,12 @@ function getTokiTopStatusModel({
   instruction: string;
   safetyDecision: SafetyPolicyDecision | null;
   gestureClassification: GestureClassification;
+  wristRollLock: GestureRuntimeDiagnostics["wristRollLock"];
+  cameraShutdown: GestureRuntimeDiagnostics["cameraShutdown"];
+  cameraReframingActive: boolean;
+  splitPhase: GestureRuntimeDiagnostics["split"]["phase"];
+  pointerLock: PointerLockSnapshot | null;
+  pointerLockFeedback: GesturePointerLockFeedback;
 }): TokiTopStatusModel | null {
   if (overlayState === "paused") {
     return {
@@ -594,6 +666,30 @@ function getTokiTopStatusModel({
       message:
         safetyDecision?.message ??
         "Choose Show target to reveal the guidance marker. Toki will not click it.",
+    };
+  }
+
+  // Ranked above every gesture state: while the camera is being re-framed, none
+  // of them can work, and every other message would be a distraction from the
+  // one thing the user has to change.
+  if (cameraReframingActive) {
+    return {
+      mode: "warning",
+      label: cameraReframingLabel,
+      message: cameraReframingMessage,
+    };
+  }
+
+  if (cameraShutdown.phase === "holding") {
+    const secondsLeft = getCameraShutdownSecondsLeft(cameraShutdown.holdMs);
+
+    return {
+      mode: "gesture",
+      label: "Turning the camera off",
+      message:
+        secondsLeft > 0
+          ? `Keep both fists closed for ${secondsLeft}s. Open either hand to cancel.`
+          : "Release both hands to finish turning the camera off",
     };
   }
 
@@ -636,6 +732,62 @@ function getTokiTopStatusModel({
             : "thinking",
       label: voiceDetails.label,
       message: voiceDetails.message,
+    };
+  }
+
+  if (pointerLock != null) {
+    if (pointerLockFeedback.validation === "checking") {
+      return {
+        mode: "gesture",
+        label: "Locking target",
+        message: "Hold steady while Toki checks the current screen",
+      };
+    }
+
+    if (wristRollLock.phase === "unlocking") {
+      return {
+        mode: "gesture",
+        label: "Releasing target",
+        message: "Keep your hand turned back to let this target go",
+      };
+    }
+
+    if (pointerLockFeedback.validation === "limited") {
+      return {
+        mode: "warning",
+        label: "Target locked",
+        message: "Pinch and hold to speak. Screen access is needed to explain it.",
+      };
+    }
+
+    return {
+      mode: "ready",
+      label: "Target locked",
+      message: "Pinch and hold with your other hand to speak",
+    };
+  }
+
+  if (wristRollLock.phase === "rolling") {
+    return {
+      mode: "gesture",
+      label: "Locking target",
+      message: "Keep your pointing hand turned for a moment",
+    };
+  }
+
+  if (splitPhase === "joining") {
+    return {
+      mode: "gesture",
+      label: "Joining Toki",
+      message: "Hold both hands together briefly",
+    };
+  }
+
+  if (splitPhase === "armed") {
+    return {
+      mode: "gesture",
+      label: "Split ready",
+      message: "Separate your hands to split Toki",
     };
   }
 
@@ -1213,7 +1365,7 @@ function createDefaultGestureRuntimeState(): GestureRuntimeState {
     thresholds: {
       minDetectionConfidence: 0.6,
       pinchHoldMs: 180,
-      openPalmHoldMs: 220,
+      openPalmHoldMs: 650,
       cooldownMs: 700,
       maxHands: 2,
     },
@@ -1648,7 +1800,131 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
       reason: null,
       updatedAt: "1970-01-01T00:00:00.000Z",
     },
+    gesturePresentationDiagnostics: createGesturePresentationDiagnostic({
+      livePointer: null,
+      lockedPointer: null,
+      pointerShadow: null,
+      lockId: null,
+      lockValidation: "idle",
+      lockReason: null,
+      updatedAt: "1970-01-01T00:00:00.000Z",
+    }),
+    gestureWindowValidationDiagnostics: null,
     gestureVoiceContext: null,
+    gestureVoiceLifecycle: createIdleGestureVoiceLifecycleDiagnostic(),
+  };
+}
+
+function createIdleGestureVoiceLifecycleDiagnostic(
+  updatedAt = "1970-01-01T00:00:00.000Z",
+): GestureVoiceLifecycleDiagnostic {
+  const hold = createIdleVoiceHoldState();
+  return {
+    capturePhase: "idle",
+    holdPhase: hold.phase,
+    held: hold.held,
+    releasePending: hold.releasePending,
+    owner: null,
+    nativeSessionId: null,
+    lastCapture: null,
+    lastTransition: "idle",
+    updatedAt,
+  };
+}
+
+function createDebugExportTransitionState(snapshot: DebugSnapshot) {
+  const gesture = snapshot.gestureDiagnostics;
+  const target = snapshot.guidanceResult?.step?.target ?? null;
+
+  return {
+    overlay: {
+      state: snapshot.overlayState,
+      refreshingCapture: snapshot.isRefreshingCapture,
+      hasAcceptedGuidance: snapshot.hasAcceptedGuidance,
+    },
+    camera: {
+      enabled: snapshot.gestureRuntime.camera.enabled,
+      status: snapshot.gestureRuntime.camera.status,
+      permission: snapshot.gestureRuntime.camera.permission,
+      error: snapshot.gestureRuntime.camera.error ?? null,
+      landmarkerStatus: gesture.handLandmarkerStatus,
+      landmarkerError: gesture.handLandmarkerError,
+    },
+    gesture: {
+      enabled: snapshot.gestureRuntime.enabled,
+      handCount: gesture.hands.length,
+      pointPose: `${gesture.pointPose.label}:${gesture.pointPose.phase}`,
+      pointerPhase: gesture.pointer?.phase ?? "inactive",
+      wristRollPose: gesture.wristRollPose.label,
+      wristRollDegrees: gesture.wristRollLock.rotationDegrees ?? 0,
+      lockPhase: gesture.wristRollLock.phase,
+      ordinaryPinchPhase: gesture.ordinaryPinch.phase,
+      ordinaryPinchEvent: gesture.ordinaryPinch.lastEvent?.id ?? null,
+      controlPinchPhase: gesture.controlPinch.phase,
+      controlPinchEvent: gesture.controlPinch.lastEvent?.id ?? null,
+      cameraShutdownPhase: gesture.cameraShutdown.phase,
+      cameraShutdownEvent: gesture.cameraShutdown.lastEvent?.id ?? null,
+      smoothedGesture: `${gesture.smoothedGesture.label}:${gesture.smoothedGesture.phase}`,
+    },
+    pointerLock: {
+      id: snapshot.gesturePointerLock?.id ?? null,
+      validation: snapshot.gesturePointerLockFeedback.validation,
+      reason: snapshot.gesturePointerLockFeedback.reason,
+    },
+    pointerLockWindow: {
+      lockId: snapshot.gestureWindowValidationDiagnostics?.lockId ?? null,
+      result: snapshot.gestureWindowValidationDiagnostics?.result ?? null,
+      expectedFingerprint:
+        snapshot.gestureWindowValidationDiagnostics?.expectedFingerprint ?? null,
+      actualFingerprint:
+        snapshot.gestureWindowValidationDiagnostics?.actualFingerprint ?? null,
+      expectedWindow:
+        snapshot.gestureWindowValidationDiagnostics?.expectedWindow ?? null,
+      actualWindow:
+        snapshot.gestureWindowValidationDiagnostics?.actualWindow ?? null,
+      windowDelta:
+        snapshot.gestureWindowValidationDiagnostics?.windowDelta ?? null,
+      pointInside:
+        snapshot.gestureWindowValidationDiagnostics?.pointInsideActualWindow ??
+        null,
+      reason: snapshot.gestureWindowValidationDiagnostics?.reason ?? null,
+      error: snapshot.gestureWindowValidationDiagnostics?.error ?? null,
+    },
+    voice: {
+      status: snapshot.voiceRuntime.status,
+      source: snapshot.voiceRuntime.activationSource ?? null,
+      transcriptUpdatedAt: snapshot.voiceRuntime.transcript?.updatedAt ?? null,
+      error: snapshot.voiceRuntime.error ?? null,
+      capturePhase: snapshot.gestureVoiceLifecycle.capturePhase,
+      holdPhase: snapshot.gestureVoiceLifecycle.holdPhase,
+      held: snapshot.gestureVoiceLifecycle.held,
+      releasePending: snapshot.gestureVoiceLifecycle.releasePending,
+      owner: snapshot.gestureVoiceLifecycle.owner,
+      nativeSessionId: snapshot.gestureVoiceLifecycle.nativeSessionId,
+      lastCapture: snapshot.gestureVoiceLifecycle.lastCapture,
+      lastTransition: snapshot.gestureVoiceLifecycle.lastTransition,
+    },
+    capture: {
+      capturedAt: snapshot.screenshotCapture?.capturedAt ?? null,
+      appName: snapshot.captureMetadata?.activeWindow?.appName ?? null,
+      error: snapshot.captureError,
+    },
+    guidance: {
+      traceId: snapshot.guidanceTrace?.id ?? null,
+      providerMode: snapshot.guidanceProviderMode,
+      providerName: snapshot.guidanceProviderName,
+      providerError: snapshot.guidanceProviderError,
+      issueCount: snapshot.guidanceIssues.length,
+      safetyAction: snapshot.safetyDecision?.action ?? null,
+      targetId: target?.candidateId ?? null,
+      targetLabel: target?.label ?? null,
+      sessionStatus: snapshot.guidanceSession?.status ?? null,
+    },
+    pointerExplanation: {
+      id: snapshot.pointerExplanation?.id ?? null,
+      status: snapshot.pointerExplanation?.status ?? null,
+      reason: snapshot.pointerExplanation?.reason ?? null,
+    },
   };
 }
 
@@ -1697,8 +1973,9 @@ function getGestureCalibrationCandidate(
 
   if (
     session.stage === "tap_flexion" &&
-    diagnostics.airTapPose.indexExtensionRatio != null &&
-    diagnostics.airTapPose.foldedFingerCount >= 2
+    diagnostics.wristRollLock.rotationDegrees != null &&
+    (diagnostics.wristRollLock.phase === "rolling" ||
+      diagnostics.wristRollLock.phase === "locked")
   ) {
     return {
       stage: "tap_flexion",
@@ -1706,7 +1983,7 @@ function getGestureCalibrationCandidate(
       capturedAt: hand.capturedAt,
       handedness: hand.handedness,
       confidence: hand.confidence,
-      value: diagnostics.airTapPose.indexExtensionRatio,
+      value: diagnostics.wristRollLock.rotationDegrees / 100,
     };
   }
 
@@ -1787,16 +2064,26 @@ function OverlayWindowApp() {
       reason: null,
       updatedAt: new Date().toISOString(),
     });
+  const [
+    gestureWindowValidationDiagnostics,
+    setGestureWindowValidationDiagnostics,
+  ] = useState<GestureWindowValidationDiagnostic | null>(null);
   const [gestureVoiceContext, setGestureVoiceContext] =
     useState<GestureVoiceContext | null>(null);
+  const [gestureVoiceLifecycle, setGestureVoiceLifecycle] =
+    useState<GestureVoiceLifecycleDiagnostic>(() =>
+      createIdleGestureVoiceLifecycleDiagnostic(new Date().toISOString()),
+    );
   const voiceRuntimeRef = useRef<VoiceRuntimeState>(voiceRuntime);
   const voiceCaptureTimeoutRef = useRef<number | null>(null);
+  const voiceCaptureStartupTimeoutRef = useRef<number | null>(null);
+  const voiceCaptureAttemptRef = useRef(0);
   const voiceSubmitInFlightRef = useRef(false);
-  const voiceCapturePhaseRef = useRef<
-    "idle" | "starting" | "capturing" | "submitting"
-  >("idle");
+  const voiceCapturePhaseRef = useRef<VoiceCapturePhase>("idle");
   const voiceHoldStateRef = useRef(createIdleVoiceHoldState());
+  const nativeVoiceSessionRef = useRef<string | null>(null);
   const gestureVoiceContextRef = useRef<GestureVoiceContext | null>(null);
+  const gestureVoiceOwnerRef = useRef<GestureVoiceOwner | null>(null);
   const routedVoiceCommandRef = useRef<string | null>(null);
   const pointerExplanationInFlightRef = useRef(false);
   const lastSpokenPointerExplanationRef = useRef<string | null>(null);
@@ -1816,7 +2103,10 @@ function OverlayWindowApp() {
   const lastPublishedDebugSnapshotRef = useRef<string | null>(null);
   const lastGestureClassificationRef = useRef<GestureClassification | null>(null);
   const handledGestureLockRequestRef = useRef<string | null>(null);
+  const handledGestureUnlockRequestRef = useRef<string | null>(null);
+  const handledOrdinaryPinchEventRef = useRef<string | null>(null);
   const handledControlPinchEventRef = useRef<string | null>(null);
+  const handledCameraShutdownEventRef = useRef<string | null>(null);
   const topStatusRef = useRef<TokiTopStatusModel | null>(null);
   const topUtilityModeRef = useRef<TopUtilityMode>("hidden");
   const topUtilityFocusedRef = useRef(false);
@@ -1838,6 +2128,15 @@ function OverlayWindowApp() {
     deviceRefreshToken: gestureDeviceRefreshToken,
     display: gesturePointerDisplay,
     adaptiveProfile: adaptiveGestureProfile,
+    ordinaryVoiceCanStart:
+      gesturePointerLock == null &&
+      voiceCapturePhaseRef.current === "idle" &&
+      !pointerExplanationInFlightRef.current,
+    controlVoiceCanStart:
+      gesturePointerLock != null &&
+      (gesturePointerLockFeedback.validation === "checking" ||
+        gesturePointerLockFeedback.validation === "locked" ||
+        gesturePointerLockFeedback.validation === "limited"),
   });
   useEffect(() => {
     const candidate = getGestureCalibrationCandidate(
@@ -1856,8 +2155,8 @@ function OverlayWindowApp() {
       ),
     );
   }, [
-    alwaysOnGestureRuntime.diagnostics.airTapPose.foldedFingerCount,
-    alwaysOnGestureRuntime.diagnostics.airTapPose.indexExtensionRatio,
+    alwaysOnGestureRuntime.diagnostics.wristRollLock.phase,
+    alwaysOnGestureRuntime.diagnostics.wristRollLock.rotationDegrees,
     alwaysOnGestureRuntime.diagnostics.hand,
     alwaysOnGestureRuntime.diagnostics.pinch.normalizedDistance,
     alwaysOnGestureRuntime.diagnostics.pointPose.label,
@@ -1866,7 +2165,8 @@ function OverlayWindowApp() {
     gestureCalibration.status,
   ]);
   const gesturePointerShadow = useMemo(() => {
-    const pointer = alwaysOnGestureRuntime.pointer;
+    const pointer =
+      gesturePointerLock?.pointer ?? alwaysOnGestureRuntime.pointer;
 
     if (
       pointer == null ||
@@ -1875,12 +2175,55 @@ function OverlayWindowApp() {
       return null;
     }
 
-    return getPointerShadowPosition(
+    return getDetachedGesturePointerShadowPosition(
       pointer.display.x,
       pointer.display.y,
       viewport,
     );
-  }, [alwaysOnGestureRuntime.pointer, gesturePointerDisplay.id, viewport]);
+  }, [
+    alwaysOnGestureRuntime.pointer,
+    gesturePointerDisplay.id,
+    gesturePointerLock,
+    viewport,
+  ]);
+  const gesturePuckPresentation = useMemo(
+    () =>
+      createGesturePuckPresentation({
+        hasPointerLock: gesturePointerLock != null,
+        lockValidation: gesturePointerLockFeedback.validation,
+        splitVisual: alwaysOnGestureRuntime.splitVisual,
+      }),
+    [
+      alwaysOnGestureRuntime.splitVisual,
+      gesturePointerLock,
+      gesturePointerLockFeedback.validation,
+    ],
+  );
+  const gesturePresentationDiagnostics = useMemo(
+    () =>
+      createGesturePresentationDiagnostic({
+        livePointer: alwaysOnGestureRuntime.pointer,
+        lockedPointer: gesturePointerLock?.pointer ?? null,
+        pointerShadow: gesturePointerShadow,
+        lockId: gesturePointerLock?.id ?? null,
+        lockValidation: gesturePointerLockFeedback.validation,
+        lockReason: gesturePointerLockFeedback.reason,
+        lockPresentation: gesturePuckPresentation.lockState,
+        splitVisualRequested: alwaysOnGestureRuntime.splitVisual != null,
+        splitVisualPresented: gesturePuckPresentation.splitVisual != null,
+        updatedAt:
+          alwaysOnGestureRuntime.diagnostics.updatedAt ??
+          gesturePointerLockFeedback.updatedAt,
+      }),
+    [
+      alwaysOnGestureRuntime.diagnostics.updatedAt,
+      alwaysOnGestureRuntime.pointer,
+      gesturePointerLock,
+      gesturePointerLockFeedback,
+      gesturePointerShadow,
+      gesturePuckPresentation,
+    ],
+  );
 
   const activeStep = guidanceResult?.step ?? null;
   const acceptedStep =
@@ -1955,6 +2298,16 @@ function OverlayWindowApp() {
       activeStep?.instruction ?? currentWorkflowStep?.instruction ?? activeTarget.instruction,
     safetyDecision,
     gestureClassification: gestureRuntime.currentGesture,
+    wristRollLock: alwaysOnGestureRuntime.wristRollLock,
+    cameraShutdown: alwaysOnGestureRuntime.cameraShutdown,
+    cameraReframingActive: shouldWarnAboutCameraReframing({
+      reframing: alwaysOnGestureRuntime.cameraReframing,
+      gesturesEnabled: gestureRuntime.enabled,
+      cameraStatus: alwaysOnGestureRuntime.camera.status,
+    }),
+    splitPhase: alwaysOnGestureRuntime.diagnostics.split.phase,
+    pointerLock: gesturePointerLock,
+    pointerLockFeedback: gesturePointerLockFeedback,
   });
 
   function clearTopUtilityTimer(timerRef: { current: number | null }) {
@@ -1998,10 +2351,10 @@ function OverlayWindowApp() {
     }
 
     setGestureRuntime((currentState) => {
-      const nextEnabled = runtimeUnavailable ? false : currentState.enabled;
-      const nextGesture = runtimeUnavailable
-        ? createInactiveGestureClassification()
-        : currentState.currentGesture;
+      const nextState = reconcileCameraGestureRuntimeState(
+        currentState,
+        nextCamera,
+      );
       const cameraIsCurrent =
         currentState.camera.enabled === nextCamera.enabled &&
         currentState.camera.permission === nextCamera.permission &&
@@ -2011,18 +2364,16 @@ function OverlayWindowApp() {
 
       if (
         cameraIsCurrent &&
-        nextEnabled === currentState.enabled &&
-        isSameGestureClassification(nextGesture, currentState.currentGesture)
+        nextState.enabled === currentState.enabled &&
+        isSameGestureClassification(
+          nextState.currentGesture,
+          currentState.currentGesture,
+        )
       ) {
         return currentState;
       }
 
-      return {
-        ...currentState,
-        enabled: nextEnabled,
-        currentGesture: nextGesture,
-        camera: nextCamera,
-      };
+      return nextState;
     });
   }, [alwaysOnGestureRuntime.camera]);
 
@@ -2044,11 +2395,15 @@ function OverlayWindowApp() {
       new Date().toISOString(),
     );
 
-    if (gestureAction?.type === "activate_assistant") {
-      setOverlayState("listening");
-    }
-
-    if (gestureAction?.type === "pause_assistant") {
+    if (
+      gestureAction?.type === "pause_assistant" &&
+      alwaysOnGestureRuntime.diagnostics.hands.length === 1 &&
+      gesturePointerLock == null &&
+      alwaysOnGestureRuntime.ordinaryPinch.phase === "idle" &&
+      alwaysOnGestureRuntime.controlPinch.phase === "idle" &&
+      alwaysOnGestureRuntime.wristRollLock.phase !== "rolling" &&
+      voiceCapturePhaseRef.current === "idle"
+    ) {
       cancelVoiceRuntime();
       setOverlayState("paused");
     }
@@ -2064,6 +2419,44 @@ function OverlayWindowApp() {
           },
     );
   }, [alwaysOnGestureRuntime.classification]);
+
+  useEffect(() => {
+    const event = alwaysOnGestureRuntime.ordinaryPinch.lastEvent;
+    if (event == null || handledOrdinaryPinchEventRef.current === event.id) {
+      return;
+    }
+
+    handledOrdinaryPinchEventRef.current = event.id;
+    if (event.type === "press") {
+      if (
+        gesturePointerLock != null ||
+        voiceCapturePhaseRef.current !== "idle"
+      ) {
+        return;
+      }
+
+      startGestureVoiceCapture("ordinary", event);
+      return;
+    }
+
+    const owner = gestureVoiceOwnerRef.current;
+    if (
+      voiceRuntimeRef.current.activationSource !== "gesture" ||
+      !isGestureVoiceTerminationForOwner(owner, "ordinary", event)
+    ) {
+      return;
+    }
+
+    publishGestureVoiceLifecycle(
+      event.type === "tracking_lost"
+        ? "ordinary_tracking_lost"
+        : "ordinary_release",
+    );
+    void submitVoiceListening();
+  }, [
+    alwaysOnGestureRuntime.ordinaryPinch.lastEvent?.id,
+    gesturePointerLock,
+  ]);
 
   useEffect(() => {
     const nextAnchor = alwaysOnGestureRuntime.visualAnchor;
@@ -2112,7 +2505,30 @@ function OverlayWindowApp() {
       reason: null,
       updatedAt: new Date().toISOString(),
     });
+    setGestureWindowValidationDiagnostics(null);
   }, [alwaysOnGestureRuntime.lockRequest, gesturePointerDisplay]);
+
+  useEffect(() => {
+    const request = alwaysOnGestureRuntime.unlockRequest;
+    if (request == null || handledGestureUnlockRequestRef.current === request.id) {
+      return;
+    }
+
+    handledGestureUnlockRequestRef.current = request.id;
+    if (gesturePointerLock?.id !== request.lockId) {
+      return;
+    }
+
+    window.speechSynthesis?.cancel();
+    setPointerExplanation(null);
+    setGesturePointerLock(null);
+    setGesturePointerLockFeedback({
+      validation: "idle",
+      reason: null,
+      updatedAt: request.unlockedAt,
+    });
+    setGestureWindowValidationDiagnostics(null);
+  }, [alwaysOnGestureRuntime.unlockRequest, gesturePointerLock?.id]);
 
   useEffect(() => {
     if (gesturePointerLock == null) {
@@ -2123,6 +2539,7 @@ function OverlayWindowApp() {
     let cancelled = false;
     let timer: number | null = null;
     let expectedActiveWindowId = lock.evidence.activeWindowId ?? null;
+    let expectedActiveWindow: ActiveWindowBounds | null = null;
 
     function invalidate(reason: PointerLockInvalidationReason) {
       if (cancelled) {
@@ -2139,12 +2556,79 @@ function OverlayWindowApp() {
       });
     }
 
+    function keepLimited(reason: PointerLockInvalidationReason) {
+      if (cancelled) {
+        return;
+      }
+
+      setGesturePointerLockFeedback({
+        validation: "limited",
+        reason,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
     async function validateCurrentScreenState() {
+      const checkStartedAtMs = Date.now();
       try {
-        const [screenCaptureAvailable, activeWindow] = await Promise.all([
-          invoke<boolean>("screen_capture_access_status"),
-          invoke<ActiveWindowBounds>("frontmost_window_bounds", { appName: null }),
-        ]);
+        const screenCaptureAvailable = await invoke<boolean>(
+          "screen_capture_access_status",
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!screenCaptureAvailable) {
+          setGestureWindowValidationDiagnostics(
+            createGestureWindowValidationDiagnostic({
+              lockId: lock.id,
+              checkStartedAtMs,
+              checkCompletedAtMs: Date.now(),
+              screenCaptureAvailable,
+              expectedFingerprint: expectedActiveWindowId,
+              actualFingerprint: null,
+              expectedWindow: expectedActiveWindow,
+              actualWindow: null,
+              logicalPoint: lock.pointer.display,
+              reason: "screen_capture_unavailable",
+            }),
+          );
+          keepLimited("screen_capture_unavailable");
+          timer = window.setTimeout(validateCurrentScreenState, 2_000);
+          return;
+        }
+
+        let activeWindow: ActiveWindowBounds;
+        try {
+          activeWindow = await invoke<ActiveWindowBounds>(
+            "frontmost_window_bounds",
+            {
+              appName: null,
+              pointX: lock.pointer.display.x,
+              pointY: lock.pointer.display.y,
+            },
+          );
+        } catch (error) {
+          setGestureWindowValidationDiagnostics(
+            createGestureWindowValidationDiagnostic({
+              lockId: lock.id,
+              checkStartedAtMs,
+              checkCompletedAtMs: Date.now(),
+              screenCaptureAvailable,
+              expectedFingerprint: expectedActiveWindowId,
+              actualFingerprint: null,
+              expectedWindow: expectedActiveWindow,
+              actualWindow: null,
+              logicalPoint: lock.pointer.display,
+              reason: "screen_state_unavailable",
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          keepLimited("screen_state_unavailable");
+          timer = window.setTimeout(validateCurrentScreenState, 2_000);
+          return;
+        }
 
         if (cancelled) {
           return;
@@ -2169,7 +2653,22 @@ function OverlayWindowApp() {
           display: gesturePointerDisplay,
           screenCaptureAvailable,
           activeWindowId,
+          activeWindow,
         });
+        setGestureWindowValidationDiagnostics(
+          createGestureWindowValidationDiagnostic({
+            lockId: lock.id,
+            checkStartedAtMs,
+            checkCompletedAtMs: Date.now(),
+            screenCaptureAvailable,
+            expectedFingerprint: expectedActiveWindowId,
+            actualFingerprint: activeWindowId,
+            expectedWindow: expectedActiveWindow,
+            actualWindow: activeWindow,
+            logicalPoint: lock.pointer.display,
+            reason: invalidationReason,
+          }),
+        );
 
         if (invalidationReason != null) {
           invalidate(invalidationReason);
@@ -2178,6 +2677,7 @@ function OverlayWindowApp() {
 
         if (expectedActiveWindowId == null) {
           expectedActiveWindowId = activeWindowId;
+          expectedActiveWindow = { ...activeWindow };
           setGesturePointerLock((current) =>
             current?.id === lock.id
               ? createPointerLockSnapshot({
@@ -2193,16 +2693,32 @@ function OverlayWindowApp() {
                 })
               : current,
           );
-          setGesturePointerLockFeedback({
-            validation: "locked",
-            reason: null,
-            updatedAt: new Date().toISOString(),
-          });
         }
 
+        setGesturePointerLockFeedback({
+          validation: "locked",
+          reason: null,
+          updatedAt: new Date().toISOString(),
+        });
         timer = window.setTimeout(validateCurrentScreenState, 2_000);
-      } catch {
-        invalidate("screen_state_unavailable");
+      } catch (error) {
+        setGestureWindowValidationDiagnostics(
+          createGestureWindowValidationDiagnostic({
+            lockId: lock.id,
+            checkStartedAtMs,
+            checkCompletedAtMs: Date.now(),
+            screenCaptureAvailable: null,
+            expectedFingerprint: expectedActiveWindowId,
+            actualFingerprint: null,
+            expectedWindow: expectedActiveWindow,
+            actualWindow: null,
+            logicalPoint: lock.pointer.display,
+            reason: "screen_state_unavailable",
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+        keepLimited("screen_state_unavailable");
+        timer = window.setTimeout(validateCurrentScreenState, 2_000);
       }
     }
 
@@ -2278,61 +2794,68 @@ function OverlayWindowApp() {
       return;
     }
 
-    handledControlPinchEventRef.current = event.id;
-
     if (event.type === "press") {
       const lock = gesturePointerLock;
+      if (lock != null && gesturePointerLockFeedback.validation === "checking") {
+        return;
+      }
+
       if (!canStartGestureVoice(
         lock,
         gesturePointerLockFeedback.validation,
         voiceCapturePhaseRef.current,
       )) {
+        handledControlPinchEventRef.current = event.id;
         return;
       }
 
+      handledControlPinchEventRef.current = event.id;
       const context = createGestureVoiceContext({
         sessionId: `gesture-voice-${crypto.randomUUID()}`,
         controlHandTrackId: event.controlHandTrackId,
         startedAt: event.firedAt,
         lock,
       });
-      gestureVoiceContextRef.current = context;
-      setGestureVoiceContext(context);
-      void emitTo("overlay", "toki://overlay-command", {
-        type: "start-voice-listening",
-        source: "gesture",
-        gestureContext: context,
-      } satisfies OverlayCommand).catch(() => {
-        clearActiveGestureVoiceContext();
-      });
+      startGestureVoiceCapture("control", event, context);
       return;
     }
 
+    handledControlPinchEventRef.current = event.id;
     const activeContext = gestureVoiceContextRef.current;
+    const owner = gestureVoiceOwnerRef.current;
     if (
       activeContext == null ||
-      activeContext.controlHandTrackId !== event.controlHandTrackId
+      activeContext.controlHandTrackId !== event.controlHandTrackId ||
+      !isGestureVoiceTerminationForOwner(owner, "control", event)
     ) {
       return;
     }
 
-    if (event.type === "release") {
-      void emitTo("overlay", "toki://overlay-command", {
-        type: "submit-voice-listening",
-      } satisfies OverlayCommand).catch(() => undefined);
-      return;
-    }
-
-    void emitTo("overlay", "toki://overlay-command", {
-      type: "stop-voice-listening",
-    } satisfies OverlayCommand).catch(() => {
-      cancelVoiceRuntime();
-    });
+    publishGestureVoiceLifecycle(
+      event.type === "tracking_lost"
+        ? "control_tracking_lost"
+        : "control_release",
+    );
+    void submitVoiceListening();
   }, [
     alwaysOnGestureRuntime.controlPinch.lastEvent?.id,
     gesturePointerLock,
     gesturePointerLockFeedback.validation,
   ]);
+
+  useEffect(() => {
+    const event = alwaysOnGestureRuntime.cameraShutdown.lastEvent;
+    if (
+      event == null ||
+      handledCameraShutdownEventRef.current === event.id ||
+      event.type !== "disable_camera_gestures"
+    ) {
+      return;
+    }
+
+    handledCameraShutdownEventRef.current = event.id;
+    setCameraGesturesEnabled(false);
+  }, [alwaysOnGestureRuntime.cameraShutdown.lastEvent?.id]);
 
   useEffect(() => {
     if (
@@ -2342,11 +2865,7 @@ function OverlayWindowApp() {
       return;
     }
 
-    void emitTo("overlay", "toki://overlay-command", {
-      type: "stop-voice-listening",
-    } satisfies OverlayCommand).catch(() => {
-      cancelVoiceRuntime();
-    });
+    stopVoiceListening();
   }, [gesturePointerLockFeedback.validation]);
 
   useEffect(() => {
@@ -2374,6 +2893,39 @@ function OverlayWindowApp() {
       requestTopUtilityMode(getPassiveTopUtilityMode(topStatus));
     }
   }, [topStatus]);
+
+  useEffect(() => {
+    if (!isTransientVoiceTopStatus(voiceRuntime.status)) {
+      return;
+    }
+
+    const expectedStatus = voiceRuntime.status;
+    const timeout = window.setTimeout(() => {
+      if (voiceCapturePhaseRef.current !== "idle") {
+        return;
+      }
+
+      const currentVoiceRuntime = voiceRuntimeRef.current;
+      const settledVoiceRuntime = settleTransientVoiceTopStatus(
+        currentVoiceRuntime,
+        expectedStatus,
+      );
+      if (settledVoiceRuntime === currentVoiceRuntime) {
+        return;
+      }
+
+      voiceRuntimeRef.current = settledVoiceRuntime;
+      setVoiceRuntime(settledVoiceRuntime);
+    }, TOP_UTILITY_RESULT_NOTICE_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    voiceRuntime.error,
+    voiceRuntime.pendingCommand?.createdAt,
+    voiceRuntime.status,
+  ]);
 
   const overlaySnapshot = useMemo<OverlaySnapshot>(
     () => ({
@@ -2424,7 +2976,10 @@ function OverlayWindowApp() {
       calibration,
       gesturePointerLock,
       gesturePointerLockFeedback,
+      gesturePresentationDiagnostics,
+      gestureWindowValidationDiagnostics,
       gestureVoiceContext,
+      gestureVoiceLifecycle,
     }),
     [
       overlaySnapshot,
@@ -2451,9 +3006,21 @@ function OverlayWindowApp() {
       calibration,
       gesturePointerLock,
       gesturePointerLockFeedback,
+      gesturePresentationDiagnostics,
+      gestureWindowValidationDiagnostics,
       gestureVoiceContext,
+      gestureVoiceLifecycle,
     ],
   );
+  const debugExportTransitionState = useMemo(
+    () => createDebugExportTransitionState(debugSnapshot),
+    [debugSnapshot],
+  );
+  useTokiDebugExport({
+    snapshot: debugSnapshot,
+    transitionState: debugExportTransitionState,
+    screenshot: screenshotCapture,
+  });
 
   async function publishRuntimeSnapshots(
     options: { includeDebug?: boolean; forceDebug?: boolean } = {},
@@ -2510,7 +3077,14 @@ function OverlayWindowApp() {
       cachedPreflight != null && Date.now() - cachedPreflight.checkedAt < preflightCacheMs;
 
     if (!hasFreshPreflight) {
-      const hasScreenCaptureAccess = await invoke<boolean>("screen_capture_access_status");
+      let hasScreenCaptureAccess = await invoke<boolean>(
+        "screen_capture_access_status",
+      );
+      if (!hasScreenCaptureAccess) {
+        hasScreenCaptureAccess = await invoke<boolean>(
+          "request_screen_capture_access",
+        );
+      }
       captureAccessPreflightRef.current = {
         allowed: hasScreenCaptureAccess,
         checkedAt: Date.now(),
@@ -2590,7 +3164,7 @@ function OverlayWindowApp() {
           transcript: command.text,
           lock: null,
           message:
-            "Point at the control and double-tap your index finger to lock it, then ask again.",
+            "Point at the control, turn that wrist and hold briefly to lock it, then ask again.",
           reason: "missing_pointer_lock",
         }),
       );
@@ -2604,18 +3178,6 @@ function OverlayWindowApp() {
     );
     setCaptureError(null);
     setOverlayState("thinking");
-    setGesturePointerLock((current) =>
-      current?.id === lock.id ? null : current,
-    );
-    setGesturePointerLockFeedback((current) =>
-      current.validation === "invalidated"
-        ? current
-        : {
-            validation: "idle",
-            reason: null,
-            updatedAt: new Date().toISOString(),
-          },
-    );
 
     const refuse = (
       message: string,
@@ -2639,7 +3201,11 @@ function OverlayWindowApp() {
     try {
       const snapshot = await invokeCaptureCommand<ActiveWindowCaptureSnapshot>(
         "capture_active_window_snapshot",
-        { appName: null },
+        {
+          appName: null,
+          pointX: lock.pointer.display.x,
+          pointY: lock.pointer.display.y,
+        },
       );
       const activeWindowId = createScreenStateFingerprint(snapshot.window);
       const invalidationReason = getPointerLockInvalidationReason({
@@ -2647,6 +3213,7 @@ function OverlayWindowApp() {
         display: gesturePointerDisplay,
         screenCaptureAvailable: true,
         activeWindowId,
+        activeWindow: snapshot.window,
       });
 
       setCaptureMetadata(snapshot.metadata);
@@ -2972,7 +3539,11 @@ function OverlayWindowApp() {
         );
         const snapshot = await invokeCaptureCommand<ActiveWindowCaptureSnapshot>(
           "capture_active_window_snapshot",
-          { appName: preferredAppName },
+          {
+            appName: preferredAppName,
+            pointX: null,
+            pointY: null,
+          },
         );
         metadata = snapshot.metadata;
         screenshot = snapshot.screenshot;
@@ -3627,13 +4198,99 @@ function OverlayWindowApp() {
     });
   }
 
+  function isSameGestureVoiceOwner(
+    left: GestureVoiceOwner | null,
+    right: GestureVoiceOwner | null,
+  ) {
+    return (
+      left != null &&
+      right != null &&
+      left?.detector === right?.detector &&
+      left?.controlHandTrackId === right?.controlHandTrackId &&
+      left?.pressEventId === right?.pressEventId
+    );
+  }
+
+  function publishGestureVoiceLifecycle(
+    lastTransition: string,
+    options: {
+      lastCapture?: GestureVoiceCaptureSummary | null;
+    } = {},
+  ) {
+    const hold = voiceHoldStateRef.current;
+    const owner = gestureVoiceOwnerRef.current;
+    setGestureVoiceLifecycle((current) => ({
+      capturePhase: voiceCapturePhaseRef.current,
+      holdPhase: hold.phase,
+      held: hold.held,
+      releasePending: hold.releasePending,
+      owner: owner == null ? null : { ...owner },
+      nativeSessionId: nativeVoiceSessionRef.current,
+      lastCapture:
+        options.lastCapture === undefined
+          ? current.lastCapture
+          : options.lastCapture,
+      lastTransition,
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function startGestureVoiceCapture(
+    detector: GestureVoiceDetector,
+    pressEvent: ControlPinchEvent,
+    context?: GestureVoiceContext,
+  ) {
+    if (pressEvent.type !== "press") {
+      return;
+    }
+
+    const owner = createGestureVoiceOwner(detector, pressEvent);
+    gestureVoiceOwnerRef.current = owner;
+    gestureVoiceContextRef.current = context ?? null;
+    setGestureVoiceContext(context ?? null);
+    publishGestureVoiceLifecycle(`${detector}_press`);
+
+    void startVoiceListening("gesture", context).then((started) => {
+      if (
+        started ||
+        !isSameGestureVoiceOwner(gestureVoiceOwnerRef.current, owner)
+      ) {
+        return;
+      }
+
+      clearActiveGestureVoiceContext();
+      publishGestureVoiceLifecycle(`${detector}_start_rejected`);
+    });
+  }
+
   function clearActiveGestureVoiceContext() {
+    gestureVoiceOwnerRef.current = null;
     gestureVoiceContextRef.current = null;
     setGestureVoiceContext(null);
   }
 
+  function setCameraGesturesEnabled(enabled: boolean) {
+    if (!enabled) {
+      setGestureVisualAnchor(null);
+      if (
+        gestureVoiceOwnerRef.current != null ||
+        gestureVoiceContextRef.current != null
+      ) {
+        cancelVoiceRuntime();
+      }
+    } else {
+      setGestureDeviceRefreshToken((currentToken) => currentToken + 1);
+    }
+
+    setGestureRuntime((currentState) =>
+      setCameraGestureRuntimeEnabled(currentState, enabled),
+    );
+  }
+
   function cancelVoiceRuntime() {
     clearVoiceCaptureTimeout();
+    clearVoiceCaptureStartupTimeout();
+    voiceCaptureAttemptRef.current += 1;
     voiceSubmitInFlightRef.current = false;
     voiceCapturePhaseRef.current = "idle";
     voiceHoldStateRef.current = transitionVoiceHold(
@@ -3641,6 +4298,7 @@ function OverlayWindowApp() {
       "cancel",
     ).state;
     routedVoiceCommandRef.current = null;
+    nativeVoiceSessionRef.current = null;
     clearActiveGestureVoiceContext();
     void resetNativeVoiceCapture().catch(() => undefined);
     const nextVoiceRuntime: VoiceRuntimeState = {
@@ -3649,6 +4307,7 @@ function OverlayWindowApp() {
     };
     voiceRuntimeRef.current = nextVoiceRuntime;
     setVoiceRuntime(nextVoiceRuntime);
+    publishGestureVoiceLifecycle("cancelled");
   }
 
   function clearVoiceCaptureTimeout() {
@@ -3660,6 +4319,46 @@ function OverlayWindowApp() {
     voiceCaptureTimeoutRef.current = null;
   }
 
+  function clearVoiceCaptureStartupTimeout() {
+    if (voiceCaptureStartupTimeoutRef.current == null) {
+      return;
+    }
+
+    window.clearTimeout(voiceCaptureStartupTimeoutRef.current);
+    voiceCaptureStartupTimeoutRef.current = null;
+  }
+
+  function scheduleVoiceCaptureStartupTimeout(
+    attemptId: number,
+    source: VoiceActivationSource,
+  ) {
+    clearVoiceCaptureStartupTimeout();
+    voiceCaptureStartupTimeoutRef.current = window.setTimeout(() => {
+      voiceCaptureStartupTimeoutRef.current = null;
+      if (
+        voiceCaptureAttemptRef.current !== attemptId ||
+        voiceCapturePhaseRef.current !== "starting"
+      ) {
+        return;
+      }
+
+      cancelVoiceRuntime();
+      const failedVoiceRuntime: VoiceRuntimeState = {
+        ...createDefaultVoiceRuntimeState(),
+        permission: "error",
+        status: "error",
+        activationSource: source,
+        error: "Microphone capture did not start in time.",
+      };
+      voiceRuntimeRef.current = failedVoiceRuntime;
+      setVoiceRuntime(failedVoiceRuntime);
+      setOverlayState((currentState) =>
+        currentState === "listening" ? "idle" : currentState,
+      );
+      publishGestureVoiceLifecycle("startup_timeout");
+    }, voiceCaptureStartupTimeoutMs);
+  }
+
   function scheduleVoiceCaptureTimeout() {
     clearVoiceCaptureTimeout();
 
@@ -3669,10 +4368,195 @@ function OverlayWindowApp() {
         return;
       }
 
-      emitTo("overlay", "toki://overlay-command", {
-        type: "submit-voice-listening",
-      } satisfies OverlayCommand).catch(() => undefined);
+      void submitVoiceListening();
     }, 10_000);
+  }
+
+  async function startVoiceListening(
+    source: VoiceActivationSource,
+    context?: GestureVoiceContext,
+  ): Promise<boolean> {
+    if (pointerExplanationInFlightRef.current) {
+      if (source === "gesture") {
+        clearActiveGestureVoiceContext();
+        publishGestureVoiceLifecycle("start_rejected_explanation");
+      }
+      return false;
+    }
+
+    if (voiceCapturePhaseRef.current !== "idle") {
+      if (source === "gesture") {
+        publishGestureVoiceLifecycle("start_rejected_busy");
+      }
+      return false;
+    }
+
+    const attemptId = voiceCaptureAttemptRef.current + 1;
+    voiceCaptureAttemptRef.current = attemptId;
+    clearVoiceCaptureTimeout();
+    clearVoiceCaptureStartupTimeout();
+    window.speechSynthesis?.cancel();
+    setPointerExplanation(null);
+    voiceSubmitInFlightRef.current = false;
+    voiceCapturePhaseRef.current = "starting";
+    const heldActivation = isHeldVoiceActivationSource(source);
+    if (source === "gesture") {
+      gestureVoiceContextRef.current = context ?? null;
+      setGestureVoiceContext(context ?? null);
+    }
+    if (heldActivation) {
+      const holdTransition = transitionVoiceHold(
+        voiceHoldStateRef.current,
+        "press",
+      );
+      if (holdTransition.effect !== "start_capture") {
+        voiceCapturePhaseRef.current = "idle";
+        if (source === "gesture") {
+          clearActiveGestureVoiceContext();
+          publishGestureVoiceLifecycle("start_rejected_hold_state");
+        }
+        return false;
+      }
+      voiceHoldStateRef.current = holdTransition.state;
+    }
+    routedVoiceCommandRef.current = null;
+    const requestingVoiceRuntime: VoiceRuntimeState = {
+      enabled: true,
+      permission: "unknown",
+      status: "requesting_microphone",
+      activationSource: source,
+    };
+    voiceRuntimeRef.current = requestingVoiceRuntime;
+    setVoiceRuntime(requestingVoiceRuntime);
+    setOverlayState("listening");
+    publishGestureVoiceLifecycle("capture_starting");
+    scheduleVoiceCaptureStartupTimeout(attemptId, source);
+
+    try {
+      await resetNativeVoiceCapture().catch(() => undefined);
+      if (voiceCaptureAttemptRef.current !== attemptId) {
+        return false;
+      }
+
+      if (heldActivation && voiceHoldStateRef.current.phase !== "starting") {
+        clearVoiceCaptureStartupTimeout();
+        voiceCapturePhaseRef.current = "idle";
+        voiceHoldStateRef.current = transitionVoiceHold(
+          voiceHoldStateRef.current,
+          "capture_aborted",
+        ).state;
+        const idleVoiceRuntime: VoiceRuntimeState = {
+          ...requestingVoiceRuntime,
+          enabled: false,
+          permission: "granted",
+          status: "idle",
+        };
+        voiceRuntimeRef.current = idleVoiceRuntime;
+        setVoiceRuntime(idleVoiceRuntime);
+        setOverlayState("idle");
+        if (source === "gesture") {
+          clearActiveGestureVoiceContext();
+        }
+        publishGestureVoiceLifecycle("capture_aborted");
+        return false;
+      }
+
+      const nativeCapture = await startNativeVoiceCapture();
+      if (voiceCaptureAttemptRef.current !== attemptId) {
+        await resetNativeVoiceCapture().catch(() => undefined);
+        return false;
+      }
+
+      clearVoiceCaptureStartupTimeout();
+      nativeVoiceSessionRef.current = nativeCapture.sessionId;
+      voiceCapturePhaseRef.current = "capturing";
+      const listeningVoiceRuntime: VoiceRuntimeState = {
+        ...voiceRuntimeRef.current,
+        permission: "granted",
+        status: "listening",
+        transcript: undefined,
+        pendingCommand: undefined,
+        error: undefined,
+      };
+      voiceRuntimeRef.current = listeningVoiceRuntime;
+      setVoiceRuntime(listeningVoiceRuntime);
+
+      if (heldActivation) {
+        const holdTransition = transitionVoiceHold(
+          voiceHoldStateRef.current,
+          "capture_started",
+        );
+        voiceHoldStateRef.current = holdTransition.state;
+        publishGestureVoiceLifecycle("capture_started");
+        if (holdTransition.effect === "submit_capture") {
+          await submitActiveVoiceCapture();
+        }
+      } else {
+        publishGestureVoiceLifecycle("capture_started");
+        scheduleVoiceCaptureTimeout();
+      }
+      return true;
+    } catch (error) {
+      clearVoiceCaptureTimeout();
+      clearVoiceCaptureStartupTimeout();
+      await resetNativeVoiceCapture().catch(() => undefined);
+      if (voiceCaptureAttemptRef.current !== attemptId) {
+        return false;
+      }
+
+      nativeVoiceSessionRef.current = null;
+      voiceCapturePhaseRef.current = "idle";
+      voiceHoldStateRef.current = transitionVoiceHold(
+        voiceHoldStateRef.current,
+        "capture_failed",
+      ).state;
+      const failedVoiceRuntime: VoiceRuntimeState = {
+        ...voiceRuntimeRef.current,
+        enabled: false,
+        permission: "error",
+        status: "error",
+        error: formatErrorMessage(error),
+      };
+      voiceRuntimeRef.current = failedVoiceRuntime;
+      setVoiceRuntime(failedVoiceRuntime);
+      setOverlayState((currentState) =>
+        currentState === "listening" ? "idle" : currentState,
+      );
+      if (source === "gesture") {
+        clearActiveGestureVoiceContext();
+      }
+      publishGestureVoiceLifecycle("capture_failed");
+      return false;
+    }
+  }
+
+  function stopVoiceListening() {
+    cancelVoiceRuntime();
+    setOverlayState((currentState) =>
+      currentState === "listening" ? "idle" : currentState,
+    );
+  }
+
+  async function submitVoiceListening() {
+    if (voiceHoldStateRef.current.phase !== "idle") {
+      const holdTransition = transitionVoiceHold(
+        voiceHoldStateRef.current,
+        "release",
+      );
+      voiceHoldStateRef.current = holdTransition.state;
+      publishGestureVoiceLifecycle(
+        holdTransition.state.releasePending
+          ? "release_pending"
+          : holdTransition.effect === "submit_capture"
+            ? "release_submitting"
+            : "release_ignored",
+      );
+      if (holdTransition.effect !== "submit_capture") {
+        return;
+      }
+    }
+
+    await submitActiveVoiceCapture();
   }
 
   async function submitActiveVoiceCapture() {
@@ -3693,8 +4577,10 @@ function OverlayWindowApp() {
         ? gestureVoiceContextRef.current ?? undefined
         : undefined;
     clearVoiceCaptureTimeout();
+    clearVoiceCaptureStartupTimeout();
     voiceSubmitInFlightRef.current = true;
     voiceCapturePhaseRef.current = "submitting";
+    publishGestureVoiceLifecycle("submission_started");
 
     const transcribingVoiceRuntime: VoiceRuntimeState = {
       ...activeVoiceRuntime,
@@ -3705,8 +4591,13 @@ function OverlayWindowApp() {
 
     try {
       const captureStatus = await getNativeVoiceCaptureStatus().catch(() => null);
+      const expectedSessionId = nativeVoiceSessionRef.current;
 
-      if (captureStatus?.status !== "capturing") {
+      if (
+        captureStatus?.status !== "capturing" ||
+        (expectedSessionId != null &&
+          captureStatus.sessionId !== expectedSessionId)
+      ) {
         const idleVoiceRuntime: VoiceRuntimeState = {
           ...voiceRuntimeRef.current,
           enabled: false,
@@ -3726,6 +4617,20 @@ function OverlayWindowApp() {
       }
 
       const capture = await stopNativeVoiceCapture();
+      if (
+        expectedSessionId != null &&
+        capture.sessionId !== expectedSessionId
+      ) {
+        throw new Error("Native microphone session changed before release.");
+      }
+      nativeVoiceSessionRef.current = null;
+      publishGestureVoiceLifecycle("capture_stopped", {
+        lastCapture: {
+          sessionId: capture.sessionId,
+          durationMs: capture.durationMs,
+          byteLength: capture.byteLength,
+        },
+      });
       const transcription = await transcribeNativeVoiceCapture(capture);
 
       if (transcription.status === "ready") {
@@ -3782,14 +4687,17 @@ function OverlayWindowApp() {
       setVoiceRuntime(failedVoiceRuntime);
     } finally {
       clearVoiceCaptureTimeout();
+      clearVoiceCaptureStartupTimeout();
       await resetNativeVoiceCapture().catch(() => undefined);
       voiceSubmitInFlightRef.current = false;
+      nativeVoiceSessionRef.current = null;
       voiceCapturePhaseRef.current = "idle";
       voiceHoldStateRef.current = transitionVoiceHold(
         voiceHoldStateRef.current,
         "submission_finished",
       ).state;
       clearActiveGestureVoiceContext();
+      publishGestureVoiceLifecycle("submission_finished");
       setOverlayState((currentState) =>
         currentState === "listening" ? "idle" : currentState,
       );
@@ -4220,51 +5128,13 @@ function OverlayWindowApp() {
         return;
       }
 
-      if (event.payload.type === "set-camera-enabled") {
-        const enabled = event.payload.enabled;
-
-        if (!enabled) {
-          setGestureVisualAnchor(null);
-        }
-
-        setGestureRuntime((currentState) => ({
-          ...currentState,
-          enabled: enabled ? currentState.enabled : false,
-          currentGesture: enabled
-            ? currentState.currentGesture
-            : createInactiveGestureClassification(),
-          camera: {
-            ...currentState.camera,
-            enabled,
-            status: enabled ? "idle" : "disabled",
-            permission: enabled ? currentState.camera.permission : "unknown",
-            error: undefined,
-          },
-        }));
+      if (event.payload.type === "set-camera-gestures-enabled") {
+        setCameraGesturesEnabled(event.payload.enabled);
         return;
       }
 
       if (event.payload.type === "refresh-camera-devices") {
         setGestureDeviceRefreshToken((currentToken) => currentToken + 1);
-        return;
-      }
-
-      if (event.payload.type === "set-gestures-enabled") {
-        const enabled = event.payload.enabled;
-
-        setGestureRuntime((currentState) => ({
-          ...currentState,
-          enabled,
-          currentGesture: enabled
-            ? currentState.currentGesture
-            : {
-                label: "none",
-                phase: "inactive",
-                confidence: 0,
-                holdMs: 0,
-                cooldownRemainingMs: 0,
-              },
-        }));
         return;
       }
 
@@ -4320,164 +5190,20 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "start-voice-listening") {
-        if (pointerExplanationInFlightRef.current) {
-          if (event.payload.source === "gesture") {
-            clearActiveGestureVoiceContext();
-          }
-          return;
-        }
-
-        if (voiceCapturePhaseRef.current !== "idle") {
-          if (event.payload.source === "gesture") {
-            clearActiveGestureVoiceContext();
-          }
-          return;
-        }
-
-        if (
-          event.payload.source === "gesture" &&
-          event.payload.gestureContext == null
-        ) {
-          clearActiveGestureVoiceContext();
-          return;
-        }
-
-        clearVoiceCaptureTimeout();
-        window.speechSynthesis?.cancel();
-        setPointerExplanation(null);
-        voiceSubmitInFlightRef.current = false;
-        voiceCapturePhaseRef.current = "starting";
-        const heldActivation = isHeldVoiceActivationSource(event.payload.source);
-        if (event.payload.source === "gesture") {
-          gestureVoiceContextRef.current = event.payload.gestureContext ?? null;
-          setGestureVoiceContext(event.payload.gestureContext ?? null);
-        }
-        if (heldActivation) {
-          const holdTransition = transitionVoiceHold(
-            voiceHoldStateRef.current,
-            "press",
-          );
-          if (holdTransition.effect !== "start_capture") {
-            voiceCapturePhaseRef.current = "idle";
-            if (event.payload.source === "gesture") {
-              clearActiveGestureVoiceContext();
-            }
-            return;
-          }
-          voiceHoldStateRef.current = holdTransition.state;
-        }
-        routedVoiceCommandRef.current = null;
-        const requestingVoiceRuntime: VoiceRuntimeState = {
-          enabled: true,
-          permission: "unknown",
-          status: "requesting_microphone",
-          activationSource: event.payload.source,
-        };
-        voiceRuntimeRef.current = requestingVoiceRuntime;
-        setVoiceRuntime(requestingVoiceRuntime);
-        setOverlayState("listening");
-
-        try {
-          await resetNativeVoiceCapture().catch(() => undefined);
-
-          if (
-            heldActivation &&
-            voiceHoldStateRef.current.phase !== "starting"
-          ) {
-            voiceCapturePhaseRef.current = "idle";
-            voiceHoldStateRef.current = transitionVoiceHold(
-              voiceHoldStateRef.current,
-              "capture_aborted",
-            ).state;
-            const idleVoiceRuntime: VoiceRuntimeState = {
-              ...requestingVoiceRuntime,
-              enabled: false,
-              permission: "granted",
-              status: "idle",
-            };
-            voiceRuntimeRef.current = idleVoiceRuntime;
-            setVoiceRuntime(idleVoiceRuntime);
-            setOverlayState("idle");
-            if (event.payload.source === "gesture") {
-              clearActiveGestureVoiceContext();
-            }
-            return;
-          }
-
-          await startNativeVoiceCapture();
-          voiceCapturePhaseRef.current = "capturing";
-          const listeningVoiceRuntime: VoiceRuntimeState = {
-            ...voiceRuntimeRef.current,
-            permission: "granted",
-            status: "listening",
-            transcript: undefined,
-            pendingCommand: undefined,
-            error: undefined,
-          };
-          voiceRuntimeRef.current = listeningVoiceRuntime;
-          setVoiceRuntime(listeningVoiceRuntime);
-
-          if (heldActivation) {
-            const holdTransition = transitionVoiceHold(
-              voiceHoldStateRef.current,
-              "capture_started",
-            );
-            voiceHoldStateRef.current = holdTransition.state;
-            if (holdTransition.effect === "submit_capture") {
-              await submitActiveVoiceCapture();
-            }
-          } else {
-            scheduleVoiceCaptureTimeout();
-          }
-        } catch (error) {
-          clearVoiceCaptureTimeout();
-          await resetNativeVoiceCapture().catch(() => undefined);
-          voiceCapturePhaseRef.current = "idle";
-          voiceHoldStateRef.current = transitionVoiceHold(
-            voiceHoldStateRef.current,
-            "capture_failed",
-          ).state;
-          const failedVoiceRuntime: VoiceRuntimeState = {
-            ...voiceRuntimeRef.current,
-            enabled: false,
-            permission: "error",
-            status: "error",
-            error: formatErrorMessage(error),
-          };
-          voiceRuntimeRef.current = failedVoiceRuntime;
-          setVoiceRuntime(failedVoiceRuntime);
-          setOverlayState((currentState) =>
-            currentState === "listening" ? "idle" : currentState,
-          );
-          if (event.payload.source === "gesture") {
-            clearActiveGestureVoiceContext();
-          }
-        }
-
-        return;
-      }
-
-      if (event.payload.type === "stop-voice-listening") {
-        cancelVoiceRuntime();
-        setOverlayState((currentState) =>
-          currentState === "listening" ? "idle" : currentState,
+        await startVoiceListening(
+          event.payload.source,
+          event.payload.gestureContext,
         );
         return;
       }
 
-      if (event.payload.type === "submit-voice-listening") {
-        if (voiceHoldStateRef.current.phase !== "idle") {
-          const holdTransition = transitionVoiceHold(
-            voiceHoldStateRef.current,
-            "release",
-          );
-          voiceHoldStateRef.current = holdTransition.state;
-          if (holdTransition.effect !== "submit_capture") {
-            return;
-          }
-        }
-        await submitActiveVoiceCapture();
+      if (event.payload.type === "stop-voice-listening") {
+        stopVoiceListening();
+        return;
+      }
 
+      if (event.payload.type === "submit-voice-listening") {
+        await submitVoiceListening();
         return;
       }
     })
@@ -4518,13 +5244,18 @@ function OverlayWindowApp() {
       ...currentState,
       status: "transcribing",
     }));
+    const cameraControlIntent = classifyCameraGestureVoiceCommand(command.text);
     const pointerIntent = classifyPointerExplanationCommand(command.text);
     const shouldExplainPointer = shouldRoutePointerExplanation(
       pointerIntent,
       command.gestureContext != null,
     );
-    const routingPromise =
-      shouldExplainPointer && pointerIntent != null
+    const routingPromise = cameraControlIntent
+      ? Promise.resolve().then(() => {
+          setCameraGesturesEnabled(true);
+          setOverlayState("idle");
+        })
+      : shouldExplainPointer && pointerIntent != null
         ? explainFrozenGesturePointer(command, pointerIntent)
         : refreshCaptureMetadata(command.text, "codex-subscription", {
             traceId: command.traceId,
@@ -4614,16 +5345,6 @@ function OverlayWindowApp() {
         state={tokiCreatureState}
         target={hasAcceptedGuidance ? activeTarget : null}
       >
-        <TokiPointerLockCue
-          lock={gesturePointerLock}
-          validation={
-            gesturePointerLockFeedback.validation === "checking"
-              ? "checking"
-              : gesturePointerLockFeedback.validation === "locked"
-                ? "locked"
-                : null
-          }
-        />
         <TokiPointerExplanationCard
           explanation={pointerExplanation}
           viewport={viewport}
@@ -4634,11 +5355,12 @@ function OverlayWindowApp() {
           pointerShadow={gesturePointerShadow ?? pointerShadow}
           pointerSource={
             gesturePointerShadow == null &&
-            alwaysOnGestureRuntime.splitVisual == null
+            gesturePuckPresentation.splitVisual == null
               ? "cursor"
               : "gesture"
           }
-          splitVisual={alwaysOnGestureRuntime.splitVisual}
+          splitVisual={gesturePuckPresentation.splitVisual}
+          lockState={gesturePuckPresentation.lockState}
           target={hasAcceptedGuidance ? activeTarget : null}
         />
       </TokiCreatureLayer>
@@ -4653,6 +5375,9 @@ function SettingsWindowApp() {
   const [isRefreshingCapture, setIsRefreshingCapture] = useState(false);
   const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeState>(() =>
     createDefaultVoiceRuntimeState(),
+  );
+  const [gestureRuntime, setGestureRuntime] = useState<GestureRuntimeState>(() =>
+    createDefaultGestureRuntimeState(),
   );
   const [topStatus, setTopStatus] = useState<TokiTopStatusModel | null>(null);
   const [pointerExplanationSpeechMuted, setPointerExplanationSpeechMuted] =
@@ -4682,6 +5407,7 @@ function SettingsWindowApp() {
       setHasAcceptedGuidance(event.payload.hasAcceptedGuidance);
       setIsRefreshingCapture(event.payload.isRefreshingCapture);
       setVoiceRuntime(event.payload.voiceRuntime);
+      setGestureRuntime(event.payload.gestureRuntime);
       setPointerExplanationSpeechMuted(
         event.payload.pointerExplanationSpeechMuted,
       );
@@ -4821,6 +5547,10 @@ function SettingsWindowApp() {
               : "Press and hold as a fallback."
           }
           pointerExplanationSpeechMuted={pointerExplanationSpeechMuted}
+          cameraGesturesEnabled={gestureRuntime.camera.enabled}
+          cameraStatus={gestureRuntime.camera.status}
+          cameraPermission={gestureRuntime.camera.permission}
+          cameraError={gestureRuntime.camera.error ?? null}
           idleStatusText={idleStatusText}
           onRefreshCapture={() => {
             emitTo("overlay", "toki://overlay-command", {
@@ -4830,6 +5560,12 @@ function SettingsWindowApp() {
           onPauseToggle={() => {
             emitTo("overlay", "toki://overlay-command", {
               type: "toggle-pause",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onCameraGesturesToggle={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "set-camera-gestures-enabled",
+              enabled: !gestureRuntime.camera.enabled,
             } satisfies OverlayCommand).catch(() => undefined);
           }}
           onPointerExplanationSpeechMuteToggle={() => {
@@ -4875,6 +5611,9 @@ function DebugWindowApp() {
     "idle" | "probing" | "requesting" | "ready" | "unsupported" | "error"
   >("idle");
   const [voiceProbeError, setVoiceProbeError] = useState<string | null>(null);
+  const [debugExportStatus, setDebugExportStatus] =
+    useState<TokiDebugExportStatus | null>(null);
+  const [debugExportError, setDebugExportError] = useState<string | null>(null);
   const gestureDiagnostics = snapshot.gestureDiagnostics;
   const cameraDevices = gestureDiagnostics.cameraDevices;
   const cameraProbeStatus = gestureDiagnostics.cameraProbeStatus;
@@ -4885,12 +5624,15 @@ function DebugWindowApp() {
   const handLandmarkerError = gestureDiagnostics.handLandmarkerError;
   const handLandmarkSummary = gestureDiagnostics.hand;
   const pinchClassification = gestureDiagnostics.pinch;
+  const ordinaryPinch = gestureDiagnostics.ordinaryPinch;
   const controlPinch = gestureDiagnostics.controlPinch;
   const openPalmClassification = gestureDiagnostics.openPalm;
   const pointPoseClassification = gestureDiagnostics.pointPose;
   const gesturePointer = gestureDiagnostics.pointer;
-  const airTapPose = gestureDiagnostics.airTapPose;
-  const doubleAirTap = gestureDiagnostics.doubleAirTap;
+  const wristRollPose = gestureDiagnostics.wristRollPose;
+  const wristRollLock = gestureDiagnostics.wristRollLock;
+  const gestureUnlockRequest = gestureDiagnostics.unlockRequest;
+  const gestureIntentArbiter = gestureDiagnostics.intentArbiter;
   const gesturePointerLock = snapshot.gesturePointerLock;
   const gesturePointerLockFeedback = snapshot.gesturePointerLockFeedback;
   const smoothedGesture = gestureDiagnostics.smoothedGesture;
@@ -5022,8 +5764,23 @@ function DebugWindowApp() {
       });
   }
 
+  function refreshDebugExportStatus() {
+    getTokiDebugExportStatus()
+      .then((status) => {
+        setDebugExportStatus(status);
+        setDebugExportError(null);
+      })
+      .catch((error: unknown) => {
+        setDebugExportError(error instanceof Error ? error.message : String(error));
+      });
+  }
+
   useEffect(() => {
     let unlistenState: (() => void) | undefined;
+    const debugExportStatusTimer = window.setInterval(
+      refreshDebugExportStatus,
+      2_000,
+    );
 
     listen<DebugSnapshot>("toki://debug-state", (event) => {
       setSnapshot(event.payload);
@@ -5039,9 +5796,11 @@ function DebugWindowApp() {
       type: "request-state",
     } satisfies OverlayCommand).catch(() => undefined);
     refreshVoiceCapabilities();
+    refreshDebugExportStatus();
 
     return () => {
       unlistenState?.();
+      window.clearInterval(debugExportStatusTimer);
     };
   }, []);
 
@@ -5177,6 +5936,46 @@ function DebugWindowApp() {
             <p className="debug-muted">
               Pinch recognizes when thumb and index distance drops below the
               threshold, then the smoothed gesture reaches recognized.
+            </p>
+          </section>
+
+          <section className="debug-section">
+            <h2>Local Diagnostics Export</h2>
+            <div className="debug-section-header-row">
+              <span>
+                {debugExportStatus?.snapshotExists ? "ready" : "waiting"}
+              </span>
+              <button type="button" onClick={refreshDebugExportStatus}>
+                Refresh
+              </button>
+            </div>
+            <dl>
+              <div>
+                <dt>Latest state</dt>
+                <dd>{debugExportStatus?.snapshotPath ?? "Resolving"}</dd>
+              </div>
+              <div>
+                <dt>History</dt>
+                <dd>{debugExportStatus?.historyPath ?? "Resolving"}</dd>
+              </div>
+              <div>
+                <dt>Capture</dt>
+                <dd>{debugExportStatus?.capturePath ?? "None yet"}</dd>
+              </div>
+              <div>
+                <dt>Last write</dt>
+                <dd>
+                  {debugExportStatus?.lastSnapshotModifiedMs != null
+                    ? new Date(
+                        debugExportStatus.lastSnapshotModifiedMs,
+                      ).toISOString()
+                    : "Waiting"}
+                </dd>
+              </div>
+            </dl>
+            <p className="debug-muted">
+              {debugExportError ??
+                "Machine-readable state is local-only. Binary image and audio payloads are omitted from JSON."}
             </p>
           </section>
 
@@ -5488,6 +6287,46 @@ function DebugWindowApp() {
                 <dt>Error</dt>
                 <dd>{snapshot.voiceRuntime.error ?? "None"}</dd>
               </div>
+              <div>
+                <dt>Capture / hold</dt>
+                <dd>
+                  {snapshot.gestureVoiceLifecycle.capturePhase} /{" "}
+                  {snapshot.gestureVoiceLifecycle.holdPhase}
+                </dd>
+              </div>
+              <div>
+                <dt>Held / release pending</dt>
+                <dd>
+                  {snapshot.gestureVoiceLifecycle.held ? "Yes" : "No"} /{" "}
+                  {snapshot.gestureVoiceLifecycle.releasePending ? "Yes" : "No"}
+                </dd>
+              </div>
+              <div>
+                <dt>Gesture owner</dt>
+                <dd>
+                  {snapshot.gestureVoiceLifecycle.owner == null
+                    ? "None"
+                    : `${snapshot.gestureVoiceLifecycle.owner.detector} · ${snapshot.gestureVoiceLifecycle.owner.controlHandTrackId}`}
+                </dd>
+              </div>
+              <div>
+                <dt>Native session</dt>
+                <dd>
+                  {snapshot.gestureVoiceLifecycle.nativeSessionId ?? "None"}
+                </dd>
+              </div>
+              <div>
+                <dt>Last native capture</dt>
+                <dd>
+                  {snapshot.gestureVoiceLifecycle.lastCapture == null
+                    ? "None"
+                    : `${snapshot.gestureVoiceLifecycle.lastCapture.durationMs} ms · ${snapshot.gestureVoiceLifecycle.lastCapture.byteLength} bytes`}
+                </dd>
+              </div>
+              <div>
+                <dt>Last lifecycle transition</dt>
+                <dd>{snapshot.gestureVoiceLifecycle.lastTransition}</dd>
+              </div>
             </dl>
             <p className="debug-muted">
               {debugVoiceStatusDetails.message}. Debug uses the same native
@@ -5739,6 +6578,30 @@ function DebugWindowApp() {
                 <dt>Split state</dt>
                 <dd>{gestureDiagnostics.split.phase}</dd>
               </div>
+              <div>
+                <dt>Camera re-framing</dt>
+                <dd>
+                  {gestureDiagnostics.cameraReframing.active == null
+                    ? "Unknown"
+                    : gestureDiagnostics.cameraReframing.active
+                      ? "Centre Stage ON — breaks hand tracking"
+                      : "Off"}
+                </dd>
+              </div>
+              <div>
+                <dt>Camera-off gesture</dt>
+                <dd>{gestureDiagnostics.cameraShutdown.phase}</dd>
+              </div>
+              <div>
+                <dt>Shutdown hold</dt>
+                <dd>
+                  {Math.min(
+                    gestureDiagnostics.cameraShutdown.holdMs,
+                    cameraShutdownGesturePolicy.holdMs,
+                  )}
+                  ms / {cameraShutdownGesturePolicy.holdMs}ms
+                </dd>
+              </div>
             </dl>
             {gestureDiagnostics.hands.length > 0 ? (
               <p className="debug-muted">
@@ -5802,6 +6665,14 @@ function DebugWindowApp() {
                 <h3>Control hold-to-talk</h3>
                 <dl>
                   <div>
+                    <dt>Ordinary pinch</dt>
+                    <dd>{ordinaryPinch.phase}</dd>
+                  </div>
+                  <div>
+                    <dt>Ordinary event</dt>
+                    <dd>{ordinaryPinch.lastEvent?.type ?? "None"}</dd>
+                  </div>
+                  <div>
                     <dt>Phase</dt>
                     <dd>{controlPinch.phase}</dd>
                   </div>
@@ -5810,8 +6681,12 @@ function DebugWindowApp() {
                     <dd>{controlPinch.controlHandTrackId ?? "None"}</dd>
                   </div>
                   <div>
-                    <dt>Distance</dt>
+                    <dt>Raw / filtered distance</dt>
                     <dd>
+                      {controlPinch.rawNormalizedDistance == null
+                        ? "None"
+                        : controlPinch.rawNormalizedDistance.toFixed(3)}{" "}
+                      /{" "}
                       {controlPinch.normalizedDistance == null
                         ? "None"
                         : controlPinch.normalizedDistance.toFixed(3)}
@@ -5831,6 +6706,25 @@ function DebugWindowApp() {
                   <div>
                     <dt>Frozen lock</dt>
                     <dd>{snapshot.gestureVoiceContext?.lock.id ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Recorder lifecycle</dt>
+                    <dd>
+                      {snapshot.gestureVoiceLifecycle.capturePhase} /{" "}
+                      {snapshot.gestureVoiceLifecycle.holdPhase}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Owner</dt>
+                    <dd>
+                      {snapshot.gestureVoiceLifecycle.owner == null
+                        ? "None"
+                        : `${snapshot.gestureVoiceLifecycle.owner.detector} · ${snapshot.gestureVoiceLifecycle.owner.controlHandTrackId}`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Last transition</dt>
+                    <dd>{snapshot.gestureVoiceLifecycle.lastTransition}</dd>
                   </div>
                   <div>
                     <dt>Explanation</dt>
@@ -5966,23 +6860,23 @@ function DebugWindowApp() {
               </div>
 
               <div className="debug-recognition-card">
-                <h3>Air-tap lock</h3>
+                <h3>Wrist-roll lock</h3>
                 <dl>
                   <div>
                     <dt>Pose</dt>
-                    <dd>{airTapPose.label}</dd>
+                    <dd>{wristRollPose.label}</dd>
                   </div>
                   <div>
-                    <dt>Tap phase</dt>
-                    <dd>{doubleAirTap.phase}</dd>
+                    <dt>Roll phase</dt>
+                    <dd>{wristRollLock.phase}</dd>
                   </div>
                   <div>
-                    <dt>First tap</dt>
-                    <dd>{doubleAirTap.firstTap?.id ?? "None"}</dd>
+                    <dt>Rotation</dt>
+                    <dd>{Math.round(wristRollLock.rotationDegrees ?? 0)}°</dd>
                   </div>
                   <div>
-                    <dt>Second tap</dt>
-                    <dd>{doubleAirTap.secondTap?.id ?? "None"}</dd>
+                    <dt>Roll</dt>
+                    <dd>{wristRollLock.roll?.id ?? "None"}</dd>
                   </div>
                   <div>
                     <dt>Lock state</dt>
@@ -6006,11 +6900,59 @@ function DebugWindowApp() {
                         "None"}
                     </dd>
                   </div>
+                  <div>
+                    <dt>Release</dt>
+                    <dd>
+                      {wristRollLock.phase === "unlocking"
+                        ? `Untwisting, hold until ${wristRollLock.holdUntil ?? "—"}`
+                        : gestureUnlockRequest == null
+                          ? "None"
+                          : `${gestureUnlockRequest.handTrackId} released ${gestureUnlockRequest.lockId}`}
+                    </dd>
+                  </div>
                 </dl>
                 <p className="debug-muted">
-                  Flex and return the pointing index twice within two seconds. The
-                  detached blue drop marks the copied coordinate; it is not a verified
-                  guidance target and never clicks anything.
+                  Point normally, then turn the same wrist roughly a quarter-to-half turn
+                  and hold briefly. Toki freezes the last stable fingertip coordinate before
+                  the turn. Turning that same pointing hand back to its original orientation
+                  releases the lock; lowering or opening the hand keeps it. The detached blue
+                  drop is not a verified guidance target and never clicks anything.
+                </p>
+              </div>
+
+              <div className="debug-recognition-card">
+                <h3>Intent ownership</h3>
+                <dl>
+                  <div>
+                    <dt>Owners</dt>
+                    <dd>
+                      {gestureIntentArbiter.owners.length === 0
+                        ? "None"
+                        : gestureIntentArbiter.owners
+                            .map(
+                              (owner) =>
+                                `${owner.trackId}: ${owner.intent} (${owner.lifecycle})`,
+                            )
+                            .join(" · ")}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Suppressed</dt>
+                    <dd>
+                      {gestureIntentArbiter.suppressed.length === 0
+                        ? "None"
+                        : gestureIntentArbiter.suppressed
+                            .map(
+                              (item) =>
+                                `${item.trackId}: ${item.intent} → ${item.winner} (${item.reason})`,
+                            )
+                            .join(" · ")}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="debug-muted">
+                  Each tracked hand has one gesture owner. Competing readings are
+                  recorded here instead of advancing multiple actions.
                 </p>
               </div>
 
@@ -6067,33 +7009,13 @@ function DebugWindowApp() {
           <section className="debug-section">
             <h2>Gesture Settings</h2>
             <div className="debug-section-header-row">
-              <button
-                type="button"
-                onClick={() => {
-                  sendOverlayCommand({
-                    type: "set-camera-enabled",
-                    enabled: !snapshot.gestureRuntime.camera.enabled,
-                  });
-                }}
-              >
-                {snapshot.gestureRuntime.camera.enabled
-                  ? "Turn camera off"
-                  : "Turn camera on"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  sendOverlayCommand({
-                    type: "set-gestures-enabled",
-                    enabled: !snapshot.gestureRuntime.enabled,
-                  });
-                }}
-                disabled={!snapshot.gestureRuntime.camera.enabled}
-              >
-                {snapshot.gestureRuntime.enabled
-                  ? "Disable gestures"
-                  : "Enable gestures"}
-              </button>
+              <span>
+                Camera + Gestures: {snapshot.gestureRuntime.camera.enabled &&
+                snapshot.gestureRuntime.enabled
+                  ? "on"
+                  : "off"}
+              </span>
+              <span>Use the top Controls tab to change this setting.</span>
             </div>
             <dl>
               <div>
@@ -6136,7 +7058,7 @@ function DebugWindowApp() {
               </div>
               <div>
                 <dt>Fixed baseline</dt>
-                <dd>X 0.12–0.88 / Y 0.08–0.72 / tap 1.30 / pinch 0.34</dd>
+                <dd>X 0.12–0.88 / Y 0.08–0.72 / roll 70° / pinch 0.34</dd>
               </div>
               <div>
                 <dt>Point range</dt>
@@ -6148,7 +7070,7 @@ function DebugWindowApp() {
                 </dd>
               </div>
               <div>
-                <dt>Tap / pinch</dt>
+                <dt>Legacy roll profile / pinch</dt>
                 <dd>
                   {adaptiveGestureSettings.tapFlexionRatioThreshold.toFixed(2)} /{" "}
                   {adaptiveGestureSettings.pinchDistanceThreshold.toFixed(2)}

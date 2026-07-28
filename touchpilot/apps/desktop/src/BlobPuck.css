@@ -1,15 +1,56 @@
+.blob-puck[data-lock-state="checking"] > .blob-container .blob:first-child {
+  animation: toki-lock-checking-breathe 760ms ease-in-out infinite;
+}
+
+.blob-puck[data-lock-state="locked"] > .blob-container .blob:first-child {
+  filter: saturate(1.12) brightness(1.08);
+}
+
+.blob-puck[data-lock-state="limited"] > .blob-container .blob:first-child {
+  filter: saturate(1.08) brightness(1.04);
+}
+
+@keyframes toki-lock-checking-breathe {
+  0%,
+  100% {
+    filter: saturate(1) brightness(0.98);
+  }
+
+  50% {
+    filter: saturate(1.18) brightness(1.12);
+  }
+}
+
 .blob-puck__split-bridge {
   position: absolute;
-  height: 7px;
+  height: var(--toki-split-strand-thickness, 5px);
   border-radius: 999px;
-  opacity: 0.52;
+  opacity: 0.48;
+  overflow: hidden;
   pointer-events: none;
   transform-origin: left center;
   transition:
+    left 90ms linear,
+    top 90ms linear,
+    width 90ms linear,
+    transform 90ms linear,
     height 180ms ease,
-    opacity 180ms ease;
-  will-change: transform, opacity;
+    opacity 180ms ease,
+    filter 180ms ease;
+  will-change: left, top, width, transform, opacity;
   z-index: 99;
+}
+
+.blob-puck__split-bridge::after {
+  position: absolute;
+  top: 20%;
+  right: 2px;
+  bottom: 48%;
+  left: 2px;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.42);
+  content: "";
+  opacity: 0.72;
 }
 
 .blob-puck__secondary-lobe {
@@ -25,26 +66,38 @@
 }
 
 .blob-puck[data-split-phase="splitting"] .blob-puck__split-bridge {
-  height: 10px;
   opacity: 0.82;
 }
 
 .blob-puck[data-split-phase="split"] .blob-puck__split-bridge {
-  opacity: 0;
+  opacity: 0.54;
+  animation: toki-split-strand-breathe 1.8s ease-in-out infinite;
 }
 
 .blob-puck[data-split-phase="recovering"] .blob-puck__split-bridge {
-  opacity: 0.12;
+  opacity: 0.28;
 }
 
 .blob-puck[data-split-phase="merging"] .blob-puck__split-bridge {
-  height: 11px;
   opacity: 0.72;
 }
 
 .blob-puck[data-split-phase="merging"] .blob-puck__secondary-lobe {
   opacity: 0.42;
   transform: scale(0.76);
+}
+
+@keyframes toki-split-strand-breathe {
+  0%,
+  100% {
+    filter: saturate(0.96) brightness(0.96);
+    opacity: 0.48;
+  }
+
+  50% {
+    filter: saturate(1.16) brightness(1.08);
+    opacity: 0.62;
+  }
 }
 
 .blob-puck__target-droplet {
@@ -113,8 +166,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .blob-puck[data-lock-state="checking"] > .blob-container .blob:first-child {
+    animation: none;
+    filter: saturate(1.08) brightness(1.04);
+  }
+
   .blob-puck__split-bridge,
   .blob-puck__secondary-lobe {
+    animation: none;
     transition: none;
   }
 

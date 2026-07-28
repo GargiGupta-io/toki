@@ -2,36 +2,51 @@
   position: fixed;
   inset: 0;
   overflow: hidden;
-  border: 1px solid rgba(176, 235, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-top: 0;
-  border-radius: 0 0 10px 10px;
-  background: rgba(7, 10, 14, 0.94);
+  border-radius: 0 0 14px 14px;
+  background: #000;
   box-shadow:
-    0 20px 46px rgba(0, 0, 0, 0.4),
+    0 16px 34px rgba(0, 0, 0, 0.54),
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 12px 24px rgba(65, 205, 255, 0.05);
+    0 12px 24px rgba(65, 205, 255, 0.045);
   color: rgba(244, 250, 255, 0.96);
-  backdrop-filter: blur(22px) saturate(118%);
+  backdrop-filter: none;
   user-select: none;
   animation: toki-top-utility-arrive 150ms ease-out both;
 }
 
 .toki-top-utility[data-mode="peek"] {
-  inset: 0 6px 6px;
+  inset: 0;
   pointer-events: none;
 }
 
 .toki-top-utility__header {
-  min-height: 54px;
+  min-height: 56px;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 7px 13px;
+  gap: 9px;
+  padding: 5px 10px 6px 8px;
 }
 
 .toki-top-utility[data-mode="expanded"] .toki-top-utility__header {
   cursor: move;
+}
+
+.toki-top-utility__identity {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.13), transparent 48%),
+    rgba(8, 11, 15, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 18px rgba(0, 0, 0, 0.3);
 }
 
 .toki-top-utility__signal,
@@ -43,8 +58,8 @@
 }
 
 .toki-top-utility__signal {
-  width: 30px;
-  height: 22px;
+  width: 22px;
+  height: 20px;
   gap: 2px;
 }
 
@@ -98,28 +113,64 @@
 }
 
 .toki-top-utility__status-copy strong {
-  font-size: 0.74rem;
-  font-weight: 720;
+  font-size: 0.78rem;
+  font-weight: 760;
 }
 
 .toki-top-utility__status-copy small {
   color: rgba(221, 233, 241, 0.66);
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 540;
+}
+
+.toki-top-utility__status-copy small span {
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 720;
 }
 
 .toki-top-utility__window-actions {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
   color: rgba(255, 255, 255, 0.52);
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   font-weight: 650;
 }
 
+.toki-top-utility__activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(107, 229, 181, 0.18);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(83, 210, 166, 0.06);
+  color: rgba(177, 241, 216, 0.78);
+}
+
+.toki-top-utility__activity::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #66d9ac;
+  box-shadow: 0 0 8px rgba(102, 217, 172, 0.66);
+  content: "";
+}
+
+.toki-top-utility__activity[data-paused="true"] {
+  border-color: rgba(255, 197, 107, 0.16);
+  background: rgba(255, 197, 107, 0.05);
+  color: rgba(255, 219, 166, 0.72);
+}
+
+.toki-top-utility__activity[data-paused="true"]::before {
+  background: #e5b15e;
+  box-shadow: 0 0 8px rgba(229, 177, 94, 0.5);
+}
+
 .toki-top-utility__window-actions button {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -131,26 +182,26 @@
 
 .toki-top-utility__expanded {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0 14px 13px;
+  padding: 0 12px 10px;
 }
 
 .toki-top-utility__tabs {
   display: flex;
-  gap: 18px;
-  min-height: 38px;
+  gap: 15px;
+  min-height: 30px;
   align-items: end;
   border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .toki-top-utility__tabs button {
-  min-height: 38px;
+  min-height: 30px;
   border: 0;
   border-radius: 0;
   padding: 0 1px;
   background: transparent;
   color: rgba(255, 255, 255, 0.48);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.67rem;
   font-weight: 680;
   cursor: pointer;
 }
@@ -161,28 +212,28 @@
 }
 
 .toki-top-utility__tab-panel {
-  min-height: 116px;
-  padding-top: 10px;
+  min-height: 111px;
+  padding-top: 7px;
 }
 
 .toki-top-utility__hint {
-  margin: 0 0 7px;
+  margin: 0 0 4px;
   color: rgba(255, 255, 255, 0.48);
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 560;
 }
 
 .toki-top-utility__talk {
   width: 100%;
-  min-height: 56px;
+  min-height: 43px;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   border: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.09);
   border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  padding: 8px 0;
+  padding: 5px 0;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -190,8 +241,8 @@
 }
 
 .toki-top-utility__mini-signal {
-  width: 28px;
-  height: 26px;
+  width: 22px;
+  height: 20px;
   gap: 2px;
   color: var(--toki-cyan-muted);
 }
@@ -210,16 +261,16 @@
 
 .toki-top-utility__talk strong {
   color: rgba(255, 255, 255, 0.92);
-  font-size: 0.79rem;
+  font-size: 0.73rem;
 }
 
 .toki-top-utility__talk small {
   color: rgba(255, 255, 255, 0.5);
-  font-size: 0.68rem;
+  font-size: 0.61rem;
 }
 
 .toki-top-utility__commands {
-  min-height: 58px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -227,6 +278,74 @@
   border-top: 1px solid rgba(255, 255, 255, 0.09);
   border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
+
+.toki-top-utility__camera-toggle {
+  width: 100%;
+  min-height: 45px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 9px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toki-top-utility__camera-toggle > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.toki-top-utility__camera-toggle strong,
+.toki-top-utility__camera-toggle small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toki-top-utility__camera-toggle strong {
+  font-size: 0.68rem;
+  font-weight: 720;
+}
+
+.toki-top-utility__camera-toggle small {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.6rem;
+}
+
+.toki-top-utility__camera-indicator {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.26);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+}
+
+.toki-top-utility__camera-toggle[aria-pressed="true"] {
+  border-color: rgba(83, 210, 230, 0.3);
+  background: rgba(83, 210, 230, 0.065);
+}
+
+.toki-top-utility__camera-toggle[aria-pressed="true"]
+  .toki-top-utility__camera-indicator {
+  background: var(--toki-cyan);
+  box-shadow:
+    0 0 0 4px rgba(83, 210, 230, 0.08),
+    0 0 9px rgba(83, 210, 230, 0.56);
+}
+
+.toki-top-utility__camera-toggle[data-state="permission_denied"]
+  .toki-top-utility__camera-indicator,
+.toki-top-utility__camera-toggle[data-state="error"]
+  .toki-top-utility__camera-indicator {
+  background: var(--toki-danger);
+}
+
 
 .toki-top-utility__commands button {
   border: 0;
@@ -246,14 +365,14 @@
 
 .toki-top-utility__speech-toggle {
   width: 100%;
-  min-height: 28px;
-  margin-top: 8px;
+  min-height: 24px;
+  margin-top: 5px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.045);
   color: rgba(255, 255, 255, 0.66);
   font: inherit;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 720;
   cursor: pointer;
 }
@@ -264,21 +383,21 @@
 }
 
 .toki-top-utility__reveal-panel {
-  min-height: 146px;
+  min-height: 110px;
   display: grid;
   align-content: center;
-  gap: 14px;
+  gap: 9px;
 }
 
 .toki-top-utility__reveal-panel p {
   margin: 0;
   color: rgba(236, 240, 245, 0.7);
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   line-height: 1.45;
 }
 
 .toki-top-utility__reveal-panel button {
-  min-height: 38px;
+  min-height: 31px;
   border: 1px solid color-mix(in srgb, var(--toki-warning) 58%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--toki-warning) 16%, transparent);

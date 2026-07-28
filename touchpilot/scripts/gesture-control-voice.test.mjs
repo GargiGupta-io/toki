@@ -7,7 +7,9 @@ import {
   canStartGestureVoice,
   controlPinchPolicy,
   createGestureVoiceContext,
+  createGestureVoiceOwner,
   createInitialControlPinchState,
+  isGestureVoiceTerminationForOwner,
 } from "../apps/desktop/src/gestureControlVoice.ts";
 import { createPointerLockSnapshot } from "../apps/desktop/src/gestureContracts.ts";
 import { createSyntheticTrackedHand } from "../apps/desktop/src/gestureFixtures.ts";
@@ -59,9 +61,9 @@ test("the stable control-hand pinch emits one press and one hysteretic release",
 
   state = advance(state, open, 300);
   assert.equal(state.phase, "releasing");
-  state = advance(state, open, 439);
+  state = advance(state, open, 479);
   assert.equal(state.lastEvent?.id, pressEventId);
-  state = advance(state, open, 440);
+  state = advance(state, open, 480);
   assert.equal(state.phase, "idle");
   assert.equal(state.lastEvent?.type, "release");
   const releaseEventId = state.lastEvent?.id;
@@ -69,6 +71,119 @@ test("the stable control-hand pinch emits one press and one hysteretic release",
   state = advance(state, open, 600);
   assert.equal(state.lastEvent?.id, releaseEventId);
   assert.equal(state.eventSequence, 2);
+});
+
+test("a brief pinch-entry wobble does not discard the user's hold", () => {
+  let state = createInitialControlPinchState(pressThreshold);
+  const pinched = handAtDistance("control-hand", 0.2, 1);
+  const clearlyOpen = handAtDistance("control-hand", 0.7, 2);
+
+  state = advance(state, pinched, 0);
+  state = advance(state, clearlyOpen, 80);
+  assert.equal(state.phase, "pressing");
+  assert.equal(state.lastEvent, null);
+  state = advance(state, pinched, 180);
+  assert.equal(state.phase, "pressing");
+  state = advance(state, pinched, 280);
+
+  assert.equal(state.phase, "held");
+  assert.equal(state.lastEvent?.type, "press");
+});
+
+test("a sustained pinch-entry interruption returns to idle without a false press", () => {
+  let state = createInitialControlPinchState(pressThreshold);
+  const pinched = handAtDistance("control-hand", 0.2, 1);
+  const clearlyOpen = handAtDistance("control-hand", 0.7, 2);
+
+  state = advance(state, pinched, 0);
+  state = advance(state, clearlyOpen, 80);
+  assert.equal(state.phase, "pressing");
+  state = advance(
+    state,
+    clearlyOpen,
+    80 + controlPinchPolicy.pressInterruptionGraceMs,
+  );
+
+  assert.equal(state.phase, "idle");
+  assert.equal(state.lastEvent, null);
+  assert.equal(state.eventSequence, 0);
+});
+
+test("release intent survives one noisy re-pinch without submitting early", () => {
+  let state = heldState();
+  const pressEventId = state.lastEvent?.id;
+  const open = handAtDistance("control-hand", 0.7, 3);
+  const pinched = handAtDistance("control-hand", 0.2, 4);
+
+  state = advance(state, open, 300);
+  assert.equal(state.phase, "releasing");
+  state = advance(state, pinched, 390);
+  assert.equal(state.phase, "releasing");
+  state = advance(state, open, 440);
+  assert.equal(state.phase, "releasing");
+  state = advance(state, open, 529);
+  assert.equal(state.phase, "releasing");
+  state = advance(state, open, 530);
+
+  assert.equal(state.phase, "idle");
+  assert.notEqual(state.lastEvent?.id, pressEventId);
+  assert.equal(state.lastEvent?.type, "release");
+  assert.equal(state.eventSequence, 2);
+});
+
+test("a sustained re-pinch cancels a release candidate without a false submit", () => {
+  let state = heldState();
+  const pressEventId = state.lastEvent?.id;
+  const open = handAtDistance("control-hand", 0.7, 3);
+  const pinched = handAtDistance("control-hand", 0.2, 4);
+
+  state = advance(state, open, 300);
+  state = advance(state, pinched, 360);
+  assert.equal(state.phase, "releasing");
+  state = advance(
+    state,
+    pinched,
+    360 + controlPinchPolicy.releaseInterruptionGraceMs,
+  );
+
+  assert.equal(state.phase, "held");
+  assert.equal(state.lastEvent?.id, pressEventId);
+  assert.equal(state.eventSequence, 1);
+});
+
+test("an intentional release survives missing hand frames and submits once", () => {
+  let state = heldState();
+  const open = handAtDistance("control-hand", 0.7, 3);
+
+  state = advance(state, open, 300);
+  assert.equal(state.phase, "releasing");
+
+  state = advance(state, null, 350);
+  assert.equal(state.phase, "releasing");
+  assert.equal(state.lastEvent?.type, "press");
+
+  state = advance(state, null, 480);
+  assert.equal(state.phase, "idle");
+  assert.equal(state.lastEvent?.type, "release");
+  assert.equal(state.eventSequence, 2);
+
+  state = advance(state, null, 600);
+  assert.equal(state.lastEvent?.type, "release");
+  assert.equal(state.eventSequence, 2);
+});
+
+test("a held pinch can arm only after a validated pointer context exists", () => {
+  let state = createInitialControlPinchState(pressThreshold);
+  const pinched = handAtDistance("control-hand", 0.2, 1);
+
+  state = advance(state, pinched, 0, false);
+  assert.equal(state.phase, "idle");
+  state = advance(state, pinched, 50, true);
+  assert.equal(state.phase, "pressing");
+  state = advance(state, pinched, 50 + thresholds.pinchHoldMs, true);
+
+  assert.equal(state.phase, "held");
+  assert.equal(state.lastEvent?.type, "press");
 });
 
 test("gesture hold-to-talk requires a validated lock and an idle recorder", () => {
@@ -90,6 +205,10 @@ test("gesture hold-to-talk requires a validated lock and an idle recorder", () =
     canStartGestureVoice(lock, "locked", "idle"),
     true,
   );
+  assert.equal(
+    canStartGestureVoice(lock, "limited", "idle"),
+    true,
+  );
 });
 
 test("brief control-hand loss recovers without release or submission", () => {
@@ -106,7 +225,7 @@ test("brief control-hand loss recovers without release or submission", () => {
   assert.equal(state.lastEvent?.id, pressEventId);
 });
 
-test("two seconds of loss cancels and never fabricates a release", () => {
+test("two seconds of held-pinch loss emits one explicit tracking-loss event", () => {
   let state = heldState();
   state = advance(state, null, 500);
   state = advance(
@@ -126,6 +245,46 @@ test("a different hand cannot hijack the active control hold", () => {
 
   assert.equal(state.phase, "recovering");
   assert.equal(state.controlHandTrackId, "control-hand");
+});
+
+test("gesture voice termination belongs to one detector and one hand track", () => {
+  const pressEvent = {
+    id: "control-pinch-1-control-hand-press",
+    type: "press",
+    controlHandTrackId: "control-hand",
+    firedAt: "2026-07-26T00:00:00.000Z",
+  };
+  const owner = createGestureVoiceOwner("control", pressEvent);
+
+  assert.equal(
+    isGestureVoiceTerminationForOwner(owner, "control", {
+      ...pressEvent,
+      id: "control-pinch-2-control-hand-release",
+      type: "release",
+    }),
+    true,
+  );
+  assert.equal(
+    isGestureVoiceTerminationForOwner(owner, "ordinary", {
+      ...pressEvent,
+      id: "control-pinch-2-control-hand-release",
+      type: "release",
+    }),
+    false,
+  );
+  assert.equal(
+    isGestureVoiceTerminationForOwner(owner, "control", {
+      ...pressEvent,
+      id: "control-pinch-2-other-hand-release",
+      type: "release",
+      controlHandTrackId: "other-hand",
+    }),
+    false,
+  );
+  assert.equal(
+    isGestureVoiceTerminationForOwner(owner, "control", pressEvent),
+    false,
+  );
 });
 
 test("gesture voice context freezes the accepted lock receipt", () => {
@@ -189,21 +348,63 @@ test("the control pinch detector is pure and owns no voice or click side effects
   );
 });
 
-test("runtime and overlay compose control events without feeding the legacy pointer classifiers", () => {
+test("runtime and overlay compose ordinary and contextual pinch events without legacy activation", () => {
+  const ordinaryEffect = appSource.slice(
+    appSource.indexOf("alwaysOnGestureRuntime.ordinaryPinch.lastEvent"),
+    appSource.indexOf("alwaysOnGestureRuntime.visualAnchor"),
+  );
+  const controlEffect = appSource.slice(
+    appSource.indexOf("alwaysOnGestureRuntime.controlPinch.lastEvent"),
+    appSource.indexOf("alwaysOnGestureRuntime.cameraShutdown.lastEvent"),
+  );
+
+  assert.match(runtimeSource, /ordinaryPinch/);
+  assert.match(runtimeSource, /controlHand: roles\.pointerHand/);
   assert.match(runtimeSource, /controlHand: roles\.controlHand/);
   assert.match(
     runtimeSource,
     /classifyPinchGesture\(\s*handLandmarkFrame,/,
   );
   assert.match(
-    appSource,
-    /event\.type === "release"[\s\S]*?type: "submit-voice-listening"/,
+    ordinaryEffect,
+    /startGestureVoiceCapture\("ordinary", event\)/,
+  );
+  assert.match(ordinaryEffect, /void submitVoiceListening\(\)/);
+  assert.doesNotMatch(ordinaryEffect, /emitTo\(/);
+  assert.doesNotMatch(
+    ordinaryEffect,
+    /overlayState\s*===\s*["']paused["']/,
+    "ordinary pinch must wake voice from the paused visual state",
   );
   assert.match(
     appSource,
-    /type: "stop-voice-listening"[\s\S]*?cancelVoiceRuntime/,
+    /ordinaryVoiceCanStart:\s*gesturePointerLock == null &&\s*voiceCapturePhaseRef\.current === "idle"/,
+  );
+  assert.match(
+    controlEffect,
+    /startGestureVoiceCapture\("control", event, context\)/,
+  );
+  assert.match(controlEffect, /void submitVoiceListening\(\)/);
+  assert.doesNotMatch(controlEffect, /emitTo\(/);
+  assert.doesNotMatch(
+    appSource,
+    /gestureAction\?\.type === "activate_assistant"[\s\S]*?setOverlayState\("listening"\)/,
+  );
+  assert.match(appSource, /function stopVoiceListening\(\)[\s\S]*?cancelVoiceRuntime/);
+  assert.match(appSource, /function submitVoiceListening\(\)/);
+  assert.match(
+    appSource,
+    /function startGestureVoiceCapture[\s\S]*?startVoiceListening\("gesture", context\)/,
   );
   assert.match(appSource, /gestureContext: activeGestureContext/);
+  assert.match(appSource, /voiceCaptureAttemptRef/);
+  assert.match(appSource, /nativeVoiceSessionRef/);
+  assert.match(appSource, /isGestureVoiceTerminationForOwner/);
+  assert.match(appSource, /releasePending/);
+  assert.doesNotMatch(
+    appSource,
+    /event\.payload\.source === "gesture"\s*&&\s*event\.payload\.gestureContext == null/,
+  );
 });
 
 function heldState() {
@@ -213,13 +414,14 @@ function heldState() {
   return advance(state, pinched, thresholds.pinchHoldMs);
 }
 
-function advance(previousState, controlHand, nowMs) {
+function advance(previousState, controlHand, nowMs, canPress = true) {
   return advanceControlPinch({
     previousState,
     controlHand,
     thresholds,
     pressThreshold,
     nowMs,
+    canPress,
   });
 }
 

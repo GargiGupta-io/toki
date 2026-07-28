@@ -1,45 +1,115 @@
 import type {
-  AirTapCycle,
+  ActiveWindowBounds,
   DisplayContext,
-  DoubleAirTapState,
   GesturePointerSample,
   HandLandmarkFrame,
   HandLandmarkName,
   HandLandmarkPoint,
   PointerLockSnapshot,
 } from "@toki/shared";
-import { defaultGestureTimingPolicy } from "./gestureContracts";
 import type { PointPoseClassification } from "./gesturePointing";
 
-const defaultFlexionRatioThreshold = 1.3;
-const requiredFoldedFingerCount = 2;
-const sameTargetMovementRadius = 0.1;
-const cooldownMs = 350;
+export const wristRollLockPolicy = Object.freeze({
+  rollStartDegrees: 70,
+  rollResetDegrees: 30,
+  rollHoldMs: 220,
+  untwistHoldMs: 220,
+  rollInterruptionGraceMs: 450,
+  rollSequenceGraceMs: 2_000,
+  cooldownMs: 350,
+  minimumRolledIndexExtensionRatio: 1.45,
+  requiredFoldedFingerCount: 2,
+});
 
-export type AirTapPoseClassification = {
-  label: "none" | "extended" | "flexed";
+const {
+  rollStartDegrees,
+  rollResetDegrees,
+  rollHoldMs,
+  untwistHoldMs,
+  rollInterruptionGraceMs,
+  rollSequenceGraceMs,
+  cooldownMs,
+  minimumRolledIndexExtensionRatio,
+  requiredFoldedFingerCount,
+} = wristRollLockPolicy;
+
+type GestureVector3 = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+export type WristRollPoseClassification = {
+  label: "none" | "pointing" | "tracked";
   confidence: number;
   handTrackId: string | null;
+  palmNormal: GestureVector3 | null;
   indexExtensionRatio: number | null;
   foldedFingerCount: number;
-  flexionRatioThreshold: number;
+  rollStartDegrees: number;
+  rollResetDegrees: number;
   sourceFrameId?: number;
   capturedAt?: string;
 };
 
-type PressedTap = {
-  ordinal: 1 | 2;
+type WristRollBaseline = {
   handTrackId: string;
-  pressedAt: string;
-  pressedAtMs: number;
-  sourceFrameIds: number[];
-  confidence: number;
+  palmNormal: GestureVector3;
+  pointer: GesturePointerSample;
+  startedAtMs: number;
+  lastPointSeenAtMs: number;
 };
 
-export type DoubleAirTapControllerState = {
-  tap: DoubleAirTapState;
-  pressedTap: PressedTap | null;
-  firstTapPointer: GesturePointerSample | null;
+type PendingWristRoll = {
+  handTrackId: string;
+  startedAt: string;
+  startedAtMs: number;
+  sourceFrameIds: number[];
+  confidence: number;
+  interruptedSinceMs: number | null;
+  pointer: GesturePointerSample;
+  rotationDegrees: number;
+};
+
+type PendingWristUntwist = {
+  handTrackId: string;
+  startedAt: string;
+  startedAtMs: number;
+  sourceFrameIds: number[];
+  confidence: number;
+  interruptedSinceMs: number | null;
+  rotationDegrees: number;
+};
+
+export type WristRollCycle = {
+  id: string;
+  handTrackId: string;
+  startedAt: string;
+  lockedAt: string;
+  sourceFrameIds: number[];
+  confidence: number;
+  rotationDegrees: number;
+};
+
+export type WristRollLockState = {
+  phase:
+    | "idle"
+    | "armed"
+    | "rolling"
+    | "locked"
+    | "unlocking"
+    | "cooldown"
+    | "cancelled";
+  roll?: WristRollCycle;
+  rotationDegrees?: number;
+  holdUntil?: string;
+};
+
+export type WristRollLockControllerState = {
+  lock: WristRollLockState;
+  baseline: WristRollBaseline | null;
+  pendingRoll: PendingWristRoll | null;
+  pendingUntwist: PendingWristUntwist | null;
   lastPointer: GesturePointerSample | null;
   cooldownUntilMs: number | null;
 };
@@ -48,190 +118,324 @@ export type PointerLockRequest = {
   id: string;
   lockedAt: string;
   pointer: GesturePointerSample;
-  firstTap: AirTapCycle;
-  secondTap: AirTapCycle;
+  roll: WristRollCycle;
+};
+
+export type PointerUnlockRequest = {
+  id: string;
+  lockId: string;
+  unlockedAt: string;
+  handTrackId: string;
+  sourceFrameIds: number[];
+  confidence: number;
+  rotationDegrees: number;
+};
+
+export type WristRollLockAdvanceResult = {
+  state: WristRollLockControllerState;
+  lockRequest: PointerLockRequest | null;
+  unlockRequest: PointerUnlockRequest | null;
 };
 
 export type PointerLockInvalidationReason =
   | "camera_unavailable"
   | "display_changed"
+  | "point_outside_active_window"
   | "screen_capture_unavailable"
   | "screen_state_changed"
   | "screen_state_unavailable";
 
-export const initialDoubleAirTapControllerState: DoubleAirTapControllerState = {
-  tap: { phase: "idle" },
-  pressedTap: null,
-  firstTapPointer: null,
+export const initialWristRollLockControllerState: WristRollLockControllerState = {
+  lock: { phase: "idle" },
+  baseline: null,
+  pendingRoll: null,
+  pendingUntwist: null,
   lastPointer: null,
   cooldownUntilMs: null,
 };
 
-export function classifyAirTapPose({
+export function classifyWristRollPose({
   frame,
   pointPose,
   minDetectionConfidence,
-  flexionRatioThreshold = defaultFlexionRatioThreshold,
 }: {
   frame: HandLandmarkFrame | null;
   pointPose: PointPoseClassification;
   minDetectionConfidence: number;
-  flexionRatioThreshold?: number;
-}): AirTapPoseClassification {
+}): WristRollPoseClassification {
   if (frame == null || frame.confidence < minDetectionConfidence) {
-    return createInactiveAirTapPose(undefined, flexionRatioThreshold);
-  }
-
-  if (pointPose.label === "point" && pointPose.handTrackId != null) {
-    return {
-      label: "extended",
-      confidence: pointPose.confidence,
-      handTrackId: pointPose.handTrackId,
-      indexExtensionRatio: pointPose.indexExtensionRatio,
-      foldedFingerCount: pointPose.foldedFingerCount,
-      flexionRatioThreshold,
-      sourceFrameId: frame.frameId,
-      capturedAt: frame.capturedAt,
-    };
+    return createInactiveWristRollPose(frame ?? undefined);
   }
 
   const wrist = findLandmark(frame, "wrist");
   const indexMcp = findLandmark(frame, "index_mcp");
   const indexTip = findLandmark(frame, "index_tip");
   const middleMcp = findLandmark(frame, "middle_mcp");
+  const pinkyMcp = findLandmark(frame, "pinky_mcp");
 
-  if (!wrist || !indexMcp || !indexTip || !middleMcp) {
-    return createInactiveAirTapPose(frame, flexionRatioThreshold);
+  if (!wrist || !indexMcp || !indexTip || !middleMcp || !pinkyMcp) {
+    return createInactiveWristRollPose(frame);
   }
 
-  const palmSize = distance2d(wrist, indexMcp);
-  if (palmSize <= 0) {
-    return createInactiveAirTapPose(frame, flexionRatioThreshold);
+  const palmNormal = getPalmNormal(wrist, indexMcp, pinkyMcp);
+  const palmSize = distance3d(wrist, middleMcp);
+  if (palmNormal == null || palmSize <= 0) {
+    return createInactiveWristRollPose(frame);
   }
 
-  const indexExtensionRatio = distance2d(wrist, indexTip) / palmSize;
+  const indexExtensionRatio = distance3d(wrist, indexTip) / palmSize;
   const foldedFingerCount = (["middle", "ring", "pinky"] as const).filter(
     (finger) => isFingerFolded(frame, wrist, middleMcp, finger),
   ).length;
-  const isFlexed =
-    indexExtensionRatio <= flexionRatioThreshold &&
+  const stillHasPointingStructure =
+    indexExtensionRatio >= minimumRolledIndexExtensionRatio &&
     foldedFingerCount >= requiredFoldedFingerCount;
+  const label =
+    pointPose.label === "point"
+      ? "pointing"
+      : stillHasPointingStructure
+        ? "tracked"
+        : "none";
 
   return {
-    label: isFlexed ? "flexed" : "none",
-    confidence: isFlexed ? frame.confidence : 0,
+    label,
+    confidence: label === "none" ? 0 : frame.confidence,
     handTrackId: getHandTrackId(frame),
+    palmNormal,
     indexExtensionRatio,
     foldedFingerCount,
-    flexionRatioThreshold,
+    rollStartDegrees,
+    rollResetDegrees,
     sourceFrameId: frame.frameId,
     capturedAt: frame.capturedAt,
   };
 }
 
-export function advanceDoubleAirTap({
+export function advanceWristRollLock({
   previousState,
   pose,
   pointer,
   nowMs,
 }: {
-  previousState: DoubleAirTapControllerState;
-  pose: AirTapPoseClassification;
+  previousState: WristRollLockControllerState;
+  pose: WristRollPoseClassification;
   pointer: GesturePointerSample | null;
   nowMs: number;
-}): {
-  state: DoubleAirTapControllerState;
-  lockRequest: PointerLockRequest | null;
-} {
-  const lastPointer = getCurrentPointer(previousState.lastPointer, pointer);
-  const stateWithPointer = { ...previousState, lastPointer };
+}): WristRollLockAdvanceResult {
+  const lastPointer = pointer == null ? previousState.lastPointer : copyPointer(pointer);
 
   if (
-    previousState.tap.phase === "locked" ||
-    previousState.tap.phase === "cancelled"
+    previousState.lock.phase === "locked" ||
+    previousState.lock.phase === "unlocking"
+  ) {
+    return advanceLockedWristRoll({
+      previousState,
+      pose,
+      lastPointer,
+      nowMs,
+    });
+  }
+
+  if (previousState.lock.phase === "cooldown") {
+    const canRearm =
+      pose.label === "pointing" &&
+      pose.palmNormal != null &&
+      pose.handTrackId != null &&
+      pointer?.phase === "active" &&
+      pointer.handTrackId === pose.handTrackId &&
+      nowMs >= (previousState.cooldownUntilMs ?? 0);
+
+    return canRearm
+      ? armWristRoll(pose, pointer, nowMs)
+      : {
+          state: { ...previousState, lastPointer },
+          lockRequest: null,
+          unlockRequest: null,
+        };
+  }
+
+  let baseline = previousState.baseline;
+  if (
+    baseline == null &&
+    pose.label === "pointing" &&
+    pose.palmNormal != null &&
+    pose.handTrackId != null &&
+    pointer?.phase === "active" &&
+    pointer.handTrackId === pose.handTrackId
+  ) {
+    return armWristRoll(pose, pointer, nowMs);
+  }
+
+  if (baseline == null) {
+    return {
+      state: { ...previousState, lock: { phase: "idle" }, lastPointer },
+      lockRequest: null,
+      unlockRequest: null,
+    };
+  }
+
+  if (
+    pose.handTrackId != null &&
+    pose.handTrackId !== baseline.handTrackId
   ) {
     return {
       state: {
-        ...stateWithPointer,
-        tap: { ...previousState.tap, phase: "cooldown" },
-        pressedTap: null,
+        ...resetWristRollLockController(lastPointer),
+        lock: { phase: "cancelled" },
         cooldownUntilMs: nowMs + cooldownMs,
       },
       lockRequest: null,
+      unlockRequest: null,
     };
   }
 
-  if (previousState.tap.phase === "cooldown") {
-    if (
-      previousState.cooldownUntilMs != null &&
-      nowMs < previousState.cooldownUntilMs
-    ) {
-      return { state: stateWithPointer, lockRequest: null };
+  const rotationDegrees =
+    pose.palmNormal == null
+      ? null
+      : getVectorAngleDegrees(baseline.palmNormal, pose.palmNormal);
+
+  if (
+    pose.label === "pointing" &&
+    pose.handTrackId === baseline.handTrackId &&
+    pointer?.phase === "active" &&
+    pointer.handTrackId === baseline.handTrackId &&
+    previousState.pendingRoll == null &&
+    rotationDegrees != null &&
+    rotationDegrees <= rollResetDegrees
+  ) {
+    baseline = {
+      ...baseline,
+      pointer: copyPointer(pointer),
+      lastPointSeenAtMs: nowMs,
+    };
+  }
+
+  if (
+    previousState.pendingRoll == null &&
+    nowMs - baseline.lastPointSeenAtMs > rollSequenceGraceMs
+  ) {
+    return {
+      state: resetWristRollLockController(lastPointer),
+      lockRequest: null,
+      unlockRequest: null,
+    };
+  }
+
+  const qualifiesAsRoll =
+    pose.label !== "none" &&
+    pose.handTrackId === baseline.handTrackId &&
+    rotationDegrees != null &&
+    rotationDegrees >= rollStartDegrees;
+
+  if (qualifiesAsRoll && pose.sourceFrameId != null && pose.capturedAt != null) {
+    return beginOrContinueWristRoll({
+      state: { ...previousState, baseline, lastPointer },
+      pose,
+      rotationDegrees,
+      nowMs,
+    });
+  }
+
+  if (previousState.pendingRoll != null) {
+    const interruptedSinceMs =
+      previousState.pendingRoll.interruptedSinceMs ?? nowMs;
+    if (nowMs - interruptedSinceMs < rollInterruptionGraceMs) {
+      return {
+        state: {
+          ...previousState,
+          baseline,
+          lastPointer,
+          lock: {
+            phase: "rolling",
+            rotationDegrees:
+              rotationDegrees ?? previousState.pendingRoll.rotationDegrees,
+            holdUntil: new Date(
+              previousState.pendingRoll.startedAtMs + rollHoldMs,
+            ).toISOString(),
+          },
+          pendingRoll: {
+            ...previousState.pendingRoll,
+            interruptedSinceMs,
+          },
+        },
+        lockRequest: null,
+        unlockRequest: null,
+      };
     }
 
     return {
-      state: resetDoubleAirTapController(lastPointer),
-      lockRequest: null,
-    };
-  }
-
-  const graceUntilMs = previousState.tap.graceUntil
-    ? Date.parse(previousState.tap.graceUntil)
-    : null;
-  if (
-    previousState.tap.firstTap != null &&
-    graceUntilMs != null &&
-    nowMs > graceUntilMs
-  ) {
-    return {
       state: {
-        ...stateWithPointer,
-        tap: {
-          ...previousState.tap,
-          phase: "cancelled",
-        },
-        pressedTap: null,
+        ...previousState,
+        baseline,
+        pendingRoll: null,
+        lastPointer,
+        lock: { phase: "armed", rotationDegrees: rotationDegrees ?? 0 },
       },
       lockRequest: null,
+      unlockRequest: null,
     };
   }
 
-  if (pose.label === "flexed") {
-    return beginOrContinuePress(stateWithPointer, pose, nowMs);
-  }
-
-  if (pose.label === "extended" && previousState.pressedTap != null) {
-    return completePress(stateWithPointer, pose, lastPointer, nowMs);
-  }
-
-  return { state: stateWithPointer, lockRequest: null };
-}
-
-export function resetDoubleAirTapController(
-  lastPointer: GesturePointerSample | null = null,
-): DoubleAirTapControllerState {
   return {
-    ...initialDoubleAirTapControllerState,
-    lastPointer,
+    state: {
+      ...previousState,
+      baseline,
+      lastPointer,
+      lock: {
+        phase: "armed",
+        rotationDegrees: rotationDegrees ?? 0,
+      },
+    },
+    lockRequest: null,
+    unlockRequest: null,
   };
 }
 
-export function createScreenStateFingerprint(window: {
-  appName?: string | null;
-  title?: string | null;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}): string {
-  return [
-    normalizeIdentityPart(window.appName),
-    normalizeIdentityPart(window.title),
+export function resetWristRollLockController(
+  lastPointer: GesturePointerSample | null = null,
+): WristRollLockControllerState {
+  return {
+    ...initialWristRollLockControllerState,
+    lastPointer: lastPointer == null ? null : copyPointer(lastPointer),
+  };
+}
+
+export function getWristRollDegrees(
+  baseline: GestureVector3,
+  current: GestureVector3,
+): number {
+  return getVectorAngleDegrees(baseline, current);
+}
+
+export function createScreenStateFingerprint(
+  window: ActiveWindowBounds,
+): string {
+  const geometry = [
     Math.round(window.x),
     Math.round(window.y),
     Math.round(window.width),
     Math.round(window.height),
-  ].join("|");
+  ];
+  const hasNativeIdentity =
+    typeof window.ownerProcessId === "number" &&
+    Number.isFinite(window.ownerProcessId) &&
+    typeof window.windowNumber === "number" &&
+    Number.isFinite(window.windowNumber);
+
+  return hasNativeIdentity
+    ? [
+        "native",
+        normalizeIdentityPart(window.bundleIdentifier ?? window.appName),
+        Math.round(window.ownerProcessId!),
+        Math.round(window.windowNumber!),
+        ...geometry,
+      ].join("|")
+    : [
+        "fallback",
+        normalizeIdentityPart(window.appName),
+        normalizeIdentityPart(window.title),
+        ...geometry,
+      ].join("|");
 }
 
 export function getPointerLockInvalidationReason({
@@ -239,11 +443,13 @@ export function getPointerLockInvalidationReason({
   display,
   screenCaptureAvailable,
   activeWindowId,
+  activeWindow,
 }: {
   lock: PointerLockSnapshot;
   display: DisplayContext;
   screenCaptureAvailable: boolean;
   activeWindowId: string | null;
+  activeWindow?: ActiveWindowBounds | null;
 }): PointerLockInvalidationReason | null {
   if (!screenCaptureAvailable) {
     return "screen_capture_unavailable";
@@ -263,6 +469,13 @@ export function getPointerLockInvalidationReason({
   }
 
   if (
+    activeWindow != null &&
+    !isPointInsideWindow(lock.pointer.display, activeWindow)
+  ) {
+    return "point_outside_active_window";
+  }
+
+  if (
     lock.evidence.activeWindowId != null &&
     lock.evidence.activeWindowId !== activeWindowId
   ) {
@@ -272,247 +485,329 @@ export function getPointerLockInvalidationReason({
   return null;
 }
 
-function beginOrContinuePress(
-  state: DoubleAirTapControllerState,
-  pose: AirTapPoseClassification,
-  nowMs: number,
-): {
-  state: DoubleAirTapControllerState;
-  lockRequest: null;
-} {
-  const pointer = state.lastPointer;
-  if (
-    state.tap.firstTap != null &&
-    pose.handTrackId != null &&
-    state.tap.firstTap.handTrackId !== pose.handTrackId
-  ) {
-    return {
-      state: {
-        ...state,
-        tap: { ...state.tap, phase: "cancelled" },
-        pressedTap: null,
-      },
-      lockRequest: null,
-    };
-  }
-
-  if (
-    pointer == null ||
-    pose.handTrackId == null ||
-    pose.sourceFrameId == null ||
-    pose.capturedAt == null ||
-    pointer.handTrackId !== pose.handTrackId
-  ) {
-    return { state, lockRequest: null };
-  }
-
-  if (state.pressedTap != null) {
-    if (state.pressedTap.handTrackId !== pose.handTrackId) {
-      return {
-        state: {
-          ...state,
-          tap: { ...state.tap, phase: "cancelled" },
-          pressedTap: null,
-        },
-        lockRequest: null,
-      };
-    }
-
-    const sourceFrameIds = state.pressedTap.sourceFrameIds.includes(
-      pose.sourceFrameId,
-    )
-      ? state.pressedTap.sourceFrameIds
-      : [...state.pressedTap.sourceFrameIds, pose.sourceFrameId];
-
-    return {
-      state: {
-        ...state,
-        pressedTap: {
-          ...state.pressedTap,
-          sourceFrameIds,
-          confidence: Math.min(state.pressedTap.confidence, pose.confidence),
-        },
-      },
-      lockRequest: null,
-    };
-  }
-
-  const ordinal = state.tap.firstTap == null ? 1 : 2;
-  if (
-    ordinal === 2 &&
-    state.tap.firstTap?.handTrackId !== pose.handTrackId
-  ) {
-    return {
-      state: {
-        ...state,
-        tap: { ...state.tap, phase: "cancelled" },
-      },
-      lockRequest: null,
-    };
-  }
-
-  return {
-    state: {
-      ...state,
-      tap: { ...state.tap, phase: "pressing" },
-      pressedTap: {
-        ordinal,
-        handTrackId: pose.handTrackId,
-        pressedAt: pose.capturedAt,
-        pressedAtMs: nowMs,
-        sourceFrameIds: [pose.sourceFrameId],
-        confidence: pose.confidence,
-      },
-    },
-    lockRequest: null,
-  };
-}
-
-function completePress(
-  state: DoubleAirTapControllerState,
-  pose: AirTapPoseClassification,
-  pointer: GesturePointerSample | null,
-  nowMs: number,
-): {
-  state: DoubleAirTapControllerState;
-  lockRequest: PointerLockRequest | null;
-} {
-  const pressedTap = state.pressedTap;
-  if (
-    pressedTap == null ||
-    pointer == null ||
-    pose.handTrackId == null ||
-    pose.sourceFrameId == null ||
-    pose.capturedAt == null ||
-    pressedTap.handTrackId !== pose.handTrackId ||
-    pointer.handTrackId !== pose.handTrackId
-  ) {
-    return {
-      state: {
-        ...state,
-        tap: { ...state.tap, phase: "cancelled" },
-        pressedTap: null,
-      },
-      lockRequest: null,
-    };
-  }
-
-  const cycle: AirTapCycle = {
-    id: `air-tap-${pose.handTrackId}-${pressedTap.sourceFrameIds[0]}-${pose.sourceFrameId}`,
-    handTrackId: pose.handTrackId,
-    pressedAt: pressedTap.pressedAt,
-    releasedAt: pose.capturedAt,
-    sourceFrameIds: [...pressedTap.sourceFrameIds, pose.sourceFrameId],
-    confidence: Math.min(pressedTap.confidence, pose.confidence),
-  };
-
-  if (pressedTap.ordinal === 1) {
-    const graceUntil = new Date(
-      nowMs + defaultGestureTimingPolicy.doubleTapMaxGapMs,
-    ).toISOString();
-
-    return {
-      state: {
-        ...state,
-        tap: {
-          phase: "armed",
-          firstTap: cycle,
-          graceUntil,
-        },
-        pressedTap: null,
-        firstTapPointer: copyPointer(pointer),
-      },
-      lockRequest: null,
-    };
-  }
-
-  const firstTap = state.tap.firstTap;
-  const firstTapPointer = state.firstTapPointer;
-  const isInsideMovementRadius =
-    firstTapPointer != null &&
-    distanceBetweenPointers(firstTapPointer, pointer) <= sameTargetMovementRadius;
-  const isInsideGrace =
-    firstTap != null &&
-    nowMs - Date.parse(firstTap.releasedAt) <=
-      defaultGestureTimingPolicy.doubleTapMaxGapMs;
-
-  if (firstTap == null || !isInsideMovementRadius || !isInsideGrace) {
-    return {
-      state: {
-        ...state,
-        tap: {
-          ...state.tap,
-          phase: "cancelled",
-          secondTap: cycle,
-        },
-        pressedTap: null,
-      },
-      lockRequest: null,
-    };
-  }
-
-  const copiedPointer = copyPointer(pointer);
-  const lockRequest: PointerLockRequest = {
-    id: `gesture-lock-${cycle.id}`,
-    lockedAt: pose.capturedAt,
-    pointer: copiedPointer,
-    firstTap,
-    secondTap: cycle,
-  };
-
-  return {
-    state: {
-      ...state,
-      tap: {
-        phase: "locked",
-        firstTap,
-        secondTap: cycle,
-      },
-      pressedTap: null,
-      lastPointer: copiedPointer,
-    },
-    lockRequest,
-  };
-}
-
-function getCurrentPointer(
-  _previous: GesturePointerSample | null,
-  current: GesturePointerSample | null,
-): GesturePointerSample | null {
-  return current;
-}
-
-function copyPointer(pointer: GesturePointerSample): GesturePointerSample {
-  return {
-    ...pointer,
-    normalized: { ...pointer.normalized },
-    display: { ...pointer.display },
-  };
-}
-
-function distanceBetweenPointers(
-  first: GesturePointerSample,
-  second: GesturePointerSample,
-): number {
-  return Math.hypot(
-    first.normalized.x - second.normalized.x,
-    first.normalized.y - second.normalized.y,
+function isPointInsideWindow(
+  point: { x: number; y: number },
+  window: ActiveWindowBounds,
+): boolean {
+  return (
+    point.x >= window.x &&
+    point.x <= window.x + window.width &&
+    point.y >= window.y &&
+    point.y <= window.y + window.height
   );
 }
 
-function createInactiveAirTapPose(
+function armWristRoll(
+  pose: WristRollPoseClassification,
+  pointer: GesturePointerSample,
+  nowMs: number,
+): WristRollLockAdvanceResult {
+  const copiedPointer = copyPointer(pointer);
+  return {
+    state: {
+      lock: { phase: "armed", rotationDegrees: 0 },
+      baseline: {
+        handTrackId: pose.handTrackId!,
+        palmNormal: { ...pose.palmNormal! },
+        pointer: copiedPointer,
+        startedAtMs: nowMs,
+        lastPointSeenAtMs: nowMs,
+      },
+      pendingRoll: null,
+      pendingUntwist: null,
+      lastPointer: copiedPointer,
+      cooldownUntilMs: null,
+    },
+    lockRequest: null,
+    unlockRequest: null,
+  };
+}
+
+function beginOrContinueWristRoll({
+  state,
+  pose,
+  rotationDegrees,
+  nowMs,
+}: {
+  state: WristRollLockControllerState;
+  pose: WristRollPoseClassification;
+  rotationDegrees: number;
+  nowMs: number;
+}): WristRollLockAdvanceResult {
+  const existing = state.pendingRoll;
+  const pendingRoll: PendingWristRoll =
+    existing == null
+      ? {
+          handTrackId: pose.handTrackId!,
+          startedAt: pose.capturedAt!,
+          startedAtMs: nowMs,
+          sourceFrameIds: [pose.sourceFrameId!],
+          confidence: pose.confidence,
+          interruptedSinceMs: null,
+          pointer: copyPointer(state.baseline!.pointer),
+          rotationDegrees,
+        }
+      : {
+          ...existing,
+          sourceFrameIds: existing.sourceFrameIds.includes(pose.sourceFrameId!)
+            ? existing.sourceFrameIds
+            : [...existing.sourceFrameIds, pose.sourceFrameId!],
+          confidence: Math.min(existing.confidence, pose.confidence),
+          interruptedSinceMs: null,
+          rotationDegrees: Math.max(existing.rotationDegrees, rotationDegrees),
+        };
+
+  if (nowMs - pendingRoll.startedAtMs < rollHoldMs) {
+    return {
+      state: {
+        ...state,
+        pendingRoll,
+        lock: {
+          phase: "rolling",
+          rotationDegrees,
+          holdUntil: new Date(pendingRoll.startedAtMs + rollHoldMs).toISOString(),
+        },
+      },
+      lockRequest: null,
+      unlockRequest: null,
+    };
+  }
+
+  const roll: WristRollCycle = {
+    id: `wrist-roll-${pendingRoll.handTrackId}-${pendingRoll.sourceFrameIds[0]}-${pose.sourceFrameId}`,
+    handTrackId: pendingRoll.handTrackId,
+    startedAt: pendingRoll.startedAt,
+    lockedAt: pose.capturedAt!,
+    sourceFrameIds: pendingRoll.sourceFrameIds,
+    confidence: pendingRoll.confidence,
+    rotationDegrees: pendingRoll.rotationDegrees,
+  };
+  const lockRequest: PointerLockRequest = {
+    id: `gesture-lock-${roll.id}`,
+    lockedAt: roll.lockedAt,
+    pointer: copyPointer(pendingRoll.pointer),
+    roll,
+  };
+
+  return {
+    state: {
+      ...state,
+      lock: { phase: "locked", roll, rotationDegrees: roll.rotationDegrees },
+      pendingRoll: null,
+      pendingUntwist: null,
+      lastPointer: copyPointer(pendingRoll.pointer),
+    },
+    lockRequest,
+    unlockRequest: null,
+  };
+}
+
+function advanceLockedWristRoll({
+  previousState,
+  pose,
+  lastPointer,
+  nowMs,
+}: {
+  previousState: WristRollLockControllerState;
+  pose: WristRollPoseClassification;
+  lastPointer: GesturePointerSample | null;
+  nowMs: number;
+}): WristRollLockAdvanceResult {
+  const roll = previousState.lock.roll;
+  const baseline = previousState.baseline;
+  if (roll == null || baseline == null) {
+    return {
+      state: resetWristRollLockController(lastPointer),
+      lockRequest: null,
+      unlockRequest: null,
+    };
+  }
+
+  const isLockingHand = pose.handTrackId === roll.handTrackId;
+  const rotationDegrees =
+    !isLockingHand || pose.palmNormal == null
+      ? null
+      : getVectorAngleDegrees(baseline.palmNormal, pose.palmNormal);
+  const qualifiesAsUntwist =
+    isLockingHand &&
+    pose.label !== "none" &&
+    rotationDegrees != null &&
+    rotationDegrees <= rollResetDegrees &&
+    pose.sourceFrameId != null &&
+    pose.capturedAt != null;
+
+  if (qualifiesAsUntwist) {
+    const existing = previousState.pendingUntwist;
+    const pendingUntwist: PendingWristUntwist =
+      existing == null
+        ? {
+            handTrackId: roll.handTrackId,
+            startedAt: pose.capturedAt!,
+            startedAtMs: nowMs,
+            sourceFrameIds: [pose.sourceFrameId!],
+            confidence: pose.confidence,
+            interruptedSinceMs: null,
+            rotationDegrees: rotationDegrees!,
+          }
+        : {
+            ...existing,
+            sourceFrameIds: existing.sourceFrameIds.includes(pose.sourceFrameId!)
+              ? existing.sourceFrameIds
+              : [...existing.sourceFrameIds, pose.sourceFrameId!],
+            confidence: Math.min(existing.confidence, pose.confidence),
+            interruptedSinceMs: null,
+            rotationDegrees: Math.min(
+              existing.rotationDegrees,
+              rotationDegrees!,
+            ),
+          };
+
+    if (nowMs - pendingUntwist.startedAtMs < untwistHoldMs) {
+      return {
+        state: {
+          ...previousState,
+          lock: {
+            phase: "unlocking",
+            roll,
+            rotationDegrees,
+            holdUntil: new Date(
+              pendingUntwist.startedAtMs + untwistHoldMs,
+            ).toISOString(),
+          },
+          pendingUntwist,
+          lastPointer,
+        },
+        lockRequest: null,
+        unlockRequest: null,
+      };
+    }
+
+    const lockId = `gesture-lock-${roll.id}`;
+    const unlockRequest: PointerUnlockRequest = {
+      id: `gesture-unlock-${roll.id}-${pose.sourceFrameId}`,
+      lockId,
+      unlockedAt: pose.capturedAt!,
+      handTrackId: roll.handTrackId,
+      sourceFrameIds: pendingUntwist.sourceFrameIds,
+      confidence: pendingUntwist.confidence,
+      rotationDegrees: pendingUntwist.rotationDegrees,
+    };
+
+    return {
+      state: {
+        lock: {
+          phase: "cooldown",
+          roll,
+          rotationDegrees,
+        },
+        baseline: null,
+        pendingRoll: null,
+        pendingUntwist: null,
+        lastPointer,
+        cooldownUntilMs: nowMs + cooldownMs,
+      },
+      lockRequest: null,
+      unlockRequest,
+    };
+  }
+
+  if (previousState.pendingUntwist != null) {
+    const interruptedSinceMs =
+      previousState.pendingUntwist.interruptedSinceMs ?? nowMs;
+    if (nowMs - interruptedSinceMs < rollInterruptionGraceMs) {
+      return {
+        state: {
+          ...previousState,
+          lock: {
+            phase: "unlocking",
+            roll,
+            rotationDegrees:
+              rotationDegrees ?? previousState.lock.rotationDegrees,
+            holdUntil: new Date(
+              previousState.pendingUntwist.startedAtMs + untwistHoldMs,
+            ).toISOString(),
+          },
+          pendingUntwist: {
+            ...previousState.pendingUntwist,
+            interruptedSinceMs,
+          },
+          lastPointer,
+        },
+        lockRequest: null,
+        unlockRequest: null,
+      };
+    }
+  }
+
+  return {
+    state: {
+      ...previousState,
+      lock: {
+        phase: "locked",
+        roll,
+        rotationDegrees: rotationDegrees ?? previousState.lock.rotationDegrees,
+      },
+      pendingRoll: null,
+      pendingUntwist: null,
+      lastPointer,
+    },
+    lockRequest: null,
+    unlockRequest: null,
+  };
+}
+
+function createInactiveWristRollPose(
   frame?: HandLandmarkFrame,
-  threshold = defaultFlexionRatioThreshold,
-): AirTapPoseClassification {
+): WristRollPoseClassification {
   return {
     label: "none",
     confidence: 0,
     handTrackId: frame ? getHandTrackId(frame) : null,
+    palmNormal: null,
     indexExtensionRatio: null,
     foldedFingerCount: 0,
-    flexionRatioThreshold: threshold,
+    rollStartDegrees,
+    rollResetDegrees,
     sourceFrameId: frame?.frameId,
     capturedAt: frame?.capturedAt,
+  };
+}
+
+function getPalmNormal(
+  wrist: HandLandmarkPoint,
+  indexMcp: HandLandmarkPoint,
+  pinkyMcp: HandLandmarkPoint,
+): GestureVector3 | null {
+  const indexVector = subtract(indexMcp, wrist);
+  const pinkyVector = subtract(pinkyMcp, wrist);
+  const cross = {
+    x: indexVector.y * pinkyVector.z - indexVector.z * pinkyVector.y,
+    y: indexVector.z * pinkyVector.x - indexVector.x * pinkyVector.z,
+    z: indexVector.x * pinkyVector.y - indexVector.y * pinkyVector.x,
+  };
+  const magnitude = Math.hypot(cross.x, cross.y, cross.z);
+  return magnitude <= 0
+    ? null
+    : {
+        x: cross.x / magnitude,
+        y: cross.y / magnitude,
+        z: cross.z / magnitude,
+      };
+}
+
+function getVectorAngleDegrees(left: GestureVector3, right: GestureVector3): number {
+  const dot = left.x * right.x + left.y * right.y + left.z * right.z;
+  return (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+}
+
+function subtract(
+  left: HandLandmarkPoint,
+  right: HandLandmarkPoint,
+): GestureVector3 {
+  return {
+    x: left.x - right.x,
+    y: left.y - right.y,
+    z: (left.z ?? 0) - (right.z ?? 0),
   };
 }
 
@@ -527,8 +822,16 @@ function isFingerFolded(
     return false;
   }
 
-  const palmSize = distance2d(wrist, middleMcp);
-  return palmSize > 0 && distance2d(wrist, tip) / palmSize <= 1.35;
+  const palmSize = distance3d(wrist, middleMcp);
+  return palmSize > 0 && distance3d(wrist, tip) / palmSize <= 1.35;
+}
+
+function copyPointer(pointer: GesturePointerSample): GesturePointerSample {
+  return {
+    ...pointer,
+    normalized: { ...pointer.normalized },
+    display: { ...pointer.display },
+  };
 }
 
 function getHandTrackId(frame: HandLandmarkFrame): string {
@@ -549,8 +852,8 @@ function findLandmark(
   return frame.landmarks.find((landmark) => landmark.name === name);
 }
 
-function distance2d(a: HandLandmarkPoint, b: HandLandmarkPoint): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+function distance3d(a: HandLandmarkPoint, b: HandLandmarkPoint): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
 }
 
 function normalizeIdentityPart(value: string | null | undefined): string {

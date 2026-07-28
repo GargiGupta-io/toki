@@ -32,8 +32,8 @@
       {
         "label": "settings",
         "title": " ",
-        "width": 424,
-        "height": 224,
+        "width": 400,
+        "height": 218,
         "center": true,
         "decorations": false,
         "transparent": true,

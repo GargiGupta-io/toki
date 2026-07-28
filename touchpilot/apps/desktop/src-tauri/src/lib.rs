@@ -31,6 +31,35 @@ struct NativeClickMonitorState {
     armed: AtomicBool,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokiDebugExportCapture {
+    format: String,
+    image_base64: String,
+    byte_length: usize,
+    captured_at: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokiDebugExportRequest {
+    snapshot: serde_json::Value,
+    history_entries: Vec<serde_json::Value>,
+    capture: Option<TokiDebugExportCapture>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TokiDebugExportStatus {
+    directory: String,
+    snapshot_path: String,
+    history_path: String,
+    capture_path: Option<String>,
+    snapshot_exists: bool,
+    history_exists: bool,
+    last_snapshot_modified_ms: Option<u128>,
+}
+
 #[derive(Default)]
 struct VoiceCaptureStore {
     active_session: Option<VoiceCaptureSession>,
@@ -88,6 +117,9 @@ struct NativeCursorPosition {
 struct NativeWindowBounds {
     app_name: Option<String>,
     title: Option<String>,
+    bundle_identifier: Option<String>,
+    owner_process_id: Option<i64>,
+    window_number: Option<i64>,
     x: f64,
     y: f64,
     width: f64,
@@ -128,10 +160,10 @@ struct TopUtilityModePayload {
     focused: bool,
 }
 
-const TOP_UTILITY_PEEK_WIDTH: f64 = 392.0;
-const TOP_UTILITY_PEEK_HEIGHT: f64 = 60.0;
-const TOP_UTILITY_EXPANDED_WIDTH: f64 = 424.0;
-const TOP_UTILITY_EXPANDED_HEIGHT: f64 = 224.0;
+const TOP_UTILITY_PEEK_WIDTH: f64 = 380.0;
+const TOP_UTILITY_PEEK_HEIGHT: f64 = 58.0;
+const TOP_UTILITY_EXPANDED_WIDTH: f64 = 400.0;
+const TOP_UTILITY_EXPANDED_HEIGHT: f64 = 218.0;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -332,6 +364,76 @@ fn macos_accessibility_is_trusted() -> bool {
     unsafe { AXIsProcessTrusted() != 0 }
 }
 
+/// Reports whether macOS is currently applying Centre Stage to the default
+/// video camera.
+///
+/// Centre Stage digitally pans, crops, and zooms the camera frame to keep a
+/// person centred. That is actively hostile to hand tracking: a raised hand can
+/// fall outside the crop entirely, the frame re-frames itself so a still hand
+/// appears to move, and the fixed field of view that camera-to-screen mapping
+/// assumes stops being fixed. Toki cannot turn it off — the control mode is
+/// owned by the user through Control Centre — but it must not stay silent about
+/// it, because the failure looks exactly like Toki being broken.
+///
+/// Returns `None` when the state cannot be determined, which is treated as
+/// "nothing to warn about" rather than as a fault.
+#[cfg(target_os = "macos")]
+fn macos_center_stage_active() -> Option<bool> {
+    use std::ffi::c_void;
+    use std::os::raw::{c_char, c_uchar};
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_getClass(name: *const c_char) -> *mut c_void;
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_msgSend();
+    }
+
+    #[link(name = "AVFoundation", kind = "framework")]
+    extern "C" {
+        static AVMediaTypeVideo: *const c_void;
+    }
+
+    type SendObj =
+        unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_void) -> *mut c_void;
+    type SendBool = unsafe extern "C" fn(*mut c_void, *mut c_void) -> c_uchar;
+    type SendRespondsTo =
+        unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> c_uchar;
+
+    unsafe {
+        let class = objc_getClass(c"AVCaptureDevice".as_ptr());
+        if class.is_null() {
+            return None;
+        }
+
+        let send_obj: SendObj = std::mem::transmute(objc_msgSend as *const c_void);
+        let device = send_obj(
+            class,
+            sel_registerName(c"defaultDeviceWithMediaType:".as_ptr()),
+            AVMediaTypeVideo,
+        );
+        if device.is_null() {
+            return None;
+        }
+
+        // isCenterStageActive arrived in macOS 12.3. Probing the selector first
+        // keeps an older system reporting "unknown" instead of trapping.
+        let selector = sel_registerName(c"isCenterStageActive".as_ptr());
+        let responds: SendRespondsTo = std::mem::transmute(objc_msgSend as *const c_void);
+        if responds(
+            device,
+            sel_registerName(c"respondsToSelector:".as_ptr()),
+            selector,
+        ) == 0
+        {
+            return None;
+        }
+
+        let send_bool: SendBool = std::mem::transmute(objc_msgSend as *const c_void);
+        Some(send_bool(device, selector) != 0)
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn macos_screen_capture_is_trusted() -> bool {
     use std::os::raw::c_uchar;
@@ -342,6 +444,18 @@ fn macos_screen_capture_is_trusted() -> bool {
     }
 
     unsafe { CGPreflightScreenCaptureAccess() != 0 }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_request_screen_capture_access() -> bool {
+    use std::os::raw::c_uchar;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGRequestScreenCaptureAccess() -> c_uchar;
+    }
+
+    unsafe { CGRequestScreenCaptureAccess() != 0 }
 }
 
 #[cfg(target_os = "macos")]
@@ -929,6 +1043,9 @@ import Foundation
 struct WindowBoundsPayload: Encodable {
   let appName: String?
   let title: String?
+  let bundleIdentifier: String?
+  let ownerProcessId: Int
+  let windowNumber: Int
   let x: Double
   let y: Double
   let width: Double
@@ -940,6 +1057,22 @@ if CommandLine.arguments.count > 1 {
   preferredAppName = CommandLine.arguments[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 } else {
   preferredAppName = ""
+}
+
+func optionalDoubleArgument(_ index: Int) -> Double? {
+  guard CommandLine.arguments.count > index else {
+    return nil
+  }
+
+  let value = CommandLine.arguments[index].trimmingCharacters(in: .whitespacesAndNewlines)
+  return value.isEmpty ? nil : Double(value)
+}
+
+let targetPoint: CGPoint?
+if let x = optionalDoubleArgument(2), let y = optionalDoubleArgument(3) {
+  targetPoint = CGPoint(x: x, y: y)
+} else {
+  targetPoint = nil
 }
 
 func normalized(_ value: String?) -> String? {
@@ -976,16 +1109,10 @@ func intValue(_ value: Any?) -> Int? {
 }
 
 func isIgnoredOwnerName(_ value: String?) -> Bool {
-  guard preferredAppName.isEmpty else {
-    return false
-  }
-
   let normalized = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
   return normalized == "toki" ||
     normalized == "touchpilot" ||
-    normalized == "system settings" ||
-    normalized == "system preferences" ||
     normalized == "control center" ||
     normalized == "notification center" ||
     normalized == "dock" ||
@@ -1027,40 +1154,15 @@ guard let windowInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? 
 }
 
 let selectedApp = selectApplication()
-var fallbackOwnerPid: Int? = nil
-
-if selectedApp == nil {
-  fallbackOwnerPid = windowInfo.compactMap { info -> (pid: Int, area: Double)? in
-    guard
-      let ownerPid = intValue(info[kCGWindowOwnerPID as String]),
-      let ownerName = normalized(info[kCGWindowOwnerName as String] as? String),
-      !isIgnoredOwnerName(ownerName),
-      let layer = intValue(info[kCGWindowLayer as String]),
-      layer == 0,
-      let bounds = info[kCGWindowBounds as String] as? [String: Any],
-      let width = doubleValue(bounds["Width"]),
-      let height = doubleValue(bounds["Height"]),
-      width >= 160,
-      height >= 160
-    else {
-      return nil
-    }
-
-    return (pid: ownerPid, area: width * height)
-  }
-  .max(by: { $0.area < $1.area })?
-  .pid
-}
-
-let targetPid = selectedApp.map { Int($0.processIdentifier) } ?? fallbackOwnerPid
+let targetPid = selectedApp.map { Int($0.processIdentifier) }
 let targetApp = targetPid.flatMap { pid in
   NSWorkspace.shared.runningApplications.first { Int($0.processIdentifier) == pid }
 }
 
-func makeWindowPayload(_ info: [String: Any], expectedPid: Int?) -> WindowBoundsPayload? {
+func makeWindowPayload(_ info: [String: Any]) -> WindowBoundsPayload? {
   guard
     let ownerPid = intValue(info[kCGWindowOwnerPID as String]),
-    expectedPid == nil || ownerPid == expectedPid,
+    let windowNumber = intValue(info[kCGWindowNumber as String]),
     let ownerName = normalized(info[kCGWindowOwnerName as String] as? String),
     !isIgnoredOwnerName(ownerName),
     let layer = intValue(info[kCGWindowLayer as String]),
@@ -1092,6 +1194,9 @@ func makeWindowPayload(_ info: [String: Any], expectedPid: Int?) -> WindowBounds
   return WindowBoundsPayload(
     appName: app?.localizedName ?? ownerName,
     title: title,
+    bundleIdentifier: app?.bundleIdentifier,
+    ownerProcessId: ownerPid,
+    windowNumber: windowNumber,
     x: x,
     y: y,
     width: width,
@@ -1099,20 +1204,38 @@ func makeWindowPayload(_ info: [String: Any], expectedPid: Int?) -> WindowBounds
   )
 }
 
-let usableWindows = windowInfo.compactMap { info -> WindowBoundsPayload? in
+func contains(_ window: WindowBoundsPayload, point: CGPoint) -> Bool {
+  return point.x >= window.x &&
+    point.x <= window.x + window.width &&
+    point.y >= window.y &&
+    point.y <= window.y + window.height
+}
+
+// CGWindowListCopyWindowInfo preserves front-to-back z-order. Keep that order:
+// choosing the largest window can silently replace the visible app under a Toki overlay.
+let allWindows = windowInfo.compactMap { info -> WindowBoundsPayload? in
+  makeWindowPayload(info)
+}
+let selectedAppWindows = allWindows.filter { window in
   guard let targetPid else {
-    return nil
+    return false
   }
+  return window.ownerProcessId == targetPid
+}
+let pointMatches = targetPoint.map { point in
+  allWindows.filter { contains($0, point: point) }
+} ?? []
 
-  return makeWindowPayload(info, expectedPid: targetPid)
+let window: WindowBoundsPayload?
+if !preferredAppName.isEmpty {
+  window = selectedAppWindows.first ?? allWindows.first
+} else if targetPoint != nil {
+  window = pointMatches.first ?? selectedAppWindows.first ?? allWindows.first
+} else {
+  window = selectedAppWindows.first ?? allWindows.first
 }
 
-let fallbackWindows = windowInfo.compactMap { info -> WindowBoundsPayload? in
-  makeWindowPayload(info, expectedPid: nil)
-}
-
-guard let window = (usableWindows.isEmpty ? fallbackWindows : usableWindows)
-  .max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
+guard let window else {
     let appName = targetApp?.localizedName ?? "unknown app"
     fputs("no usable content window was available; selected application was \(appName)\n", stderr)
     exit(4)
@@ -1125,7 +1248,11 @@ print(String(data: data, encoding: .utf8)!)
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-fn frontmost_window_bounds(app_name: Option<String>) -> Result<NativeWindowBounds, String> {
+fn frontmost_window_bounds(
+    app_name: Option<String>,
+    point_x: Option<f64>,
+    point_y: Option<f64>,
+) -> Result<NativeWindowBounds, String> {
     let temp_root = std::env::temp_dir();
     let stamp = now_ms();
     let script_path = temp_root.join(format!("toki-window-bounds-{stamp}.swift"));
@@ -1136,6 +1263,8 @@ fn frontmost_window_bounds(app_name: Option<String>) -> Result<NativeWindowBound
             Command::new("/usr/bin/swift")
                 .arg(&script_path)
                 .arg(app_name.as_deref().unwrap_or(""))
+                .arg(point_x.map(|value| value.to_string()).unwrap_or_default())
+                .arg(point_y.map(|value| value.to_string()).unwrap_or_default())
                 .output()
                 .map_err(|error| error.to_string())
         });
@@ -1162,15 +1291,49 @@ fn screen_capture_access_status() -> Result<bool, String> {
     Ok(macos_screen_capture_is_trusted())
 }
 
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn camera_reframing_status() -> Result<Option<bool>, String> {
+    Ok(macos_center_stage_active())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn request_screen_capture_access() -> Result<bool, String> {
+    if macos_screen_capture_is_trusted() {
+        return Ok(true);
+    }
+
+    Ok(macos_request_screen_capture_access())
+}
+
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-fn frontmost_window_bounds(_app_name: Option<String>) -> Result<NativeWindowBounds, String> {
+fn frontmost_window_bounds(
+    _app_name: Option<String>,
+    _point_x: Option<f64>,
+    _point_y: Option<f64>,
+) -> Result<NativeWindowBounds, String> {
     Err("active window crop is only implemented on macOS right now".to_string())
 }
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
 fn screen_capture_access_status() -> Result<bool, String> {
+    Ok(true)
+}
+
+/// Centre Stage is a macOS camera feature. Other platforms report "unknown",
+/// which the caller treats as nothing to warn about.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn camera_reframing_status() -> Result<Option<bool>, String> {
+    Ok(None)
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn request_screen_capture_access() -> Result<bool, String> {
     Ok(true)
 }
 
@@ -1608,6 +1771,30 @@ fn prepare_macos_overlay_on_main_thread<R: tauri::Runtime>(
         .map_err(|error| error.to_string())
 }
 
+#[cfg(target_os = "macos")]
+fn prepare_macos_top_utility_on_main_thread<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    ignores_mouse_events: bool,
+) -> Result<(), String> {
+    let utility = window.clone();
+    window
+        .run_on_main_thread(move || {
+            match macos_overlay::prepare_auxiliary(&utility, ignores_mouse_events) {
+                Ok(status) if status.contract_ready => {
+                    eprintln!("toki macOS top utility ready above fullscreen content");
+                }
+                Ok(status) => {
+                    eprintln!(
+                        "toki macOS top utility contract incomplete: visible={}, on_active_space={}, flags_ready={}",
+                        status.visible, status.on_active_space, status.contract_ready
+                    );
+                }
+                Err(error) => eprintln!("failed to prepare Toki macOS top utility: {error}"),
+            }
+        })
+        .map_err(|error| error.to_string())
+}
+
 fn show_overlay_window<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> Result<(), String> {
     window.set_title(" ").map_err(|error| error.to_string())?;
     window
@@ -1673,7 +1860,7 @@ fn position_top_utility<R: tauri::Runtime>(
     let window_width = (logical_width * scale_factor).round() as i32;
 
     #[cfg(target_os = "macos")]
-    let top_gap = (30.0 * scale_factor).round() as i32;
+    let top_gap = 0;
     #[cfg(not(target_os = "macos"))]
     let top_gap = (8.0 * scale_factor).round() as i32;
 
@@ -1731,6 +1918,10 @@ fn apply_top_utility_mode<R: tauri::Runtime>(
     }
 
     window.show().map_err(|error| error.to_string())?;
+
+    #[cfg(target_os = "macos")]
+    prepare_macos_top_utility_on_main_thread(window, mode == "peek")?;
+
     window
         .emit("toki://top-utility-mode", payload.clone())
         .map_err(|error| error.to_string())?;
@@ -1794,10 +1985,12 @@ fn require_macos_screen_capture_trust(preflight_trusted: bool) -> Result<(), Str
 #[tauri::command]
 fn capture_active_window_snapshot(
     app_name: Option<String>,
+    point_x: Option<f64>,
+    point_y: Option<f64>,
 ) -> Result<ActiveWindowCaptureSnapshot, String> {
     let started_at_ms = now_ms();
     let snapshot_id = format!("active-window-{started_at_ms}");
-    let window = frontmost_window_bounds(app_name)?;
+    let window = frontmost_window_bounds(app_name, point_x, point_y)?;
     let window_observed_at_ms = now_ms();
     let capture_started_at_ms = now_ms();
     let mut screenshot = capture_screenshot_with_permission_context()?;
@@ -1836,6 +2029,203 @@ fn capture_screenshot() -> Result<ScreenshotCapture, String> {
     }
 
     result
+}
+
+const TOKI_DEBUG_HISTORY_LIMIT: usize = 160;
+const TOKI_DEBUG_SNAPSHOT_MAX_BYTES: usize = 5_000_000;
+const TOKI_DEBUG_CAPTURE_MAX_BYTES: usize = 16_000_000;
+
+fn set_private_directory_permissions(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn set_private_file_permissions(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn toki_debug_export_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("failed to resolve Toki app data: {error}"))?
+        .join("diagnostics");
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("failed to create Toki diagnostics directory: {error}"))?;
+    set_private_directory_permissions(&directory)?;
+    Ok(directory)
+}
+
+fn write_private_file_atomically(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "diagnostics path has no parent directory".to_string())?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("diagnostics");
+    let temp_path = parent.join(format!(".{file_name}.{}.tmp", now_ms()));
+
+    fs::write(&temp_path, bytes)
+        .map_err(|error| format!("failed to stage Toki diagnostics: {error}"))?;
+    set_private_file_permissions(&temp_path)?;
+
+    if let Err(first_error) = fs::rename(&temp_path, path) {
+        if path.exists() {
+            fs::remove_file(path).map_err(|error| {
+                format!("failed to replace Toki diagnostics after {first_error}: {error}")
+            })?;
+            fs::rename(&temp_path, path).map_err(|error| {
+                format!("failed to publish Toki diagnostics after {first_error}: {error}")
+            })?;
+        } else {
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("failed to publish Toki diagnostics: {first_error}"));
+        }
+    }
+
+    set_private_file_permissions(path)?;
+    Ok(())
+}
+
+fn append_toki_debug_history(
+    history_path: &std::path::Path,
+    entries: &[serde_json::Value],
+) -> Result<(), String> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    let mut lines = fs::read_to_string(history_path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    for entry in entries {
+        lines.push(
+            serde_json::to_string(entry)
+                .map_err(|error| format!("failed to encode Toki diagnostics history: {error}"))?,
+        );
+    }
+
+    if lines.len() > TOKI_DEBUG_HISTORY_LIMIT {
+        lines = lines.split_off(lines.len() - TOKI_DEBUG_HISTORY_LIMIT);
+    }
+
+    let mut body = lines.join("\n");
+    body.push('\n');
+    write_private_file_atomically(history_path, body.as_bytes())
+}
+
+fn toki_debug_capture_path(directory: &std::path::Path) -> Option<PathBuf> {
+    ["latest-capture.png", "latest-capture.jpg"]
+        .into_iter()
+        .map(|name| directory.join(name))
+        .find(|path| path.is_file())
+}
+
+fn file_modified_ms(path: &std::path::Path) -> Option<u128> {
+    path.metadata()
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_millis())
+}
+
+fn build_toki_debug_export_status(app: &tauri::AppHandle) -> Result<TokiDebugExportStatus, String> {
+    let directory = toki_debug_export_directory(app)?;
+    let snapshot_path = directory.join("latest.json");
+    let history_path = directory.join("history.ndjson");
+    let capture_path = toki_debug_capture_path(&directory);
+
+    Ok(TokiDebugExportStatus {
+        directory: directory.display().to_string(),
+        snapshot_path: snapshot_path.display().to_string(),
+        history_path: history_path.display().to_string(),
+        capture_path: capture_path.map(|path| path.display().to_string()),
+        snapshot_exists: snapshot_path.is_file(),
+        history_exists: history_path.is_file(),
+        last_snapshot_modified_ms: file_modified_ms(&snapshot_path),
+    })
+}
+
+#[tauri::command]
+fn toki_debug_export_status(app: tauri::AppHandle) -> Result<TokiDebugExportStatus, String> {
+    build_toki_debug_export_status(&app)
+}
+
+#[tauri::command]
+fn write_toki_debug_export(
+    app: tauri::AppHandle,
+    request: TokiDebugExportRequest,
+) -> Result<TokiDebugExportStatus, String> {
+    let directory = toki_debug_export_directory(&app)?;
+    let snapshot_path = directory.join("latest.json");
+    let history_path = directory.join("history.ndjson");
+    let snapshot_bytes = serde_json::to_vec_pretty(&request.snapshot)
+        .map_err(|error| format!("failed to encode Toki diagnostics: {error}"))?;
+
+    if snapshot_bytes.len() > TOKI_DEBUG_SNAPSHOT_MAX_BYTES {
+        return Err("Toki diagnostics snapshot exceeded the 5 MB local limit".to_string());
+    }
+
+    write_private_file_atomically(&snapshot_path, &snapshot_bytes)?;
+    append_toki_debug_history(&history_path, &request.history_entries)?;
+
+    if let Some(capture) = request.capture {
+        let extension = match capture.format.as_str() {
+            "png" => "png",
+            "jpeg" => "jpg",
+            other => {
+                return Err(format!(
+                    "unsupported Toki diagnostics image format: {other}"
+                ))
+            }
+        };
+        let capture_bytes = general_purpose::STANDARD
+            .decode(&capture.image_base64)
+            .map_err(|error| format!("invalid Toki diagnostics image payload: {error}"))?;
+
+        if capture_bytes.is_empty() || capture_bytes.len() > TOKI_DEBUG_CAPTURE_MAX_BYTES {
+            return Err("Toki diagnostics image payload size is invalid".to_string());
+        }
+        if capture.byte_length != capture_bytes.len() {
+            return Err(format!(
+                "Toki diagnostics image length mismatch for capture at {}",
+                capture.captured_at
+            ));
+        }
+
+        let capture_path = directory.join(format!("latest-capture.{extension}"));
+        write_private_file_atomically(&capture_path, &capture_bytes)?;
+        let stale_capture_path = directory.join(if extension == "png" {
+            "latest-capture.jpg"
+        } else {
+            "latest-capture.png"
+        });
+        if stale_capture_path.is_file() {
+            let _ = fs::remove_file(stale_capture_path);
+        }
+    }
+
+    build_toki_debug_export_status(&app)
 }
 
 #[tauri::command]
@@ -2854,12 +3244,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            camera_reframing_status,
             capture_active_window_snapshot,
             capture_metadata,
             capture_screenshot,
             collect_screen_candidates,
             frontmost_window_bounds,
             screen_capture_access_status,
+            request_screen_capture_access,
             hide_settings_window,
             macos_overlay_window_status,
             native_click_monitor_set_armed,
@@ -2871,7 +3263,9 @@ pub fn run() {
             request_codex_vision_guidance,
             set_overlay_surface_mode,
             set_top_utility_mode,
-            transcribe_voice_capture
+            toki_debug_export_status,
+            transcribe_voice_capture,
+            write_toki_debug_export
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

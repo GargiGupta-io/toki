@@ -29,8 +29,10 @@ export type ControlPinchState = {
   phase: ControlPinchPhase;
   controlHandTrackId: HandTrackId | null;
   candidateSinceMs: number | null;
+  interruptionSinceMs: number | null;
   missingSinceMs: number | null;
   lastSeenAtMs: number | null;
+  rawNormalizedDistance: number | null;
   normalizedDistance: number | null;
   pressThreshold: number;
   releaseThreshold: number;
@@ -38,19 +40,32 @@ export type ControlPinchState = {
   lastEvent: ControlPinchEvent | null;
 };
 
+export type GestureVoiceDetector = "ordinary" | "control";
+
+export type GestureVoiceOwner = {
+  detector: GestureVoiceDetector;
+  controlHandTrackId: HandTrackId;
+  pressEventId: string;
+};
+
 export const controlPinchPolicy = Object.freeze({
-  releaseThresholdMargin: 0.12,
-  releaseHoldMs: 140,
+  distanceSmoothingAlpha: 0.68,
+  pressInterruptionGraceMs: 240,
+  releaseThresholdMargin: 0.15,
+  releaseHoldMs: 180,
+  releaseInterruptionGraceMs: 160,
   trackingLossGraceMs: defaultGestureTimingPolicy.trackingLossGraceMs,
 });
 
 export function canStartGestureVoice(
   lock: PointerLockSnapshot | null,
-  lockValidation: "idle" | "checking" | "locked" | "invalidated",
+  lockValidation: "idle" | "checking" | "locked" | "limited" | "invalidated",
   voiceCapturePhase: "idle" | "starting" | "capturing" | "submitting",
 ): lock is PointerLockSnapshot {
   return (
-    lock != null && lockValidation === "locked" && voiceCapturePhase === "idle"
+    lock != null &&
+    (lockValidation === "locked" || lockValidation === "limited") &&
+    voiceCapturePhase === "idle"
   );
 }
 
@@ -61,8 +76,10 @@ export function createInitialControlPinchState(
     phase: "idle",
     controlHandTrackId: null,
     candidateSinceMs: null,
+    interruptionSinceMs: null,
     missingSinceMs: null,
     lastSeenAtMs: null,
+    rawNormalizedDistance: null,
     normalizedDistance: null,
     pressThreshold,
     releaseThreshold: getReleaseThreshold(pressThreshold),
@@ -77,6 +94,7 @@ export function advanceControlPinch({
   thresholds,
   pressThreshold,
   nowMs,
+  canPress = true,
   trackingLossGraceMs = controlPinchPolicy.trackingLossGraceMs,
 }: {
   previousState: ControlPinchState;
@@ -84,6 +102,7 @@ export function advanceControlPinch({
   thresholds: GestureThresholds;
   pressThreshold: number;
   nowMs: number;
+  canPress?: boolean;
   trackingLossGraceMs?: number;
 }): ControlPinchState {
   const releaseThreshold = getReleaseThreshold(pressThreshold);
@@ -94,10 +113,16 @@ export function advanceControlPinch({
       ? controlHand
       : null;
   const pinch = classifyPinchGesture(observedHand, thresholds, pressThreshold);
-  const normalizedDistance = pinch.normalizedDistance;
+  const normalizedDistance = smoothControlPinchDistance({
+    previousState,
+    observedHand,
+    rawDistance: pinch.normalizedDistance,
+  });
+  const rawNormalizedDistance = pinch.normalizedDistance;
 
   if (previousState.phase === "idle") {
     if (
+      !canPress ||
       observedHand == null ||
       normalizedDistance == null ||
       normalizedDistance > pressThreshold
@@ -106,6 +131,7 @@ export function advanceControlPinch({
         ...previousState,
         pressThreshold,
         releaseThreshold,
+        rawNormalizedDistance,
         normalizedDistance,
       };
     }
@@ -115,8 +141,10 @@ export function advanceControlPinch({
       phase: "pressing",
       controlHandTrackId: observedHand.trackId,
       candidateSinceMs: nowMs,
+      interruptionSinceMs: null,
       missingSinceMs: null,
       lastSeenAtMs: nowMs,
+      rawNormalizedDistance,
       normalizedDistance,
       pressThreshold,
       releaseThreshold,
@@ -124,18 +152,62 @@ export function advanceControlPinch({
   }
 
   if (previousState.phase === "pressing") {
-    if (observedHand == null || normalizedDistance == null) {
-      return resetControlPinch(previousState, pressThreshold);
+    if (!canPress) {
+      return resetControlPinch(
+        previousState,
+        pressThreshold,
+        normalizedDistance,
+      );
     }
 
-    if (normalizedDistance > pressThreshold) {
-      return resetControlPinch(previousState, pressThreshold, normalizedDistance);
-    }
+    if (
+      observedHand == null ||
+      normalizedDistance == null ||
+      normalizedDistance > pressThreshold
+    ) {
+      const interruptionSinceMs = previousState.interruptionSinceMs ?? nowMs;
+      const interruptionExpired =
+        nowMs - interruptionSinceMs >=
+        controlPinchPolicy.pressInterruptionGraceMs;
 
-    if (nowMs - (previousState.candidateSinceMs ?? nowMs) < thresholds.pinchHoldMs) {
+      if (interruptionExpired) {
+        return resetControlPinch(
+          previousState,
+          pressThreshold,
+          normalizedDistance,
+          rawNormalizedDistance,
+        );
+      }
+
       return {
         ...previousState,
+        interruptionSinceMs,
+        missingSinceMs: observedHand == null
+          ? previousState.missingSinceMs ?? nowMs
+          : null,
+        lastSeenAtMs: observedHand == null
+          ? previousState.lastSeenAtMs
+          : nowMs,
+        rawNormalizedDistance,
+        normalizedDistance,
+        pressThreshold,
+        releaseThreshold,
+      };
+    }
+
+    const candidateSinceMs =
+      (previousState.candidateSinceMs ?? nowMs) +
+      (previousState.interruptionSinceMs == null
+        ? 0
+        : nowMs - previousState.interruptionSinceMs);
+    if (nowMs - candidateSinceMs < thresholds.pinchHoldMs) {
+      return {
+        ...previousState,
+        candidateSinceMs,
+        interruptionSinceMs: null,
+        missingSinceMs: null,
         lastSeenAtMs: nowMs,
+        rawNormalizedDistance,
         normalizedDistance,
         pressThreshold,
         releaseThreshold,
@@ -147,8 +219,10 @@ export function advanceControlPinch({
         ...previousState,
         phase: "held",
         candidateSinceMs: null,
+        interruptionSinceMs: null,
         missingSinceMs: null,
         lastSeenAtMs: nowMs,
+        rawNormalizedDistance,
         normalizedDistance,
         pressThreshold,
         releaseThreshold,
@@ -160,13 +234,42 @@ export function advanceControlPinch({
   }
 
   if (observedHand == null || normalizedDistance == null) {
+    if (previousState.phase === "releasing") {
+      const releaseStartedAtMs = previousState.candidateSinceMs ?? nowMs;
+      if (
+        nowMs - releaseStartedAtMs >=
+        controlPinchPolicy.releaseHoldMs
+      ) {
+        return emitControlPinchEvent(
+          resetControlPinch(previousState, pressThreshold),
+          "release",
+          null,
+          nowMs,
+          previousState.controlHandTrackId,
+        );
+      }
+
+      return {
+          ...previousState,
+          phase: "releasing",
+          candidateSinceMs: releaseStartedAtMs,
+          interruptionSinceMs: null,
+          missingSinceMs: previousState.missingSinceMs ?? nowMs,
+          rawNormalizedDistance,
+          pressThreshold,
+          releaseThreshold,
+        };
+    }
+
     const missingSinceMs = previousState.missingSinceMs ?? nowMs;
     if (nowMs - missingSinceMs < trackingLossGraceMs) {
       return {
         ...previousState,
         phase: "recovering",
         candidateSinceMs: null,
+        interruptionSinceMs: null,
         missingSinceMs,
+        rawNormalizedDistance,
         pressThreshold,
         releaseThreshold,
       };
@@ -187,8 +290,10 @@ export function advanceControlPinch({
           ...previousState,
           phase: "releasing",
           candidateSinceMs: nowMs,
+          interruptionSinceMs: null,
           missingSinceMs: null,
           lastSeenAtMs: nowMs,
+          rawNormalizedDistance,
           normalizedDistance,
           pressThreshold,
           releaseThreshold,
@@ -197,8 +302,10 @@ export function advanceControlPinch({
           ...previousState,
           phase: "held",
           candidateSinceMs: null,
+          interruptionSinceMs: null,
           missingSinceMs: null,
           lastSeenAtMs: nowMs,
+          rawNormalizedDistance,
           normalizedDistance,
           pressThreshold,
           releaseThreshold,
@@ -209,7 +316,10 @@ export function advanceControlPinch({
     if (normalizedDistance < releaseThreshold) {
       return {
         ...previousState,
+        interruptionSinceMs: null,
+        missingSinceMs: null,
         lastSeenAtMs: nowMs,
+        rawNormalizedDistance,
         normalizedDistance,
         pressThreshold,
         releaseThreshold,
@@ -220,8 +330,10 @@ export function advanceControlPinch({
       ...previousState,
       phase: "releasing",
       candidateSinceMs: nowMs,
+      interruptionSinceMs: null,
       missingSinceMs: null,
       lastSeenAtMs: nowMs,
+      rawNormalizedDistance,
       normalizedDistance,
       pressThreshold,
       releaseThreshold,
@@ -229,25 +341,53 @@ export function advanceControlPinch({
   }
 
   if (normalizedDistance < releaseThreshold) {
+    const interruptionSinceMs = previousState.interruptionSinceMs ?? nowMs;
+    if (
+      nowMs - interruptionSinceMs <
+      controlPinchPolicy.releaseInterruptionGraceMs
+    ) {
+      return {
+        ...previousState,
+        interruptionSinceMs,
+        missingSinceMs: null,
+        lastSeenAtMs: nowMs,
+        rawNormalizedDistance,
+        normalizedDistance,
+        pressThreshold,
+        releaseThreshold,
+      };
+    }
+
     return {
       ...previousState,
       phase: "held",
       candidateSinceMs: null,
+      interruptionSinceMs: null,
       missingSinceMs: null,
       lastSeenAtMs: nowMs,
+      rawNormalizedDistance,
       normalizedDistance,
       pressThreshold,
       releaseThreshold,
     };
   }
 
+  const candidateSinceMs =
+    (previousState.candidateSinceMs ?? nowMs) +
+    (previousState.interruptionSinceMs == null
+      ? 0
+      : nowMs - previousState.interruptionSinceMs);
   if (
-    nowMs - (previousState.candidateSinceMs ?? nowMs) <
+    nowMs - candidateSinceMs <
     controlPinchPolicy.releaseHoldMs
   ) {
     return {
       ...previousState,
+      candidateSinceMs,
+      interruptionSinceMs: null,
+      missingSinceMs: null,
       lastSeenAtMs: nowMs,
+      rawNormalizedDistance,
       normalizedDistance,
       pressThreshold,
       releaseThreshold,
@@ -255,11 +395,40 @@ export function advanceControlPinch({
   }
 
   return emitControlPinchEvent(
-    resetControlPinch(previousState, pressThreshold, normalizedDistance),
+    resetControlPinch(
+      previousState,
+      pressThreshold,
+      normalizedDistance,
+      rawNormalizedDistance,
+    ),
     "release",
     observedHand,
     nowMs,
     previousState.controlHandTrackId,
+  );
+}
+
+export function createGestureVoiceOwner(
+  detector: GestureVoiceDetector,
+  pressEvent: ControlPinchEvent,
+): GestureVoiceOwner {
+  return Object.freeze({
+    detector,
+    controlHandTrackId: pressEvent.controlHandTrackId,
+    pressEventId: pressEvent.id,
+  });
+}
+
+export function isGestureVoiceTerminationForOwner(
+  owner: GestureVoiceOwner | null,
+  detector: GestureVoiceDetector,
+  event: ControlPinchEvent,
+): boolean {
+  return (
+    owner != null &&
+    owner.detector === detector &&
+    owner.controlHandTrackId === event.controlHandTrackId &&
+    (event.type === "release" || event.type === "tracking_lost")
   );
 }
 
@@ -294,13 +463,43 @@ function getReleaseThreshold(pressThreshold: number): number {
   return Math.min(1.5, pressThreshold + controlPinchPolicy.releaseThresholdMargin);
 }
 
+function smoothControlPinchDistance({
+  previousState,
+  observedHand,
+  rawDistance,
+}: {
+  previousState: ControlPinchState;
+  observedHand: TrackedHandLandmarkFrame | null;
+  rawDistance: number | null;
+}): number | null {
+  if (observedHand == null || rawDistance == null) {
+    return null;
+  }
+
+  if (
+    previousState.controlHandTrackId == null ||
+    previousState.controlHandTrackId !== observedHand.trackId ||
+    previousState.normalizedDistance == null
+  ) {
+    return rawDistance;
+  }
+
+  return (
+    previousState.normalizedDistance +
+    (rawDistance - previousState.normalizedDistance) *
+      controlPinchPolicy.distanceSmoothingAlpha
+  );
+}
+
 function resetControlPinch(
   previousState: ControlPinchState,
   pressThreshold: number,
   normalizedDistance: number | null = null,
+  rawNormalizedDistance: number | null = null,
 ): ControlPinchState {
   return {
     ...createInitialControlPinchState(pressThreshold),
+    rawNormalizedDistance,
     normalizedDistance,
     eventSequence: previousState.eventSequence,
     lastEvent: previousState.lastEvent,

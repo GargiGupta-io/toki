@@ -148,14 +148,35 @@ check(
 );
 
 check(
-  "two-hand split is liquid, visual-only, and reduced-motion safe",
-  blobPuck.includes('data-split-visual-only={splitVisual?.visualOnly ? "true" : "false"}') &&
+  "two-hand split keeps a persistent liquid strand and remains visual-only",
+  blobPuck.includes("presentedSplitVisual?.visualOnly") &&
+    blobPuck.includes('data-split-strand={presentedSplitVisual ? "persistent" : "none"}') &&
+    blobPuck.includes('data-persistent="true"') &&
     blobPuck.includes('className="blob-puck__split-bridge"') &&
     blobPuck.includes('className="blob-puck__secondary-lobe"') &&
     blobPuckCss.includes(".blob-puck__split-bridge") &&
+    /data-split-phase="split"[^}]+\.blob-puck__split-bridge\s*\{[^}]*opacity:\s*0\.[1-9]/.test(
+      blobPuckCss,
+    ) &&
     /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.blob-puck__split-bridge,[\s\S]*transition:\s*none/.test(
       blobPuckCss,
     ),
+);
+
+check(
+  "locked targeting keeps one puck with persistent in-body feedback",
+  app.includes("createGesturePuckPresentation") &&
+    app.includes("splitVisual={gesturePuckPresentation.splitVisual}") &&
+    app.includes("lockState={gesturePuckPresentation.lockState}") &&
+    blobPuck.includes(
+      'const presentedSplitVisual = lockState === "none" ? splitVisual : null',
+    ) &&
+    blobPuck.includes("data-lock-state={lockState}") &&
+    blobPuck.includes(
+      'data-lock-feedback={lockState === "none" ? "none" : "persistent"}',
+    ) &&
+    blobPuckCss.includes('.blob-puck[data-lock-state="locked"]') &&
+    !app.includes("TokiPointerLockCue"),
 );
 
 const failed = checks.filter((item) => !item.passed);

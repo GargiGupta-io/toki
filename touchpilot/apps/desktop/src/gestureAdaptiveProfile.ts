@@ -66,7 +66,7 @@ const stageInstructions: Record<GestureCalibrationStage, string> = {
   point_range:
     "Point naturally at several parts of the screen. When the live sample matches your intended point, choose Correct.",
   tap_flexion:
-    "Keep the other fingers folded and flex the pointing index once. Choose Correct only for an intentional air tap.",
+    "Point naturally, turn that wrist roughly a quarter-to-half turn, and hold. Choose Correct only when the intended roll is recognized.",
   pinch_distance:
     "Touch or nearly touch thumb and index in your natural pinch. Choose Correct only while holding that pinch.",
   complete:
@@ -262,18 +262,11 @@ export function deriveAdaptiveGestureSettings(
     };
   }
 
-  const xRange = deriveCameraRange(profile.pointRangeX, 0.04, 0.96, 0.46);
-  const yRange = deriveCameraRange(profile.pointRangeY, 0.03, 0.92, 0.4);
-
   return {
     source: "adaptive_profile",
     profileId: profile.profileId,
     pointerCalibration: Object.freeze({
       ...defaultGesturePointerCalibration,
-      cameraMinX: xRange.min,
-      cameraMaxX: xRange.max,
-      cameraMinY: yRange.min,
-      cameraMaxY: yRange.max,
       trackingLossGraceMs: clamp(
         profile.timing.trackingLossGraceMs,
         1_500,
@@ -393,28 +386,6 @@ function deriveStatistic(values: readonly number[]): GestureDerivedStatistic {
   };
 }
 
-function deriveCameraRange(
-  statistic: GestureDerivedStatistic,
-  lowerBound: number,
-  upperBound: number,
-  minimumSpan: number,
-): { min: number; max: number } {
-  const halfSpan = Math.max(
-    minimumSpan / 2,
-    statistic.medianAbsoluteDeviation * 1.25,
-  );
-  let min = clamp(statistic.median - halfSpan, lowerBound, upperBound);
-  let max = clamp(statistic.median + halfSpan, lowerBound, upperBound);
-
-  if (max - min < minimumSpan) {
-    const missing = minimumSpan - (max - min);
-    min = clamp(min - missing / 2, lowerBound, upperBound - minimumSpan);
-    max = clamp(min + minimumSpan, lowerBound + minimumSpan, upperBound);
-  }
-
-  return { min, max };
-}
-
 function getMedian(values: readonly number[]): number {
   if (values.length === 0) {
     throw new Error("Cannot derive a statistic from zero samples.");
@@ -473,7 +444,7 @@ function isCandidateWithinTrainingBounds(
     );
   }
   if (candidate.stage === "tap_flexion") {
-    return candidate.value != null && isFiniteInRange(candidate.value, 0.65, 1.55);
+    return candidate.value != null && isFiniteInRange(candidate.value, 0.65, 1.8);
   }
   return candidate.value != null && isFiniteInRange(candidate.value, 0.08, 0.5);
 }

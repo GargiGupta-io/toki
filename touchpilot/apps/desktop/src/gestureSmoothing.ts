@@ -12,13 +12,17 @@ type GestureCandidate = Pick<
 export type GestureSmoothingState = {
   activeLabel: GestureLabel;
   holdStartedAt: number | null;
+  lastCandidateSeenAt: number | null;
   cooldownUntil: number;
   lastRecognizedAt: number | null;
 };
 
+export const gestureCandidateLossGraceMs = 120;
+
 export const initialGestureSmoothingState: GestureSmoothingState = {
   activeLabel: "none",
   holdStartedAt: null,
+  lastCandidateSeenAt: null,
   cooldownUntil: 0,
   lastRecognizedAt: null,
 };
@@ -49,11 +53,31 @@ export function smoothGestureCandidate(
   }
 
   if (candidate.label === "none") {
+    if (
+      previousState.activeLabel !== "none" &&
+      previousState.holdStartedAt != null &&
+      previousState.lastCandidateSeenAt != null &&
+      now - previousState.lastCandidateSeenAt < gestureCandidateLossGraceMs
+    ) {
+      return {
+        state: previousState,
+        classification: {
+          label: previousState.activeLabel,
+          phase: "holding",
+          confidence: 0,
+          holdMs: now - previousState.holdStartedAt,
+          cooldownRemainingMs: 0,
+          sourceFrameId: candidate.sourceFrameId,
+        },
+      };
+    }
+
     return {
       state: {
         ...previousState,
         activeLabel: "none",
         holdStartedAt: null,
+        lastCandidateSeenAt: null,
       },
       classification: {
         label: "none",
@@ -79,6 +103,7 @@ export function smoothGestureCandidate(
       state: {
         activeLabel: candidate.label,
         holdStartedAt,
+        lastCandidateSeenAt: now,
         cooldownUntil: now + thresholds.cooldownMs,
         lastRecognizedAt: now,
       },
@@ -98,6 +123,7 @@ export function smoothGestureCandidate(
       ...previousState,
       activeLabel: candidate.label,
       holdStartedAt,
+      lastCandidateSeenAt: now,
     },
     classification: {
       label: candidate.label,

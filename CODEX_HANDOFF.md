@@ -11,7 +11,7 @@
 - Upstream state after checkpoint publication: the repair and this migration pack are included on `origin/main`.
 - Tracked worktree state before this migration pack: clean.
 - Pre-existing untracked state: `touchpilot/learnings/`.
-- Installed application source state: the installed executable was built from the same Gesture Step 9 source now committed through `ca04de0`; the bundle does not yet embed a Git commit identifier.
+- Installed application source state: the installed executable includes Gesture Step 9 plus the uncommitted camera-privacy repair and Gesture Experience Repair Phases 1–2. The bundle does not yet embed a Git commit identifier.
 
 ## Project Objective
 
@@ -78,7 +78,7 @@ These are two different runtime artifacts and must never be treated as interchan
 - macOS signing command: `npm run desktop:sign:mac`
 - macOS install command: `npm run desktop:install:mac`
 - The installed app can remain stale until it is rebuilt, signed, installed, the old process is stopped, and the installed application is relaunched.
-- `/Applications/Toki.app` was replaced on 2026-07-16 with the signed Gesture Step 9 build and launched for user-owned acceptance.
+- `/Applications/Toki.app` was replaced on 2026-07-17 with the signed Gesture Experience Repair Phase 1 build and launched as exactly one process for user-owned acceptance.
 
 ## Work Completed
 
@@ -144,7 +144,7 @@ The 12% observation directly triggered the latest current-image grounding repair
 
 ## Next Unfinished Step
 
-Gesture Step 9 is complete at the implementation/build gate. The next action is user-owned installed-app acceptance of the frozen pointer, control-hand voice, explanation card, and optional speech. Step 10 later gestures must not start until that check is reported.
+Gesture Step 9 and Gesture Experience Repair Phases 1–4 are complete at their automated/build/install gates. The next unfinished work is the user-owned live checklist at `touchpilot/docs/gesture-experience-manual-acceptance.md`. Later gesture vocabulary stays deferred until this basic composition is accepted or its first failing boundary is repaired.
 
 Required acceptance conditions:
 
@@ -219,3 +219,135 @@ The 96% `Invite collaborators` trace then isolated a provider/safety contract mi
 - The focused suite passes 9/9. Selected gesture, voice, capture, coordinate, provider-image, candidate-fusion, target-verification, asset, corpus, visual-motion, TypeScript, Rust, and production web/native gates pass.
 - `/Applications/Toki.app` was replaced, strictly verified, and launched. Built and installed executables match at SHA-256 `4c63cbd0fb26edb56e29e48773507a7a1b397ac2d3e249a222591585b4eeb293`; the installed process was observed as PID `57842`.
 - Manual pointer/voice/explanation acceptance remains user-owned. Codex issued no Toki command or gesture. Step 10 has not started.
+
+## Latest Camera Privacy Crash Repair
+
+- The first manual `Turn camera on` attempt terminated Toki immediately. Two `.ips` reports at 19:47 show `EXC_CRASH`/`SIGABRT` in TCC with the explicit reason that `NSCameraUsageDescription` was absent.
+- The source, built, and installed plists previously contained Microphone and Screen Recording usage descriptions but no Camera description. The failure was packaging metadata, not gesture recognition or camera-model logic.
+- `apps/desktop/src-tauri/Info.plist` now explains that gesture camera frames are processed locally and not stored.
+- A deterministic 2/2 test covers all three privacy descriptions. The normal macOS signing/install script now inspects the final bundle and refuses to sign or install it if any required key is absent.
+- Plist validation, shell syntax, all workspace TypeScript checks, the production app build, signing, replacement, installed-plist inspection, strict signature verification, and executable hash comparison pass.
+- Built and installed executables match at SHA-256 `245b78148fd70f4b960065951af9b8f32a95c6494d5cd95c207220abb050d92e`. Installation completed and requested launch; Codex did not click the camera control. User-owned camera retry remains pending.
+- This repair is intentionally uncommitted and unpushed pending the bug-fix checkpoint.
+
+## Latest Gesture Experience Repair Phase 1
+
+- `gestureCameraControl.ts` owns a pure atomic Camera + Gestures transition, narrow positive voice-on classifier, closed-fist pose classifier, and a two-fist shutdown state machine.
+- The top utility Controls tab now owns one combined switch and reports real Off/Starting/Active/Permission denied/No camera/Error states. Debug retains diagnostics, device refresh, calibration, and shutdown-hold progress but no competing enable switches.
+- Explicit positive camera-on voice commands are handled locally before pointer explanation or generic guidance. Negative, off, ambiguous, and unrelated phrases do not activate the local route.
+- Holding two closed fists for 2,000 ms emits one shutdown event. A 250 ms interruption grace tolerates a brief missed frame and a 500 ms release cooldown prevents repeats. One fist, point, open palm, and pinch are negative controls.
+- Focused regression: 7/7. Selected runtime 6/6, two-hand 6/6, control voice 9/9, pointer explanation 9/9, visual motion 18/18, and macOS privacy 2/2 pass. Workspace TypeScript and Rust checks pass.
+- The production app was rebuilt, signed, installed, strictly verified, and relaunched after stopping all older Toki processes. Exactly one installed process was observed as PID `80461` at verification time.
+- Signed bundle and installed executable SHA-256 values match at `ba70cd998aba2e4f1588a49698ca95e74151f5f3da2d477376a28d68f71b6e76`. Codex issued no Toki command or gesture.
+- This phase is uncommitted and unpushed. Next: repair pointer sensitivity, pinch hold-to-talk stability, and stale-hand cleanup; then implement the persistent split strand.
+
+## Latest Gesture Experience Repair Phase 2
+
+- Pointer fine motion now uses a `0.01` dead zone, a lower `0.28` maximum smoothing alpha, and motion-sensitive damping. The visible pointer clears after `320 ms`; internal identity and lock recovery remain available for `2,000 ms`.
+- Control pinch entry has a `0.06` exit margin and `140 ms` interruption grace. It cannot begin without a current lock context. A press emitted while that lock is still checking remains pending until validation passes instead of being marked handled and lost.
+- Generic held gestures tolerate `120 ms` of detector dropout. Split visuals begin clearing after `320 ms`, while stable hand identity and active recording retain their longer safety grace.
+- `gestureFrameFreshness.ts` skips duplicate video timestamps and feeds empty detections after a `350 ms` camera stall, preventing an old frame from freezing derived hand state.
+- Stability 4/4, pointing 9/9, control voice 11/11, two-hand 6/6, runtime 6/6, camera control 7/7, pointer explanation 9/9, target lock 8/8, adaptive profile 6/6, visual motion 18/18, all workspace TypeScript, and Rust checks pass.
+- The production app was rebuilt, signed, installed, strictly verified, and observed as exactly one installed process (PID `84774`). Signed built/installed executable SHA-256 values match at `b3e1d2d50d2e887bc783772f1782d00718a9394bc672a45a86e1d07fac984b8f`.
+- Codex issued no Toki command or gesture. This phase is uncommitted and unpushed. Next: keep a liquid strand visible for the full split state.
+
+## Latest Gesture Experience Repair Phase 3
+
+- `gestureSplitStrand.ts` computes a safe edge-to-edge strand from the two current lobe centers. It handles overlap without division by zero and thins within fixed bounds as the hands separate.
+- `BlobPuck` now keeps the strand visible during `splitting`, stable `split`, `recovering`, and `merging`. The connection tracks both moving lobes instead of remaining center-anchored or disappearing while split.
+- The strand has a narrow highlight and slow liquid brightness pulse. Reduced motion disables animation and interpolation but deliberately leaves the connection visible.
+- The helper is presentation-only and owns no hand classification, action, microphone, provider, guidance, target, cursor, hit-testing, or click authority.
+- Split-strand 7/7, two-hand 6/6, pointing 9/9, target lock 8/8, control voice 11/11, runtime 6/6, camera control 7/7, input stability 4/4, pointer explanation 9/9, adaptive profile 6/6, visual motion 18/18, all workspace TypeScript, and Rust checks pass.
+- The production app was rebuilt, signed, installed, strictly verified, and observed as exactly one installed process (PID `88799`). Signed built/installed executable SHA-256 values match at `fed306fbb7e8e4e566dfc6b9ccd07afa7ccaf39dce4d2a4ec6d8771ccc9dd20a`.
+- Codex issued no Toki command or gesture. This phase is uncommitted and unpushed. Next: final regression/acceptance handoff.
+
+## Latest Gesture Experience Repair Phase 4
+
+- Every repository `test:*` entry, the AI package suite, and the full Rust workspace suite pass: 244/244 automated tests.
+- Visual-motion QA passes 18/18. Browser-extension syntax/fixtures, browser known screen, OCR/Accessibility fallback, workflow, eval, all TypeScript workspaces, Rust test/check/format, provider readiness, production web build, and whitespace checks pass.
+- `touchpilot/docs/gesture-experience-manual-acceptance.md` is the canonical ordered live checklist. It covers the combined camera lifecycle, voice-on and two-fist shutdown, pointer feel/recovery, double-air-tap lock, two-hand strand, control-pinch voice, pointer explanation, Right Option, semantic guidance, target shapes, and risk reveal.
+- The production app rebuilt reproducibly, was signed, installed, strictly verified, and observed as exactly one installed process (PID `91133`). Signed built/installed executable SHA-256 values match at `fed306fbb7e8e4e566dfc6b9ccd07afa7ccaf39dce4d2a4ec6d8771ccc9dd20a`.
+- All Camera/Microphone/Screen Recording privacy descriptions are present in the installed bundle. Codex issued no Toki command or gesture.
+- No commit or push was made. The user should record the first live failure before retrying or changing thresholds.
+
+## 2026-07-19 Persistent-Lock, Dual-Pinch, Edge, and Compact-Utility Checkpoint
+
+- Bend locking now freezes the main creature at the copied coordinate and keeps persistent `locked` or `limited` feedback. Missing Screen Recording evidence no longer erases an otherwise valid coordinate; genuine display/window changes still invalidate it.
+- Gesture voice has separate ordinary one-hand and contextual second-hand pinch controllers. Both use the native hold-to-talk lifecycle. A pinch is explicitly excluded from index-bend classification, and open-palm pause is guarded from locks, multiple hands, either pinch controller, and active voice.
+- The creature uses a visual-only `100 x 80 px` offset (about `128 px`) from the authoritative point in open space. Near edges it compresses the unavailable x/y component instead of redirecting distance into a large boundary jump, then clamps by the actual visible radius so the puck may touch every display boundary.
+- The top utility receives the Overlay's macOS fullscreen-auxiliary/all-Spaces window contract. It is flush at the top, literal pitch black, `380 x 58 px` in passive mode, and `400 x 218 px` expanded.
+- The focused gesture/visual regressions passed before release. After the compact-utility refinement, all workspace typechecks, camera/utility 9/9, visual-motion 18/18, Rust check/format, release build, signing, installation, strict verification, hash comparison, and one-process launch passed.
+- Built and installed executable SHA-256 values match at `8b58e1b2719de6cfcd57e5dc2bad1add7ac6fe35169aad85e13de47c632d1a5f`. Exactly one installed process was observed as PID `34312`.
+- Codex issued no gesture or Toki command. Manual live acceptance remains user-owned. No commit or push was made.
+
+## 2026-07-19 Wrist-Roll Lock and Deliberate-Split Checkpoint
+
+- Live evidence superseded index-bend locking: the camera showed momentary bend classifications but could not maintain a dependable lock. The active trigger is now a same-hand, baseline-relative wrist roll.
+- Toki derives a normalized 3D palm normal from wrist/index-MCP/pinky-MCP landmarks, freezes the last stable pointer coordinate when rotation begins, and locks after at least `70 degrees` is held for `220 ms`. It allows `450 ms` of brief landmark interruption inside a `2,000 ms` sequence, rejects stale or wrong-hand completion, and rearms only after a returned point plus `350 ms` cooldown.
+- A second hand entering the camera no longer splits Toki. Both hands must join for `240 ms`, producing visible `Split ready` feedback, and then separate for `180 ms`. The armed sequence expires after `2,000 ms`; a far-apart second hand leaves Toki merged.
+- Debug, top status, machine-readable diagnostics, fixtures, calibration compatibility, and manual acceptance copy reflect the wrist-roll and join-before-split phases. The native voice lifecycle and working pinch-to-talk paths were preserved.
+- Target-lock passes 9/9, two-hand passes 7/7, the focused gesture selection passes, visual motion passes 18/18, macOS privacy passes 2/2, all workspace TypeScript checks pass, Rust check passes, and debug export passes 3/3.
+- Production build, signing, installation, strict signature verification, built/installed hash equality, diagnostics readback, and one-process launch pass. Executables match at `79742b6e7a1b7dd08bf06f0debf06160e2ad1d30aad2a3a73e9440e78897f820`; PID `43794` was the sole installed process at verification.
+- Codex issued no gesture or Toki command. Manual wrist-roll, split sequence, and contextual pinch acceptance remain user-owned. No commit or push was made.
+
+## 2026-07-19 Single-Creature Lock Checkpoint
+
+- The independent blue pointer-lock creature and its `TARGET LOCKED` label were removed. `TokiPointerLockCue.tsx` and `TokiPointerLockCue.css` are deleted.
+- `App.tsx` renders exactly one `BlobPuck`. When a wrist-roll lock succeeds, that same main creature freezes at the copied pointer coordinate; the top status remains the textual lock receipt.
+- The immutable coordinate, lock validation, provider boundary, no-click behavior, split lifecycle, and guidance-only target ring are unchanged. A lock must never create a second creature.
+- Target-lock passes 9/9, visual-motion QA passes 18/18, and all workspace TypeScript checks pass.
+- The production app was rebuilt, signed, installed, strictly verified, and relaunched as exactly one installed process (PID `47578`). Built and installed executables match at SHA-256 `a96fd4ac4376755898e2659d61c3caac60689c40a28349d18025d9679185ac6d`.
+- Codex issued no gesture or Toki command. Manual one-creature lock acceptance remains user-owned. No commit or push was made.
+
+## 2026-07-19 Stable Local Identity and Edge-Compression Checkpoint
+
+- Root cause for recurring macOS permission denial is proven: ad-hoc builds had `cdhash`-bound designated requirements, so TCC kept grants for an older executable hash while rejecting the current build even when its System Settings toggle appeared enabled.
+- One persistent login-keychain code-signing identity now exists: `Toki Local Development`, certificate SHA-1 `1E8EC8756338C5412FC99CAE92C5A611BC46800D`.
+- `macos-sign-app.sh` rejects ad-hoc signing, requires that identity, rejects `cdhash`-only requirements, verifies the installed copy, and never re-signs `/Applications/Toki.app` after copying it.
+- Two changed builds prove identity stability. Build A CDHash `10ced93909a8e41f9e3e49cb0d4777a8c10f9200` and build B CDHash `ea7176c4e2bc0b94a1d32eaa0c80bd7ff44feba5` share the exact requirement `identifier "app.toki.desktop" and certificate root = H"1e8ec8756338c5412fc99cae92c5a611bc46800d"`.
+- Obsolete ScreenCapture, Microphone, Camera, ListenEvent, and Accessibility TCC records were reset successfully once. The user must approve the stable identity once; later local rebuilds should retain those grants.
+- Detached geometry keeps `100 x 80 px` spacing in open space, compresses the visual offset near boundaries, and preserves the unshifted fingertip/lock coordinate. Pointing passes 11/11, target lock 9/9, visual motion 18/18, macOS privacy/signing 3/3, and all workspace TypeScript checks pass.
+- Built and installed executable SHA-256 values match at `2edcbc0ab20f60d36a5dc0997f51de131367b968806e729a36ab9595e74fb86e`. The stable installed app passes strict signature verification and runs as PID `55623`. Codex issued no command or gesture. No commit or push was made.
+
+## 2026-07-20 Pinch Release and Native Screen-Access Request Checkpoint
+
+- Live diagnostics proved that an intentional unpinch entered `releasing`, but a following missing-hand frame replaced it with `recovering`; the eventual `tracking_lost` path then reset native voice capture and discarded the recording.
+- `gestureControlVoice.ts` now preserves the release candidate and its timestamp through missing frames, completes the `180 ms` release once, and keeps the existing `2,000 ms` recovery window for loss without a release candidate.
+- `App.tsx` records the active gesture voice owner as ordinary or contextual plus its track ID. Only a matching controller can end that voice session. Both intentional release and persistent tracking loss submit captured speech once; an emit failure still falls back to native cancellation.
+- The recurring Screen Recording denial had a separate cause: Toki preflighted access but never invoked `CGRequestScreenCaptureAccess`. The capture path now requests natively only when a real capture needs a missing grant, then continues through the same fail-closed capture gate.
+- Gesture control voice 13/13, capture access 3/3, target lock 9/9, voice hold 3/3, macOS privacy 3/3, gesture runtime 6/6, input stability 6/6, all workspace typechecks, Rust test/check/format, and diff checks pass.
+- The production app was rebuilt, signed with the existing `Toki Local Development` identity, copied without re-signing, strictly verified, and launched as PID `63321`. Installed executable SHA-256 is `83eeed91ba94611ce8d907669a88217dbd1c8107bc806436dba5776a10ade251`; CDHash is `7ede33456b09f8320066ca9e6b2e75bb442c5da9`; the certificate-rooted designated requirement is unchanged.
+- No TCC reset, Toki command, gesture, commit, or push was performed. The user owns the live unpinch and first native permission-prompt checks.
+
+## 2026-07-20 Direct Pinch Handoff and One-to-One Pointer Checkpoint
+
+- The user's next live retry proved that release recognition was working: private history recorded ordinary press `control-pinch-1-hand-7-press` at `20:47:59.296Z`, then same-track release `control-pinch-2-hand-7-release` at `20:48:03.354Z`, with the pinch controller idle while voice incorrectly remained `listening`.
+- Root cause was the local gesture-to-voice round trip through `toki://overlay-command`. The Overlay listener is asynchronously re-subscribed from fast-changing state, so a local release could hit a delivery gap or a duplicate press could disturb voice ownership.
+- `App.tsx` now exposes shared local start/stop/submit voice lifecycle functions. Ordinary and contextual pinch, lock invalidation, and local timeout call them directly. Genuine cross-window commands still use the Tauri listener and delegate to those same functions.
+- Pointer mapping is fixed to the full normalized camera frame on both axes. Adaptive calibration cannot shrink the range. Current response values are `0.0025` dead zone, `0.82` alpha, `0.60` minimum motion scale, `0.04` full-response distance, and `0.025 s` gesture lead follow.
+- Gesture control voice passes 13/13, pointing 12/12, input stability 6/6, adaptive profile 6/6, voice hold 3/3, gesture runtime 6/6, all workspace TypeScript checks, and whitespace validation.
+- The production app was rebuilt with the existing stable identity, copied without re-signing, strictly verified, and launched as PID `66966`. Installed executable SHA-256 is `da7e81aa51aa06ca5c86220ded651c5abb164c1976dc6ebef269590931485bd7`; CDHash is `851d10b804875c16520e68fbe2f1a8db636085f1`; the certificate-rooted designated requirement is unchanged.
+- Fresh diagnostics start clean and idle. No TCC reset, Toki command, gesture, commit, or push was performed. Live unpinch and one-to-one pointer feel remain user-owned acceptance.
+
+## 2026-07-27 Gesture Polish Phases 1–5 Checkpoint
+
+- Phase 1 added a bounded privacy-safe frame trace, complete window-validation receipts, and deterministic production-pointer replay.
+- Phase 2 replaced fixed per-frame smoothing with elapsed-time one-to-one filtering: `85 ms` near-rest response, `18 ms` deliberate-motion response, and `180 ms` stale-gap reset.
+- Phase 3 made a live lock authoritative over split presentation so the one main `BlobPuck` owns checking, locked, and limited feedback.
+- Phase 4 selects the real frontmost window under the frozen point, records bundle/PID/CG-window identity, tolerates volatile same-window titles, and rejects changed windows/bounds or an out-of-window point.
+- Phase 5 makes pinch-to-talk tolerant of brief pose noise and deterministic across asynchronous recorder starts/stops. Physical entry/release interruption time does not count toward hold time; detector, track, press event, attempt generation, and native session ID form one ownership chain.
+- Private diagnostics now expose raw/filtered pinch distance and the complete gesture-owned recorder lifecycle without storing camera frames, landmarks, or audio.
+- Focused Phase 5 regressions, all workspace typechecks, visual-motion QA 19/19, production web/native builds, persistent signing, copy-without-resigning install, strict verification, hash equality, one-process launch, and fresh diagnostics pass.
+- Current built and installed executable SHA-256: `618babc7045e3b7d5f49530d320d1d3a6b74aed900071d246380ae4f5ab06644`. Installed CDHash: `587537a0eb8c36c49aff9129a42e8a3cf1c79032`. Exactly one installed process was observed as PID `2545`.
+- Phase 6 performance/package-footprint and final regression work is next. Manual camera/gesture/voice/guidance acceptance remains user-owned. No Toki command, gesture, commit, or push was performed.
+
+## 2026-07-27 Gesture Polish Phase 6 Final Automated Checkpoint
+
+- Idle-only liquid deformation is capped at `30 FPS`; target revisions and active settling bypass the cap, so performance work does not add pointer or target latency.
+- MediaPipe Tasks Vision is a lazy camera-owned dependency. The production entry chunk fell from about `594 KB` to `469 KB`, with a separate approximately `136 KB` vision chunk and no Vite `500 KB` warning.
+- `npm run toki:footprint -- --enforce` protects explicit app, executable, web-dist, JavaScript, CSS, and MediaPipe ceilings. The final installed app is `30.89 MiB`, web dist `40.27 MiB`, JavaScript `0.58 MiB`, CSS `0.03 MiB`, and offline MediaPipe `39.65 MiB`.
+- The full deterministic matrix passes: 240 root tests, 33 `@toki/ai` tests, 5 Rust tests, visual-motion 19/19, browser candidate/known-screen, AX/OCR fallback, workflow, eval 2/2, provider readiness, all typechecks, Rust check/format, builds, signing, installation, footprint enforcement, and replay.
+- A camera-off ten-sample observation used roughly `66.7–68.8 MiB` RSS. Its CPU mean was about `2.9%` versus about `4.0%` on the Phase 5 build; this is a directional local observation, not a formal benchmark or camera-on thermal acceptance.
+- Built and installed executable SHA-256 values match at `f7dbda8ecb5be43cc5a033cc8ad039c8d8b9699696118b51825193a38c5d527c`. Installed CDHash is `102050a23efbe8aa9ee30fd70407cb0b4adbe14c`; the certificate-rooted designated requirement remains unchanged; exactly one installed app process was observed as PID `8596`.
+- The footprint reporter falls back from restricted `pgrep`/`ps` access to Toki's launchd application-service identity, preventing a managed shell from falsely reporting that no app process exists.
+- Fresh machine-readable diagnostics are idle with Camera + Gestures off. All agent-owned Gesture Polish phases are complete; the ordered live matrix remains user-owned. No Toki command, gesture, commit, or push was performed.

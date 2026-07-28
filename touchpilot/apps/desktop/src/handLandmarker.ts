@@ -1,4 +1,4 @@
-import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
+import type { HandLandmarker } from "@mediapipe/tasks-vision";
 import type {
   HandLandmarkFrame,
   HandLandmarkIndex,
@@ -53,6 +53,8 @@ const handLandmarkNames: HandLandmarkName[] = [
 ];
 
 let handLandmarkerPromise: Promise<HandLandmarker> | null = null;
+let visionTasksPromise: Promise<typeof import("@mediapipe/tasks-vision")> | null =
+  null;
 
 export async function getHandLandmarker(): Promise<HandLandmarker> {
   handLandmarkerPromise ??= createHandLandmarker();
@@ -60,6 +62,8 @@ export async function getHandLandmarker(): Promise<HandLandmarker> {
 }
 
 async function createHandLandmarker(): Promise<HandLandmarker> {
+  visionTasksPromise ??= import("@mediapipe/tasks-vision");
+  const { FilesetResolver, HandLandmarker } = await visionTasksPromise;
   const assetUrls = resolveHandLandmarkerAssetUrls(document.baseURI);
   const vision = await FilesetResolver.forVisionTasks(assetUrls.wasmBaseUrl);
 

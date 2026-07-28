@@ -1,9 +1,15 @@
 import type { CSSProperties } from "react";
 import type { TargetBox } from "@toki/shared";
 import BlobCursor from "./BlobCursor";
-import { pointerShadowGeometry, type PointerShadowPosition } from "./overlayGeometry";
+import {
+  clampPuckCenterToViewport,
+  pointerShadowGeometry,
+  type PointerShadowPosition,
+} from "./overlayGeometry";
 import type { PuckMotionModel } from "./puckMotion";
 import type { TokiCreatureMode, TokiCreatureState } from "./tokiCreatureState";
+import { createSplitStrandGeometry } from "./gestureSplitStrand";
+import type { GesturePuckLockState } from "./gesturePuckPresentation";
 import type { CreatureSplitVisualState } from "./gestureTwoHand";
 import "./BlobPuck.css";
 
@@ -25,6 +31,8 @@ type BlobPuckVisualConfig = {
   ambientSpeed: number;
   ambientDeform: number;
 };
+
+export const gestureBlobFollowDurationSeconds = 0.025;
 
 const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
   idle: {
@@ -162,12 +170,50 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
   },
 };
 
+const blobPuckLockVisuals: Record<
+  GesturePuckLockState,
+  Partial<BlobPuckVisualConfig>
+> = {
+  none: {},
+  checking: {
+    fillColor:
+      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.99) 0%, rgba(255, 238, 166, 0.98) 20%, rgba(255, 181, 63, 0.95) 58%, rgba(194, 85, 36, 0.9) 100%)",
+    innerColor: "rgba(255,255,255,0.86)",
+    shadowColor: "rgba(255, 165, 55, 0.78)",
+    shadowBlur: 15,
+    ambientMotion: 0,
+    ambientSpeed: 0,
+    ambientDeform: 0,
+  },
+  locked: {
+    fillColor:
+      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.99) 0%, rgba(155, 255, 242, 0.98) 20%, rgba(33, 220, 211, 0.95) 58%, rgba(27, 113, 202, 0.9) 100%)",
+    innerColor: "rgba(255,255,255,0.9)",
+    shadowColor: "rgba(45, 240, 220, 0.78)",
+    shadowBlur: 16,
+    ambientMotion: 0,
+    ambientSpeed: 0,
+    ambientDeform: 0,
+  },
+  limited: {
+    fillColor:
+      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.99) 0%, rgba(255, 224, 150, 0.97) 20%, rgba(245, 152, 51, 0.94) 58%, rgba(176, 67, 45, 0.9) 100%)",
+    innerColor: "rgba(255,255,255,0.86)",
+    shadowColor: "rgba(255, 143, 48, 0.76)",
+    shadowBlur: 15,
+    ambientMotion: 0,
+    ambientSpeed: 0,
+    ambientDeform: 0,
+  },
+};
+
 export function BlobPuck({
   creatureState,
   motion,
   pointerShadow,
   pointerSource,
   splitVisual,
+  lockState,
   target,
 }: {
   creatureState?: TokiCreatureState;
@@ -175,19 +221,31 @@ export function BlobPuck({
   pointerShadow: PointerShadowPosition | null;
   pointerSource: "cursor" | "gesture";
   splitVisual: CreatureSplitVisualState | null;
+  lockState: GesturePuckLockState;
   target: TargetBox | null;
 }) {
-  if (pointerShadow == null && splitVisual == null) {
+  const presentedSplitVisual = lockState === "none" ? splitVisual : null;
+
+  if (pointerShadow == null && presentedSplitVisual == null) {
     return null;
   }
 
   const mode = creatureState?.mode ?? "idle";
-  const visual = blobPuckVisuals[mode];
+  const visual = {
+    ...blobPuckVisuals[mode],
+    ...blobPuckLockVisuals[lockState],
+  };
   const gesture = creatureState?.gesture;
   const gestureIsActive =
     pointerSource === "cursor" &&
     creatureState?.anchor === "gesture" &&
     gesture?.active === true;
+  const leadFollowDuration =
+    pointerSource === "gesture"
+      ? gestureBlobFollowDurationSeconds
+      : gestureIsActive
+        ? visual.fastDuration * 0.9
+        : visual.fastDuration;
   const gestureScale =
     gestureIsActive && gesture?.label === "pinch"
       ? 0.86
@@ -195,9 +253,10 @@ export function BlobPuck({
         ? 1.08
         : 1;
   const splitScale =
-    splitVisual == null
+    presentedSplitVisual == null
       ? 1
-      : splitVisual.phase === "splitting" || splitVisual.phase === "merging"
+      : presentedSplitVisual.phase === "splitting" ||
+          presentedSplitVisual.phase === "merging"
         ? 0.74
         : 0.82;
   const sizes = visual.sizes.map(
@@ -210,47 +269,53 @@ export function BlobPuck({
     number,
   ];
   const puckRadius = Math.max(...sizes) / 2 + 12;
-  const unclampedCenterX = splitVisual
-    ? splitVisual.primary.x
+  const unclampedCenterX = presentedSplitVisual
+    ? presentedSplitVisual.primary.x
     : (pointerShadow?.x ?? 0) +
       pointerShadowGeometry.width / 2 +
       (gestureIsActive ? (gesture?.offsetX ?? 0) : 0);
-  const unclampedCenterY = splitVisual
-    ? splitVisual.primary.y
+  const unclampedCenterY = presentedSplitVisual
+    ? presentedSplitVisual.primary.y
     : (pointerShadow?.y ?? 0) +
       pointerShadowGeometry.height / 2 +
       (gestureIsActive ? (gesture?.offsetY ?? 0) : 0);
-  const centerX = Math.min(
-    Math.max(unclampedCenterX, puckRadius),
-    Math.max(puckRadius, window.innerWidth - puckRadius),
+  const centerX = clampPuckCenterToViewport(
+    unclampedCenterX,
+    puckRadius,
+    window.innerWidth,
   );
-  const centerY = Math.min(
-    Math.max(unclampedCenterY, puckRadius),
-    Math.max(puckRadius, window.innerHeight - puckRadius),
+  const centerY = clampPuckCenterToViewport(
+    unclampedCenterY,
+    puckRadius,
+    window.innerHeight,
   );
   const secondaryCenterX =
-    splitVisual == null
+    presentedSplitVisual == null
       ? centerX
-      : Math.min(
-          Math.max(splitVisual.secondary.x, puckRadius),
-          Math.max(puckRadius, window.innerWidth - puckRadius),
+      : clampPuckCenterToViewport(
+          presentedSplitVisual.secondary.x,
+          puckRadius,
+          window.innerWidth,
         );
   const secondaryCenterY =
-    splitVisual == null
+    presentedSplitVisual == null
       ? centerY
-      : Math.min(
-          Math.max(splitVisual.secondary.y, puckRadius),
-          Math.max(puckRadius, window.innerHeight - puckRadius),
+      : clampPuckCenterToViewport(
+          presentedSplitVisual.secondary.y,
+          puckRadius,
+          window.innerHeight,
         );
-  const splitDeltaX = secondaryCenterX - centerX;
-  const splitDeltaY = secondaryCenterY - centerY;
-  const splitDistance = Math.hypot(splitDeltaX, splitDeltaY);
-  const splitAngle = (Math.atan2(splitDeltaY, splitDeltaX) * 180) / Math.PI;
+  const splitStrand = createSplitStrandGeometry({
+    primary: { x: centerX, y: centerY },
+    secondary: { x: secondaryCenterX, y: secondaryCenterY },
+    lobeRadius: puckRadius,
+  });
   const splitBridgeStyle = {
-    left: `${centerX}px`,
-    top: `${centerY}px`,
-    width: `${splitDistance}px`,
-    transform: `translateY(-50%) rotate(${splitAngle}deg)`,
+    left: `${splitStrand.startX}px`,
+    top: `${splitStrand.startY}px`,
+    width: `${splitStrand.width}px`,
+    "--toki-split-strand-thickness": `${splitStrand.thickness}px`,
+    transform: `translateY(-50%) rotate(${splitStrand.angleDegrees}deg)`,
     background: visual.fillColor,
     boxShadow: `0 0 7px ${visual.shadowColor}`,
   } as CSSProperties;
@@ -289,8 +354,13 @@ export function BlobPuck({
       data-gesture-phase={gesture?.phase ?? "inactive"}
       data-gesture-active={gestureIsActive ? "true" : "false"}
       data-pointer-source={pointerSource}
-      data-split-phase={splitVisual?.phase ?? "merged"}
-      data-split-visual-only={splitVisual?.visualOnly ? "true" : "false"}
+      data-lock-state={lockState}
+      data-lock-feedback={lockState === "none" ? "none" : "persistent"}
+      data-split-phase={presentedSplitVisual?.phase ?? "merged"}
+      data-split-strand={presentedSplitVisual ? "persistent" : "none"}
+      data-split-visual-only={
+        presentedSplitVisual?.visualOnly ? "true" : "false"
+      }
       data-droplet-travel={canSendTargetDroplet ? "true" : "false"}
       aria-hidden="true"
     >
@@ -313,7 +383,7 @@ export function BlobPuck({
         filterId="toki-blob-puck"
         filterStdDeviation={11}
         useFilter={false}
-        fastDuration={gestureIsActive ? visual.fastDuration * 0.9 : visual.fastDuration}
+        fastDuration={leadFollowDuration}
         slowDuration={gestureIsActive ? visual.slowDuration * 0.88 : visual.slowDuration}
         trailPull={gestureIsActive ? visual.trailPull + 2 : visual.trailPull}
         liquidStretch={gestureIsActive ? visual.liquidStretch + 0.12 : visual.liquidStretch}
@@ -322,10 +392,11 @@ export function BlobPuck({
         ambientDeform={visual.ambientDeform}
         zIndex={100}
       />
-      {splitVisual ? (
+      {presentedSplitVisual ? (
         <>
           <span
             className="blob-puck__split-bridge"
+            data-persistent="true"
             style={splitBridgeStyle}
           />
           <span className="blob-puck__secondary-lobe">

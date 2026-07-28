@@ -13,6 +13,22 @@ const indexDipAngleThreshold = 145;
 const foldedFingerRatioThreshold = 1.35;
 const foldedFingerAngleThreshold = 125;
 const requiredFoldedFingerCount = 3;
+const continuationIndexExtensionRatioThreshold = 1.45;
+const continuationIndexPipAngleThreshold = 135;
+const continuationIndexDipAngleThreshold = 130;
+const continuationRequiredFoldedFingerCount = 2;
+const continuationDetectionConfidenceRatio = 0.75;
+// Matches gestureInferenceFramesPerSecond; used only when two samples share a
+// timestamp and the filter still needs a plausible step.
+const fallbackPointerFrameIntervalMs = 1_000 / 30;
+
+// MediaPipe drops a plainly visible hand for a few hundred milliseconds at a
+// time. A live trace measured gaps of 197, 365, and 365 ms, so a 320 ms grace
+// erased the pointer two times out of three while the hand was about to return
+// and its track identity had never been lost. This must stay above the model's
+// dropout envelope, and far below the 2 s tracking-loss grace so a hand the user
+// genuinely lowered still clears promptly.
+export const pointerVisualRecoveryGraceMs = 500;
 
 export type PointPoseClassification = {
   label: "none" | "point";
@@ -37,14 +53,18 @@ export type GesturePointerCalibration = Readonly<{
   mirrorX: boolean;
   pointHoldMs: number;
   trackingLossGraceMs: number;
-  smoothingAlpha: number;
-  deadZone: number;
+  restingResponseMs: number;
+  movingResponseMs: number;
+  jitterRadius: number;
+  fullSpeedDistance: number;
+  filterResetAfterMs: number;
 }>;
 
 export type GesturePointerTrackingState = {
   candidateTrackId: string | null;
   poseStartedAtMs: number | null;
   lastPointSeenAtMs: number | null;
+  lastFilterAtMs: number | null;
   smoothedNormalized: NormalizedGesturePoint | null;
   pointer: GesturePointerSample | null;
   active: boolean;
@@ -52,21 +72,25 @@ export type GesturePointerTrackingState = {
 
 export const defaultGesturePointerCalibration: GesturePointerCalibration =
   Object.freeze({
-    cameraMinX: 0.12,
-    cameraMaxX: 0.88,
-    cameraMinY: 0.08,
-    cameraMaxY: 0.72,
+    cameraMinX: 0,
+    cameraMaxX: 1,
+    cameraMinY: 0,
+    cameraMaxY: 1,
     mirrorX: true,
     pointHoldMs: 140,
     trackingLossGraceMs: 2_000,
-    smoothingAlpha: 0.34,
-    deadZone: 0.006,
+    restingResponseMs: 85,
+    movingResponseMs: 18,
+    jitterRadius: 0.0035,
+    fullSpeedDistance: 0.045,
+    filterResetAfterMs: 180,
   });
 
 export const initialGesturePointerTrackingState: GesturePointerTrackingState = {
   candidateTrackId: null,
   poseStartedAtMs: null,
   lastPointSeenAtMs: null,
+  lastFilterAtMs: null,
   smoothedNormalized: null,
   pointer: null,
   active: false,
@@ -75,9 +99,30 @@ export const initialGesturePointerTrackingState: GesturePointerTrackingState = {
 export function classifyPointPose(
   frame: HandLandmarkFrame | null,
   minDetectionConfidence: number,
+  activePointerTrackId: string | null = null,
 ): PointPoseClassification {
-  if (frame == null || frame.confidence < minDetectionConfidence) {
+  if (frame == null) {
     return createInactivePointPose();
+  }
+
+  // MediaPipe reports a depressed detection score for several frames after it
+  // re-acquires a hand it briefly lost. Discarding those frames outright strands
+  // an already-active pointer while the hand is plainly visible: a live trace
+  // showed 16 consecutive frames with the hand present, the pointer dead, and no
+  // measurements taken at all. A hand that is already driving the pointer keeps
+  // being measured through that dip, mirroring the strict-entry / relaxed-
+  // continuation split the pose thresholds already use.
+  const isContinuation =
+    activePointerTrackId != null &&
+    getHandTrackId(frame) === activePointerTrackId;
+  const confidenceFloor = isContinuation
+    ? minDetectionConfidence * continuationDetectionConfidenceRatio
+    : minDetectionConfidence;
+
+  if (frame.confidence < confidenceFloor) {
+    // Pass the frame so diagnostics can tell a confidence rejection (track id
+    // present) from a genuinely absent hand (track id null).
+    return createInactivePointPose(frame);
   }
 
   const wrist = findLandmark(frame, "wrist");
@@ -171,8 +216,17 @@ export function advanceGesturePointerTracking({
   state: GesturePointerTrackingState;
   pointer: GesturePointerSample | null;
 } {
+  const sameTrack =
+    classification.handTrackId != null &&
+    previousState.candidateTrackId === classification.handTrackId;
+  const isStrictPoint = classification.label === "point";
+  const isRetainedPoint =
+    sameTrack &&
+    (previousState.active || previousState.poseStartedAtMs != null) &&
+    isPointPoseContinuation(classification);
+
   if (
-    classification.label !== "point" ||
+    (!isStrictPoint && !isRetainedPoint) ||
     classification.pointerTip == null ||
     classification.handTrackId == null ||
     classification.sourceFrameId == null ||
@@ -181,8 +235,6 @@ export function advanceGesturePointerTracking({
     return recoverOrResetPointer(previousState, nowMs, calibration);
   }
 
-  const sameTrack =
-    previousState.candidateTrackId === classification.handTrackId;
   const continuingActivePoint = previousState.active && sameTrack;
   const poseStartedAtMs = sameTrack
     ? previousState.poseStartedAtMs ?? nowMs
@@ -195,6 +247,7 @@ export function advanceGesturePointerTracking({
       candidateTrackId: classification.handTrackId,
       poseStartedAtMs,
       lastPointSeenAtMs: null,
+      lastFilterAtMs: null,
       smoothedNormalized: null,
       pointer: null,
       active: false,
@@ -211,6 +264,8 @@ export function advanceGesturePointerTracking({
   const smoothedNormalized = smoothNormalizedPoint(
     previousState.smoothedNormalized,
     mapped.normalized,
+    previousState.lastFilterAtMs,
+    nowMs,
     calibration,
   );
   const pointer: GesturePointerSample = {
@@ -230,12 +285,29 @@ export function advanceGesturePointerTracking({
     candidateTrackId: classification.handTrackId,
     poseStartedAtMs,
     lastPointSeenAtMs: nowMs,
+    lastFilterAtMs: nowMs,
     smoothedNormalized,
     pointer,
     active: true,
   };
 
   return { state, pointer };
+}
+
+export function isPointPoseContinuation(
+  classification: PointPoseClassification,
+): boolean {
+  return (
+    classification.pointerTip != null &&
+    classification.indexExtensionRatio != null &&
+    classification.indexExtensionRatio >=
+      continuationIndexExtensionRatioThreshold &&
+    classification.indexPipAngle != null &&
+    classification.indexPipAngle >= continuationIndexPipAngleThreshold &&
+    classification.indexDipAngle != null &&
+    classification.indexDipAngle >= continuationIndexDipAngleThreshold &&
+    classification.foldedFingerCount >= continuationRequiredFoldedFingerCount
+  );
 }
 
 export function resetGesturePointerTracking(): GesturePointerTrackingState {
@@ -256,6 +328,7 @@ function recoverOrResetPointer(
     previousState.lastPointSeenAtMs != null &&
     nowMs - previousState.lastPointSeenAtMs < calibration.trackingLossGraceMs
   ) {
+    const missingForMs = nowMs - previousState.lastPointSeenAtMs;
     const pointer = {
       ...previousState.pointer,
       phase: "recovering" as const,
@@ -265,7 +338,10 @@ function recoverOrResetPointer(
       pointer,
     };
 
-    return { state, pointer };
+    return {
+      state,
+      pointer: missingForMs < pointerVisualRecoveryGraceMs ? pointer : null,
+    };
   }
 
   const state = resetGesturePointerTracking();
@@ -275,20 +351,45 @@ function recoverOrResetPointer(
 function smoothNormalizedPoint(
   previous: NormalizedGesturePoint | null,
   next: NormalizedGesturePoint,
+  previousAtMs: number | null,
+  nowMs: number,
   calibration: GesturePointerCalibration,
 ): NormalizedGesturePoint {
-  if (previous == null) {
+  if (previous == null || previousAtMs == null) {
     return next;
   }
 
-  if (Math.hypot(next.x - previous.x, next.y - previous.y) <= calibration.deadZone) {
-    return previous;
+  const elapsedMs =
+    nowMs > previousAtMs ? nowMs - previousAtMs : fallbackPointerFrameIntervalMs;
+  if (elapsedMs >= calibration.filterResetAfterMs) {
+    return next;
   }
 
+  const distance = Math.hypot(next.x - previous.x, next.y - previous.y);
+  const motionRatio = smoothStep(
+    calibration.jitterRadius,
+    calibration.fullSpeedDistance,
+    distance,
+  );
+  const responseMs =
+    calibration.restingResponseMs +
+    (calibration.movingResponseMs - calibration.restingResponseMs) *
+      motionRatio;
+  const smoothingAlpha = 1 - Math.exp(-elapsedMs / Math.max(1, responseMs));
+
   return {
-    x: clamp01(previous.x + (next.x - previous.x) * calibration.smoothingAlpha),
-    y: clamp01(previous.y + (next.y - previous.y) * calibration.smoothingAlpha),
+    x: clamp01(previous.x + (next.x - previous.x) * smoothingAlpha),
+    y: clamp01(previous.y + (next.y - previous.y) * smoothingAlpha),
   };
+}
+
+function smoothStep(lower: number, upper: number, value: number): number {
+  if (upper <= lower) {
+    return value >= upper ? 1 : 0;
+  }
+
+  const normalized = clamp01((value - lower) / (upper - lower));
+  return normalized * normalized * (3 - 2 * normalized);
 }
 
 function createInactivePointPose(

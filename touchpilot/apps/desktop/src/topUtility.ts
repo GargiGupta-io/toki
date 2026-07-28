@@ -1,3 +1,4 @@
+import type { VoiceRuntimeState, VoiceRuntimeStatus } from "@toki/shared";
 import type { ViewportMetrics } from "./overlayGeometry";
 
 export type TopUtilityMode = "hidden" | "peek" | "expanded";
@@ -32,18 +33,46 @@ export type TopUtilityPoint = {
 
 export const TOP_UTILITY_REVEAL_DWELL_MS = 160;
 export const TOP_UTILITY_LEAVE_DELAY_MS = 360;
+export const TOP_UTILITY_RESULT_NOTICE_MS = 3_000;
 
 const TOP_EDGE_TRIGGER_HEIGHT = 20;
 const TOP_EDGE_TRIGGER_HALF_WIDTH = 220;
-export const TOP_UTILITY_EXPANDED_WIDTH = 424;
-export const TOP_UTILITY_EXPANDED_HEIGHT = 224;
-const EXPANDED_SURFACE_TOP = 30;
+export const TOP_UTILITY_EXPANDED_WIDTH = 400;
+export const TOP_UTILITY_EXPANDED_HEIGHT = 218;
+const EXPANDED_SURFACE_TOP = 0;
 const EXPANDED_SURFACE_EXIT_PADDING = 20;
 
 export function getPassiveTopUtilityMode(
   status: TokiTopStatusModel | null,
 ): TopUtilityMode {
   return status == null ? "hidden" : "peek";
+}
+
+export function isTransientVoiceTopStatus(
+  status: VoiceRuntimeStatus,
+): boolean {
+  return status === "command_ready" || status === "no_speech";
+}
+
+export function settleTransientVoiceTopStatus(
+  current: VoiceRuntimeState,
+  expectedStatus: VoiceRuntimeStatus,
+): VoiceRuntimeState {
+  if (
+    current.status !== expectedStatus ||
+    !isTransientVoiceTopStatus(current.status)
+  ) {
+    return current;
+  }
+
+  return {
+    ...current,
+    enabled: false,
+    status: "idle",
+    activationSource: undefined,
+    pendingCommand: undefined,
+    error: undefined,
+  };
 }
 
 export function isTopUtilityRevealPoint(

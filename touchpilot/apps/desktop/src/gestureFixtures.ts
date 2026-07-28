@@ -12,9 +12,11 @@ import { defaultGestureTimingPolicy } from "./gestureContracts";
 export type SyntheticHandPose =
   | "neutral"
   | "point"
+  | "wrist_rolled"
   | "tap_flexed"
   | "pinch"
-  | "open_palm";
+  | "open_palm"
+  | "closed_fist";
 
 const landmarkNames: HandLandmarkName[] = [
   "wrist",
@@ -74,6 +76,7 @@ export function createSyntheticTrackedHand({
   centerY = 0.5,
   confidence = 0.96,
   sequence = frameId,
+  wristRollDegrees = pose === "wrist_rolled" ? 105 : 0,
 }: {
   trackId?: string;
   frameId?: number;
@@ -84,16 +87,20 @@ export function createSyntheticTrackedHand({
   centerY?: number;
   confidence?: number;
   sequence?: number;
+  wristRollDegrees?: number;
 } = {}): TrackedHandLandmarkFrame {
   const landmarks = landmarkNames.map((name, index) => {
     const [offsetX, offsetY] = poseOffset(name, baseOffsets[index], pose);
+    const radians = (wristRollDegrees * Math.PI) / 180;
+    const rotatedX = offsetX * Math.cos(radians);
+    const rotatedZ = -offsetX * Math.sin(radians);
 
     return {
       index: index as HandLandmarkIndex,
       name,
-      x: clamp01(centerX + offsetX),
+      x: clamp01(centerX + rotatedX),
       y: clamp01(centerY + offsetY),
-      z: 0,
+      z: rotatedZ,
     } satisfies HandLandmarkPoint;
   });
 
@@ -171,6 +178,34 @@ export function createSyntheticDoubleTapFrames({
   });
 }
 
+export function createSyntheticWristRollFrames({
+  trackId = "pointer-hand",
+  startAtMs = Date.parse("2026-07-15T00:00:00.000Z"),
+}: {
+  trackId?: string;
+  startAtMs?: number;
+} = {}): MultiHandLandmarkFrame[] {
+  const poses: Array<readonly [number, SyntheticHandPose]> = [
+    [0, "point"],
+    [100, "wrist_rolled"],
+    [340, "wrist_rolled"],
+  ];
+
+  return poses.map(([offsetMs, pose], index) => {
+    const capturedAt = new Date(startAtMs + offsetMs).toISOString();
+    const frameId = index + 1;
+    const hand = createSyntheticTrackedHand({
+      trackId,
+      frameId,
+      capturedAt,
+      pose,
+      sequence: frameId,
+    });
+
+    return createSyntheticMultiHandFrame({ frameId, capturedAt, hands: [hand] });
+  });
+}
+
 export function createSyntheticAdaptiveProfile({
   profileId = "gesture-profile-fixture",
   preferredPointerHand = "right",
@@ -219,8 +254,26 @@ function poseOffset(
     return [base[0] * 0.6, 0.06];
   }
 
+  if (pose === "closed_fist") {
+    if (name === "thumb_tip") {
+      return [-0.08, 0.015];
+    }
+
+    if (name.endsWith("_tip")) {
+      return [base[0] * 0.72, 0.09];
+    }
+
+    if (name.endsWith("_dip")) {
+      return [base[0] * 0.82, 0.035];
+    }
+
+    if (name.endsWith("_pip")) {
+      return [base[0] * 0.92, -0.01];
+    }
+  }
+
   if (
-    (pose === "point" || pose === "tap_flexed") &&
+    (pose === "point" || pose === "wrist_rolled" || pose === "tap_flexed") &&
     ["middle_tip", "ring_tip", "pinky_tip"].includes(name)
   ) {
     return [base[0], 0.06];

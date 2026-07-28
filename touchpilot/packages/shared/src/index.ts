@@ -939,6 +939,9 @@ export type ActiveWindowContext = {
 export type ActiveWindowBounds = {
   appName?: string | null;
   title?: string | null;
+  bundleIdentifier?: string | null;
+  ownerProcessId?: number | null;
+  windowNumber?: number | null;
   x: number;
   y: number;
   width: number;

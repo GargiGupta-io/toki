@@ -321,7 +321,7 @@ Evidence: `touchpilot/docs/phase-15-evals.md` records deterministic eval closure
 29. Accepted-target droplet travel — `COMPLETED` implementation/automated gate: one transient droplet can travel only when the existing accepted-guidance motion gate and a visible target are both present.
 30. Living-visual installed-app acceptance — `PENDING`, user-owned: confirm the liquid motion is visible and tasteful, processing does not look idle, the droplet reaches the verified target, and rejected/hidden targets remain invisible.
 
-## Adaptive Gesture Control Plan — IN PROGRESS, STEP 9 COMPLETE
+## Adaptive Gesture Control Plan — STEP 9 COMPLETE; EXPERIENCE REPAIR AUTOMATED GATES COMPLETE, LIVE ACCEPTANCE PENDING
 
 The detailed design and rationale are preserved in `/Users/pumba/Documents/Codex/clicky/adaptive-gesture-control-and-command-acceptance.md`. Execution uses one step at a time, with a pause for user review after every completed step.
 
@@ -329,13 +329,23 @@ The detailed design and rationale are preserved in `/Users/pumba/Documents/Codex
 2. Extract an always-running gesture runtime independent of Debug — `COMPLETED` in Gesture Step 2; Overlay now owns the camera, hidden video source, MediaPipe loop, smoothing, and legacy action routing while Debug receives sanitized snapshots only.
 3. Package MediaPipe assets locally and preserve camera privacy — `COMPLETED` in Gesture Step 3; the exact MediaPipe 0.10.35 WASM loaders/binaries and official float16 hand-landmarker model are checksum-pinned, loaded from packaged application paths, embedded in the signed native app, and covered by a 7/7 offline asset gate. Camera-frame privacy and legacy gesture ownership regressions remain green.
 4. Build reliable single-hand pointing with calibration, smoothing, and active-display mapping — `COMPLETED` at the implementation/build gate in Gesture Step 4; a palm-normalized point pose, 140 ms stability hold, configurable personal camera range, mirrored/clamped active-display mapping, dead-zone smoothing, absolute blob positioning, two-second tracking-loss recovery, and immediate permission fallback are covered by 9/9 focused tests. Live comfort/lighting tuning remains user-owned acceptance.
-5. Build double-air-tap target locking with an immutable snapshot and screen-freshness invalidation — `COMPLETED` at the implementation/build gate in Gesture Step 5; two deliberate flex-and-return cycles on the same tracked hand within two seconds copy an immutable smoothed coordinate, reject held/stale/moved/wrong-hand input, display a detached liquid lock cue distinct from verified guidance, and invalidate on camera, Screen Recording, display, active-app, window-title, or window-bounds changes. The focused gate passes 8/8; manual camera comfort tuning remains user-owned acceptance.
-6. Add a bounded, resettable local adaptive profile with two-second human grace windows — `COMPLETED` at the implementation/build gate in Gesture Step 6; the three-stage Debug calibration requires 6 approved point samples, 5 approved tap-flex samples, and 5 approved pinch-distance samples, keeps samples in memory, persists only versioned median/MAD/count statistics, clamps every derived setting, and restores defaults through Reset. Correct and Wrong gesture are explicit user decisions. Confidence, action mappings, safety, provider verification, permissions, timing grace, and click behavior remain fixed. The focused gate passes 6/6; manual comfort/tuning remains user-owned acceptance.
+5. Build pointer locking with an immutable snapshot and screen-freshness invalidation — `COMPLETED`, then repaired for live acceptance on 2026-07-18. The active trigger is one deliberate `160 ms` index bend on the same tracked hand, with `120 ms` interruption grace, held-bend latching, stale/moved/wrong-hand refusal, and extension plus `350 ms` cooldown rearming. The immutable coordinate, detached liquid cue, and camera/permission/display/window invalidation remain unchanged. The current focused gate passes 9/9; manual camera comfort remains user-owned acceptance.
+6. Add a bounded, resettable local adaptive profile with two-second human grace windows — `COMPLETED` at the implementation/build gate in Gesture Step 6; the three-stage Debug calibration requires 6 approved point samples, 5 approved index-bend samples, and 5 approved pinch-distance samples, keeps samples in memory, persists only versioned median/MAD/count statistics, clamps every derived setting, and restores defaults through Reset. Correct and Wrong gesture are explicit user decisions. Confidence, action mappings, safety, provider verification, permissions, timing grace, and click behavior remain fixed. The focused gate passes 6/6; manual comfort/tuning remains user-owned acceptance.
 7. Add stable two-hand identity plus liquid split/merge visuals — `COMPLETED` at the implementation/build gate in Gesture Step 7; the bundled landmark runtime now returns up to two hands, stable track IDs survive detector reordering, crossing, and a two-second loss window, pointer/control roles do not swap while retained, and palm-separation hysteresis drives a reduced-motion-safe liquid split/merge presentation. The control hand has no action authority in this step. The focused gate passes 6/6 and the prior gesture gates remain 43/43; live two-hand comfort/lighting acceptance remains user-owned.
-8. Compose a locked pointer with secondary-hand pinch hold-to-talk; release submits exactly once and tracking loss cancels safely — `COMPLETED` at the implementation/build gate in Gesture Step 8; the control hand uses adaptive press distance, hysteretic release distance, stable holds, and its retained track. A press is accepted only with a screen-validated lock and idle recorder, then freezes that receipt into the voice request. Two seconds of missing-hand recovery resume without release; expiry cancels native capture and never submits. The focused gate passes 9/9, voice hold passes 3/3, prior gesture gates pass 49/49, and visual-motion QA remains 18/18. Manual camera/microphone acceptance remains user-owned.
+8. Compose a locked pointer with secondary-hand pinch hold-to-talk; release submits exactly once and persistent tracking loss terminates safely — `COMPLETED`, with the live release repair installed on 2026-07-20. A press is accepted only with current lock context and an idle recorder. A deliberate release is latched across missing camera frames for its `180 ms` hold. Two seconds of loss still permits recovery; expiry now ends listening and submits the audio already captured once instead of resetting and discarding it. Ordinary and contextual pinch sessions are detector/track-owned so they cannot terminate each other. Gesture control voice passes 13/13 and voice hold passes 3/3. Manual camera/microphone acceptance remains user-owned.
 9. Add pointer-grounded “explain this” using the locked region and current screen evidence — `COMPLETED` at the implementation/build gate in Gesture Step 9. Approved deictic phrases consume the matching frozen lock once, recapture and fingerprint the active window, combine nearby OCR/Accessibility/DOM evidence, and refuse stale, ambiguous, conflicting, generic, unsupported, low-confidence, or moved targets. The provider receives the exact point plus a bounded 160 px focus region through the existing Codex subscription bridge. Results use a separate passive card and optional post-microphone speech with persistent mute; they never click, become guidance targets, or show the verified-target ring. The focused gate passes 9/9, all selected prior regressions and the 120-case corpus remain green, and visual-motion QA remains 18/18. Manual pointer/voice/explanation acceptance remains user-owned.
-10. Add later gestures only after the basic composition is reliable — `NEXT` after the user accepts Step 9.
-11. Run the full regression matrix, rebuild/install/launch, and hand manual gesture acceptance to the user — `PENDING`.
+10. Add later gestures only after the basic composition is reliable — `DEFERRED` while the user-reported gesture experience repair is completed.
+11. Run the full regression matrix, rebuild/install/launch, and hand manual gesture acceptance to the user — `COMPLETED` on 2026-07-17. The final integrated gate passes 244/244 automated tests plus all visual/browser/known-screen/typecheck/Rust/provider/build/sign/install checks. The ordered user checklist is `touchpilot/docs/gesture-experience-manual-acceptance.md`.
+
+### Gesture Experience Repair — AUTOMATED GATES COMPLETE, MANUAL ACCEPTANCE PENDING
+
+1. Unify Camera + Gestures into one top Controls lifecycle; add explicit local voice-on and a deliberate two-fist privacy shutdown — `COMPLETED` at the implementation/build/install gate on 2026-07-17. The focused suite passes 7/7, selected gesture/voice/privacy/visual regressions remain green, TypeScript and Rust checks pass, and the signed built/installed executables match. Live acceptance is user-owned.
+2. Reduce pointer sensitivity, stabilize control-hand pinch hold-to-talk, and clear/recover stale hand state without lag, disappearing, or stuck gesture state — `COMPLETED` at the implementation/build/install gate on 2026-07-17. The focused stability gate passes 4/4, pointing 9/9, control voice 11/11, two-hand 6/6, target lock 8/8, and selected broader gates remain green. Live comfort is user-owned.
+3. Keep a visible liquid strand between the two split lobes for the complete split state, including hand motion, recovery, and reduced-motion behavior — `COMPLETED` at the implementation/build/install gate on 2026-07-17. Edge-inset geometry follows both lobes, safely handles overlap, thins with distance, remains visible in the stable split state, and becomes static rather than hidden under reduced motion. The focused strand gate passes 7/7, two-hand 6/6, visual motion 18/18, and selected broader gates remain green. Live visual taste is user-owned.
+4. Run the full regression matrix, rebuild/sign/install, ensure exactly one installed process, launch, and hand the manual camera/gesture matrix to the user — `COMPLETED` on 2026-07-17. The final gate passes 244/244 automated TypeScript/Node/Rust tests, 18/18 visual assertions, all browser/AX/OCR/workflow/eval fixtures, TypeScript, Rust test/check/format, provider readiness, production builds, signing, privacy inspection, exact hash comparison, and one-process launch. Live checklist execution remains user-owned.
+5. Remove cumulative live pointer lag and visually detach Toki from the fingertip — `COMPLETED` at the implementation/build/install gate on 2026-07-18. The bounded inference cadence is now 24 FPS, pointer derivation occurs in the same inference callback instead of a later React effect, motion-sensitive smoothing reaches `0.54` for deliberate movement, and gesture-owned blob following uses `0.055 s`. The unshifted pointer remains authoritative for locks while the blob is drawn about `57 px` away with edge-aware flipping. One hundred focused gesture/visual assertions, all workspace TypeScript checks, signing, installation, exact hash comparison, and one-process launch pass. Live responsiveness and spacing remain user-owned acceptance.
+6. Add a private machine-readable diagnostics bridge so Codex can inspect Toki without user-posted Debug screenshots — `COMPLETED` at the implementation/build/install gate on 2026-07-18. The Overlay exports a sanitized latest snapshot at most every 500 ms, a bounded 160-entry transition history, and one overwritten current capture when available. Audio and inline image data are never written to JSON; secret-shaped fields are redacted; native writes are atomic with private directory/file permissions. `npm run toki:debug` reads the installed app while visual Debug is closed. Sanitizer 3/3, gesture input stability 6/6, runtime ownership 6/6, all workspace typechecks, five native tests, Rust check/format, production builds, signing, installation, strict verification, direct readback, private-permission checks, matching hashes, and exactly one launched process pass. No Toki command or gesture was issued.
+7. Replace double-air-tap with one deliberate index bend, stabilize secondary-hand pinch, and increase the creature/fingertip separation — `COMPLETED` at the implementation/build/install gate on 2026-07-18. Locking now requires one stable `160 ms` bend, tolerates `120 ms` interruption, emits once while held, and rearms only after extension plus `350 ms`. Pinch uses track-owned `0.68` distance smoothing, `240 ms` entry interruption grace, `0.15` release hysteresis, and a `180 ms` release hold. Toki is drawn `60 x 48 px` above-right, about `77 px` from the unshifted authoritative pointer before edge correction. The selected repair set passes 87 gesture and 18 visual assertions; all typechecks, native tests, Rust check/format, production builds, signing, replacement, strict verification, matching hashes, one-process launch, and local diagnostics readback pass. Live camera/voice acceptance remains user-owned.
 
 The command-testing foundation is already committed: `touchpilot/docs/manual-command-acceptance-matrix.md` contains 120 cases across 11 edge-case categories, and `npm run test:command-corpus` validates uniqueness, completeness, and supported parser expectations.
 
@@ -350,8 +360,9 @@ The command-testing foundation is already committed: `touchpilot/docs/manual-com
 7. Final visual acceptance depends on performance and active-Space/fullscreen behavior.
 8. The temporary Codex adapter depends on an installed and authenticated Codex CLI. The future product provider should be swapped behind the same adapter boundary.
 9. Local ad-hoc builds change code identity and invalidate stored macOS grants. A stable Developer ID/development signing identity is required for durable permissions across future binaries.
-10. Continuous liquid animation remains a small performance risk until the user observes CPU/lag during normal installed-app use; motion is limited to two small blob elements and disabled for reduced motion.
+10. The camera-to-blob scheduling and interpolation delays have a focused installed repair, but live comfort remains pending. If lag persists, the next evidence should distinguish model inference cost from WebKit rendering/CPU rather than adding more smoothing blindly.
 11. Pointer explanations require a fresh active-window recapture, unique current evidence near the frozen point, and a provider answer that leaves that point unchanged. Live camera, ambiguity, stale-screen, speech, and mute behavior remain user-owned acceptance.
+12. Installed-runtime failures no longer require visual Debug screenshots. Read `npm run toki:debug` first; use `npm run toki:debug -- --json` only when the concise snapshot and recent transitions are insufficient. A capture path appears only after the user runs a capture/guidance flow.
 
 ## 2026-07-15 Capture-Integrity and Target-Cue Repair — IMPLEMENTED, MANUAL ACCEPTANCE PENDING
 
@@ -362,4 +373,97 @@ The command-testing foundation is already committed: `touchpilot/docs/manual-com
 5. Broader verification and release — `COMPLETED`: all workspace TypeScript, Rust check, semantic verifier 23/23, production web build, app release, signing, install, hash match, and launch pass.
 6. Installed-app permission and live behavior acceptance — `PENDING`, user-owned. Grant Screen Recording to the exact current `/Applications/Toki.app` if prompted, relaunch, then run the known commands manually.
 
-Current installed executable SHA-256: `4c63cbd0fb26edb56e29e48773507a7a1b397ac2d3e249a222591585b4eeb293`. Gesture Step 9 installed-app PID at verification: `57842`.
+Current installed executable SHA-256: `46cff0c9124ad14b7845909ac66e514de3c53923935ae873ff77c7261c343719`. This 2026-07-18 installed build includes the camera lifecycle/freshness repairs, same-frame 24 FPS pointer path, responsive motion-sensitive smoothing, the private machine-readable diagnostics bridge, one-bend pointer locking, filtered human-paced pinch, and the larger visual-only creature offset. Exactly one installed process was observed as PID `11734`; live index-bend, contextual pinch, responsiveness, and spacing acceptance remain user-owned.
+
+## 2026-07-19 Gesture Interaction Repair — IMPLEMENTED, MANUAL ACCEPTANCE PENDING
+
+1. Let the visible puck touch all four screen edges by clamping its actual rendered radius instead of an invisible carrier rectangle — `COMPLETED`.
+2. Keep Toki visibly separate from the authoritative fingertip with a `100 x 80 px` visual offset and edge redirection — `COMPLETED`.
+3. Freeze the main creature and persistent receipt at the copied bend-lock coordinate — `COMPLETED`.
+4. Preserve the coordinate as `limited` when Screen Recording evidence is unavailable, while still invalidating proven display/window changes — `COMPLETED`.
+5. Route ordinary one-hand pinch and contextual second-hand pinch through separate state machines into the real native hold-to-talk controller — `COMPLETED`.
+6. Exclude pinch from bend classification and prevent open-palm pause from colliding with locks, pinches, two-hand interaction, or active voice — `COMPLETED`.
+7. Apply the native fullscreen-auxiliary/all-Spaces contract to the interactive top utility — `COMPLETED`.
+8. Compact the top utility to `380 x 58 px` passive / `400 x 218 px` expanded and make it pitch black — `COMPLETED`.
+9. Rebuild, sign, install, strictly verify, match hashes, stop the old process, and launch one current installed process — `COMPLETED`.
+10. User-run live checks for all four edges, persistent bend lock, ordinary pinch hold/release, contextual pinch hold/release, and fullscreen top-panel visibility — `PENDING`, user-owned.
+
+Current installed executable SHA-256: `8b58e1b2719de6cfcd57e5dc2bad1add7ac6fe35169aad85e13de47c632d1a5f`. Exactly one installed process was observed as PID `34312`. No commit or push was made.
+
+## 2026-07-19 Wrist-Roll and Join-Before-Split Repair — INSTALLED, MANUAL ACCEPTANCE PENDING
+
+1. Replace the unreliable index-bend lock with a same-hand relative wrist roll — `COMPLETED`.
+2. Freeze the last stable pointer before rotation so the lock cannot drift with the turning hand — `COMPLETED`.
+3. Require at least `70 degrees` for `220 ms`, with `450 ms` interruption grace, `2,000 ms` sequence grace, one-shot latching, and return-to-point plus `350 ms` rearm — `COMPLETED`.
+4. Expose wrist-roll pose, degrees, phase, roll ID, lock status, and user-facing `Locking target` feedback — `COMPLETED`.
+5. Keep Toki merged when a second hand merely appears; require `240 ms` joined, visible `Split ready`, then `180 ms` separated — `COMPLETED`.
+6. Preserve working ordinary/contextual pinch voice, pointer mapping, immutable locks, edge reach, fullscreen utility, permissions, and no-click boundaries — `COMPLETED`.
+7. Update deterministic tests, acceptance documents, DeepLearn record, diagnostics reader, and migration pack — `COMPLETED`.
+8. Build, sign, install, strictly verify, compare hashes, launch exactly one installed process, and read live diagnostics — `COMPLETED`.
+9. User checks wrist-roll comfort/recognition, persistent pre-roll lock, far-second-hand no-op, join-then-separate split, and contextual pinch voice — `PENDING`, user-owned.
+
+Current installed executable SHA-256: `79742b6e7a1b7dd08bf06f0debf06160e2ad1d30aad2a3a73e9440e78897f820`. Exactly one installed process was observed as PID `43794`. No commit or push was made.
+
+## 2026-07-19 Single-Creature Lock Repair — INSTALLED, MANUAL ACCEPTANCE PENDING
+
+1. Remove the separate blue pointer-lock creature and label — `COMPLETED`.
+2. Keep exactly one main `BlobPuck` on screen and freeze it at the immutable copied coordinate after lock — `COMPLETED`.
+3. Preserve top-status lock feedback, lock validation, split behavior, target coordinates, provider grounding, guidance-only target ring, and no-click boundaries — `COMPLETED`.
+4. Add a regression requiring one `BlobPuck` and rejecting `TokiPointerLockCue` — `COMPLETED`, 9/9.
+5. Run visual-motion and all workspace TypeScript checks — `COMPLETED`, 18/18 and pass.
+6. Build, sign, install, strictly verify, compare hashes, and launch exactly one installed process — `COMPLETED`.
+7. User confirms wrist-roll lock leaves one frozen main creature and no miniature blue lock creature — `PENDING`, user-owned.
+
+Current installed executable SHA-256: `a96fd4ac4376755898e2659d61c3caac60689c40a28349d18025d9679185ac6d`. Exactly one installed process was observed as PID `47578`. No commit or push was made.
+
+## 2026-07-19 Stable Local Identity and Edge Compression — INSTALLED, ONE-TIME GRANTS/MANUAL ACCEPTANCE PENDING
+
+1. Create/reuse `Toki Local Development` in the login keychain — `COMPLETED`.
+2. Require certificate signing, reject ad-hoc signing and `cdhash`-only designated requirements, and stop re-signing the installed copy — `COMPLETED`.
+3. Build/sign A and record CDHash/requirement — `COMPLETED`, `10ced93909a8e41f9e3e49cb0d4777a8c10f9200`.
+4. Replace edge redirection with per-axis compression while preserving `100 x 80 px` open-space spacing and the authoritative point — `COMPLETED`, pointing 11/11.
+5. Build/sign changed build B and prove the requirement is identical while CDHash changes — `COMPLETED`, B is `ea7176c4e2bc0b94a1d32eaa0c80bd7ff44feba5`.
+6. Run lock, visual, privacy/signing, typecheck, syntax, and diff gates — `COMPLETED`.
+7. Copy/verify `/Applications/Toki.app`, reset obsolete TCC rows once, and launch — `COMPLETED`, built/installed SHA-256 `2edcbc0ab20f60d36a5dc0997f51de131367b968806e729a36ab9595e74fb86e`, PID `55623`.
+8. User approves the fresh stable identity and checks open-space/edge spacing — `PENDING`, user-owned.
+
+No command, gesture, commit, or push was performed. The separate performance audit remains next only after this manual permission/visual check.
+
+## 2026-07-20 Pinch Release and Screen Recording Request — INSTALLED, MANUAL ACCEPTANCE PENDING
+
+1. Preserve an intentional `releasing` pinch through missing hand frames and emit one release after the existing `180 ms` hold — `COMPLETED`.
+2. End a gesture-owned voice session only from its matching ordinary/contextual detector and track — `COMPLETED`.
+3. Convert persistent tracking loss after the `2,000 ms` recovery grace into one submission of already captured speech so listening cannot remain stuck and audio is not discarded — `COMPLETED`.
+4. Keep startup prompt-free, then call native `CGRequestScreenCaptureAccess` only when a real capture preflight is false — `COMPLETED`.
+5. Preserve fail-closed capture, target grounding, coordinates, visual behavior, permissions outside this request, and no-click behavior — `COMPLETED`.
+6. Run focused voice/capture/gesture/privacy gates plus TypeScript and Rust verification — `COMPLETED`.
+7. Rebuild, reuse the persistent identity, install without re-signing, strictly verify, and launch exactly one installed process — `COMPLETED`; PID `63321`, SHA-256 `83eeed91ba94611ce8d907669a88217dbd1c8107bc806436dba5776a10ade251`.
+8. User pinches and holds, speaks, unpinches, confirms one submission, then accepts the native Screen Recording prompt on the first real guidance request and relaunches once if macOS requires it — `PENDING`, user-owned.
+
+No TCC reset, Toki command, gesture, commit, or push was performed.
+
+## 2026-07-27 Gesture Polish Phases 1–6 — AUTOMATED GATES COMPLETE, LIVE ACCEPTANCE PENDING
+
+1. Add bounded private frame diagnostics and deterministic production-pointer replay — `COMPLETED`.
+2. Replace frame-rate-dependent pointer smoothing with elapsed-time one-to-one filtering — `COMPLETED`.
+3. Make a live lock authoritative over split presentation so exactly one main creature shows checking, locked, or limited feedback — `COMPLETED`.
+4. Bind lock validation to the real frontmost window under the frozen point, with stable window identity and point-aware receipts — `COMPLETED`.
+5. Harden ordinary/contextual pinch-to-talk with physical interruption grace, valid-hold-time accumulation, detector/track/event ownership, native attempt generation, and native session verification — `COMPLETED`.
+6. Run the final performance, package-footprint, complete regression, release, and installation audit — `COMPLETED`.
+7. User executes the ordered live camera, pointer, wrist-roll, split, pinch, voice, and guidance matrix — `PENDING`, user-owned.
+
+Phase 6 production verification: the idle liquid loop is bounded to `30 FPS` without delaying active pointer/target updates, and MediaPipe loads only when camera ownership requests it. The installed app is `30.89 MiB`; web dist is `40.27 MiB`; production JavaScript is `0.58 MiB`; CSS is `0.03 MiB`; and offline MediaPipe is `39.65 MiB`, all within enforced budgets. The complete automated gate passes 240 root tests, 33 AI tests, 5 Rust tests, all deterministic browser/known-screen/AX-OCR/workflow/eval fixtures, provider readiness, visual-motion 19/19, typechecks, builds, signing, installation, footprint enforcement, and replay. Built and installed executable SHA-256 values match at `f7dbda8ecb5be43cc5a033cc8ad039c8d8b9699696118b51825193a38c5d527c`; installed CDHash `102050a23efbe8aa9ee30fd70407cb0b4adbe14c`; the certificate-rooted designated requirement is unchanged; exactly one installed process was observed as PID `8596`. Fresh diagnostics are idle with Camera + Gestures off. No Toki command, gesture, commit, or push was performed.
+
+## 2026-07-20 Direct Pinch Handoff and Full-Frame Pointer Mapping — INSTALLED, MANUAL ACCEPTANCE PENDING
+
+1. Prove whether the stuck session came from gesture recognition or voice delivery — `COMPLETED`; diagnostics show a correct same-track release while voice stayed listening.
+2. Remove the local `emitTo` round trip from ordinary/contextual pinch while keeping one shared recorder lifecycle — `COMPLETED`.
+3. Preserve the Tauri command listener for real cross-window commands only — `COMPLETED`.
+4. Replace reduced-range amplified mapping with full camera `[0, 1]` to display `[0, 1]`, horizontal mirror only — `COMPLETED`.
+5. Prevent adaptive calibration from shrinking the pointer mapping range — `COMPLETED`.
+6. Retune response to `0.0025` dead zone, `0.82` alpha, `0.60` minimum scale, `0.04` full-response distance, and `0.025 s` lead follow — `COMPLETED`.
+7. Run focused gesture voice, pointing, stability, adaptive, hold, runtime, TypeScript, and diff gates — `COMPLETED`.
+8. Rebuild, reuse the persistent signing identity, copy without re-signing, strictly verify, launch, and read fresh diagnostics — `COMPLETED`; PID `66966`, SHA-256 `da7e81aa51aa06ca5c86220ded651c5abb164c1976dc6ebef269590931485bd7`.
+9. User confirms full-frame pointer feel and pinch-hold/unpinch one-time submission — `PENDING`, user-owned.
+
+No TCC reset, Toki command, gesture, commit, or push was performed.

@@ -58,7 +58,7 @@ test("Debug consumes diagnostics and never owns camera or model processing", () 
   assert.doesNotMatch(debugSource, /MediaStream/);
 });
 
-test("recognized pinch preserves assistant activation", () => {
+test("recognized pinch is visual-only because the dedicated hold controller owns voice", () => {
   const action = getGestureActionForClassification(
     {
       label: "pinch",
@@ -71,13 +71,9 @@ test("recognized pinch preserves assistant activation", () => {
     "2026-07-15T00:00:01.000Z",
   );
 
-  assert.deepEqual(action, {
-    type: "activate_assistant",
-    gesture: "pinch",
-    confidence: 0.93,
-    firedAt: "2026-07-15T00:00:01.000Z",
-    sourceFrameId: 42,
-  });
+  assert.equal(action, null);
+  assert.match(runtimeSource, /ordinaryPinch/);
+  assert.match(runtimeSource, /advanceControlPinch/);
 });
 
 test("recognized open palm preserves assistant pause", () => {

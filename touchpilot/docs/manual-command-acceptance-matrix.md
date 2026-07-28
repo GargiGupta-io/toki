@@ -73,15 +73,15 @@ This is the canonical live-test corpus for confusing commands, ambiguous screens
 
 | ID | Setup | Say | Expected result | Intent | Cue / safety | Automation | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| PTR-001 | G1 plus S7 with valid double-tap lock | Explain this. | EXPLAIN: locked control only | explain/control | pointer-safe | manual | NOT_RUN |
-| PTR-002 | G1 plus S7 with valid double-tap lock | What does this icon do? | EXPLAIN: locked icon only | explain/control | pointer-safe | manual | NOT_RUN |
-| PTR-003 | G1 plus S7 with valid double-tap lock | What is this feature? | EXPLAIN: locked feature only | explain/control | pointer-safe | manual | NOT_RUN |
-| PTR-004 | G1 plus S7 with valid double-tap lock | Why is this disabled? | EXPLAIN: locked disabled control; no click | explain/control | pointer-safe | manual | NOT_RUN |
-| PTR-005 | G1 plus S7 with valid double-tap lock | What happens if I use this? | EXPLAIN: effect and risk of locked control | explain/control | pointer-warning | manual | NOT_RUN |
-| PTR-006 | G1 plus S7 without a lock | Explain this. | CLARIFY: ask user to double-tap and lock | explain/control | none-clarify | manual | NOT_RUN |
+| PTR-001 | G1 plus S7 with valid wrist-roll lock | Explain this. | EXPLAIN: locked control only | explain/control | pointer-safe | manual | NOT_RUN |
+| PTR-002 | G1 plus S7 with valid wrist-roll lock | What does this icon do? | EXPLAIN: locked icon only | explain/control | pointer-safe | manual | NOT_RUN |
+| PTR-003 | G1 plus S7 with valid wrist-roll lock | What is this feature? | EXPLAIN: locked feature only | explain/control | pointer-safe | manual | NOT_RUN |
+| PTR-004 | G1 plus S7 with valid wrist-roll lock | Why is this disabled? | EXPLAIN: locked disabled control; no click | explain/control | pointer-safe | manual | NOT_RUN |
+| PTR-005 | G1 plus S7 with valid wrist-roll lock | What happens if I use this? | EXPLAIN: effect and risk of locked control | explain/control | pointer-warning | manual | NOT_RUN |
+| PTR-006 | G1 plus S7 without a lock | Explain this. | CLARIFY: ask user to bend the pointing index once and lock | explain/control | none-clarify | manual | NOT_RUN |
 | PTR-007 | G1 plus S7 with expired lock | What does this do? | CLARIFY: stale pointer lock | explain/control | none-clarify | manual | NOT_RUN |
 | PTR-008 | G1 pointer locked on Search but speech names Settings | Explain the settings button. | CLARIFY: pointer and explicit object conflict | explain/settings | none-clarify | manual | NOT_RUN |
-| PTR-009 | G1 pointer moves outside lock radius between taps | Lock this. | NO_ACTION: invalid double tap must not capture | lock/control | none-safe | manual | NOT_RUN |
+| PTR-009 | G1 wrist roll returns before the stability hold completes | Lock this. | NO_ACTION: incomplete roll must not capture | lock/control | none-safe | manual | NOT_RUN |
 | PTR-010 | G1 lock overlaps two adjacent icons | Explain this icon. | CLARIFY: ambiguous local region | explain/control | none-clarify | manual | NOT_RUN |
 
 ## 5. Negation, correction, filler, and cancellation
@@ -189,19 +189,20 @@ This is the canonical live-test corpus for confusing commands, ambiguous screens
 | VOC-009 | S3 | Remove the attachment. | TARGET_REVEAL: remove attachment | delete/file | hidden-confirm | intent | NOT_RUN |
 | VOC-010 | S1 | Start the music. | TARGET: Play | play/media | circle-safe | intent | NOT_RUN |
 
-## 12. Gesture composition and double-tap locking
+## 12. Gesture composition and wrist-roll locking
 
 | ID | Setup | Say | Expected result | Intent | Cue / safety | Automation | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | GST-001 | G1 index pointing | No voice command. | NO_ACTION: blob follows finger but target is not locked | point/control | none-safe | manual | NOT_RUN |
-| GST-002 | G1 two valid index air taps over one icon | No voice command. | LOCK: second tap captures smoothed coordinate | lock/control | pointer-safe | manual | NOT_RUN |
-| GST-003 | G1 taps farther apart than allowed interval | No voice command. | NO_ACTION: tap sequence expires | lock/control | none-safe | manual | NOT_RUN |
-| GST-004 | G1 pointer moves beyond lock radius between taps | No voice command. | NO_ACTION: movement invalidates sequence | lock/control | none-safe | manual | NOT_RUN |
+| GST-002 | G1 one deliberate wrist roll held briefly over one icon | No voice command. | LOCK: roll captures the last stable pre-roll smoothed coordinate once | lock/control | pointer-safe | manual | NOT_RUN |
+| GST-003 | G1 wrist roll returns before the brief hold completes | No voice command. | NO_ACTION: accidental turn is ignored | lock/control | none-safe | manual | NOT_RUN |
+| GST-004 | G1 keeps the index bent after a lock | No voice command. | NO_ACTION: held bend cannot manufacture another lock | lock/control | none-safe | manual | NOT_RUN |
 | GST-005 | G2 valid lock then secondary-hand pinch held | Explain this. | VOICE: pinch hold starts recording with frozen lock | explain/control | pointer-safe | manual | NOT_RUN |
 | GST-006 | G2 release secondary pinch after speaking | Explain this. | EXPLAIN: release stops and submits exactly once | explain/control | pointer-safe | manual | NOT_RUN |
 | GST-007 | G2 secondary pinch without a valid lock | Explain this. | CLARIFY: recording may start but deictic command cannot resolve | explain/control | none-clarify | manual | NOT_RUN |
 | GST-008 | G2 pointer moves after voice recording starts | Explain this. | EXPLAIN: use coordinate frozen at pinch start | explain/control | pointer-safe | manual | NOT_RUN |
-| GST-009 | G2 hands move apart then together | No voice command. | VISUAL: blob splits and recombines; no guidance action | split/blob | none-safe | manual | NOT_RUN |
+| GST-009 | G2 hands join and hold, then move apart and back together | No voice command. | VISUAL: join arms the split, separation splits the blob, and return recombines it; no guidance action | split/blob | none-safe | manual | NOT_RUN |
+| GST-009A | G2 second hand appears while the hands are already apart | No voice command. | NO_ACTION: blob remains merged until a deliberate join-then-separate sequence occurs | split/blob | none-safe | manual | NOT_RUN |
 | GST-010 | G2 open palm while secondary pinch is recording | Cancel. | CANCEL: stop recording and clear the lock | cancel/none | none-safe | manual | NOT_RUN |
 
 ## Result report template

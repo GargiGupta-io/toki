@@ -104,8 +104,9 @@ fn supports_join_all_applications() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn inspect<R: tauri::Runtime>(
+fn inspect_with_mouse_policy<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
+    expected_ignores_mouse_events: bool,
 ) -> Result<WindowStatus, String> {
     use std::ffi::{c_char, c_void};
 
@@ -170,7 +171,7 @@ pub(crate) fn inspect<R: tauri::Runtime>(
         let fullscreen_auxiliary = raw_behavior & FULLSCREEN_AUXILIARY != 0;
         let contract_ready = level == SCREEN_SAVER_WINDOW_LEVEL
             && raw_behavior & expected_behavior == expected_behavior
-            && ignores_mouse_events
+            && ignores_mouse_events == expected_ignores_mouse_events
             && !hides_on_deactivate
             && !can_hide
             && !opaque
@@ -203,6 +204,24 @@ pub(crate) fn inspect<R: tauri::Runtime>(
 #[cfg(target_os = "macos")]
 pub(crate) fn prepare<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
+) -> Result<WindowStatus, String> {
+    let status = prepare_with_mouse_policy(window, true)?;
+    remember_status(&status);
+    Ok(status)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn prepare_auxiliary<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    ignores_mouse_events: bool,
+) -> Result<WindowStatus, String> {
+    prepare_with_mouse_policy(window, ignores_mouse_events)
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_with_mouse_policy<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    ignores_mouse_events: bool,
 ) -> Result<WindowStatus, String> {
     use std::ffi::{c_char, c_void};
 
@@ -241,7 +260,7 @@ pub(crate) fn prepare<R: tauri::Runtime>(
         set_bool(
             ns_window_ptr,
             sel_registerName(b"setIgnoresMouseEvents:\0".as_ptr().cast()),
-            true,
+            ignores_mouse_events,
         );
         set_bool(
             ns_window_ptr,
@@ -269,9 +288,7 @@ pub(crate) fn prepare<R: tauri::Runtime>(
         );
     }
 
-    let status = inspect(window)?;
-    remember_status(&status);
-    Ok(status)
+    inspect_with_mouse_policy(window, ignores_mouse_events)
 }
 
 #[cfg(test)]
