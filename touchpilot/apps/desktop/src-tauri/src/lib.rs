@@ -2883,12 +2883,172 @@ async fn request_codex_vision_guidance(
         .map_err(|error| format!("Codex vision worker failed: {error}"))?
 }
 
+/// Keychain coordinates for the user's API key.
+///
+/// The service name is the bundle identifier so the entry is attributable in
+/// Keychain Access, and so a user can find and remove it without our help.
+const OPENAI_KEYCHAIN_SERVICE: &str = "app.toki.desktop";
+const OPENAI_KEYCHAIN_ACCOUNT: &str = "openai-api-key";
+
+#[cfg(target_os = "macos")]
+fn read_stored_openai_api_key() -> Option<String> {
+    security_framework::passwords::get_generic_password(
+        OPENAI_KEYCHAIN_SERVICE,
+        OPENAI_KEYCHAIN_ACCOUNT,
+    )
+    .ok()
+    .and_then(|bytes| String::from_utf8(bytes).ok())
+    .map(|key| key.trim().to_string())
+    .filter(|key| !key.is_empty())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_stored_openai_api_key() -> Option<String> {
+    None
+}
+
+/// The key a transcription request should use.
+///
+/// The Keychain comes first because it is the only source an app launched from
+/// Finder can actually read: a double-clicked app inherits no shell
+/// environment, so the variable that works from a terminal is simply absent for
+/// every ordinary user. The environment is kept as a fallback so the existing
+/// terminal-launched development flow and the QA probe binaries keep working.
+fn resolve_openai_api_key() -> Result<String, String> {
+    if let Some(key) = read_stored_openai_api_key() {
+        return Ok(key);
+    }
+
+    std::env::var("OPENAI_API_KEY")
+        .ok()
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
+        .ok_or_else(|| {
+            "No OpenAI API key is stored. Add one in Toki's settings to use voice."
+                .to_string()
+        })
+}
+
+/// What the settings UI is allowed to know about the stored key.
+///
+/// Deliberately not the key. The UI needs to answer "is one saved" and "is it
+/// the one I meant", and the last four characters answer the second without
+/// handing the secret back across the bridge, where it could reach a log, a
+/// diagnostics snapshot, or an error string.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenAiKeyStatus {
+    stored: bool,
+    available: bool,
+    source: &'static str,
+    hint: Option<String>,
+}
+
+fn openai_key_hint(key: &str) -> Option<String> {
+    let visible: String = key.chars().rev().take(4).collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    if visible.is_empty() {
+        None
+    } else {
+        Some(format!("…{visible}"))
+    }
+}
+
+fn build_openai_key_status() -> OpenAiKeyStatus {
+    if let Some(key) = read_stored_openai_api_key() {
+        return OpenAiKeyStatus {
+            stored: true,
+            available: true,
+            source: "keychain",
+            hint: openai_key_hint(&key),
+        };
+    }
+
+    match std::env::var("OPENAI_API_KEY") {
+        Ok(key) if !key.trim().is_empty() => OpenAiKeyStatus {
+            stored: false,
+            available: true,
+            source: "environment",
+            hint: openai_key_hint(key.trim()),
+        },
+        _ => OpenAiKeyStatus {
+            stored: false,
+            available: false,
+            source: "none",
+            hint: None,
+        },
+    }
+}
+
+#[tauri::command]
+fn openai_api_key_status() -> OpenAiKeyStatus {
+    build_openai_key_status()
+}
+
+#[tauri::command]
+fn set_openai_api_key(key: String) -> Result<OpenAiKeyStatus, String> {
+    let trimmed = key.trim();
+
+    if trimmed.is_empty() {
+        return Err("An API key is required.".to_string());
+    }
+
+    // A length floor catches the common paste accidents -- a truncated
+    // selection, or the label rather than the value. Deliberately no prefix
+    // check: OpenAI has shipped several key formats and rejecting an
+    // unfamiliar but valid one is worse than letting the API say no.
+    if trimmed.len() < 20 {
+        return Err("That does not look like a complete API key.".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        security_framework::passwords::set_generic_password(
+            OPENAI_KEYCHAIN_SERVICE,
+            OPENAI_KEYCHAIN_ACCOUNT,
+            trimmed.as_bytes(),
+        )
+        .map_err(|error| format!("Could not save the API key to the Keychain: {error}"))?;
+        Ok(build_openai_key_status())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Storing an API key is only supported on macOS.".to_string())
+    }
+}
+
+#[tauri::command]
+fn clear_openai_api_key() -> Result<OpenAiKeyStatus, String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Deleting an entry that was never created is success, not an error,
+        // so clearing when nothing is stored stays silent.
+        match security_framework::passwords::delete_generic_password(
+            OPENAI_KEYCHAIN_SERVICE,
+            OPENAI_KEYCHAIN_ACCOUNT,
+        ) {
+            Ok(()) => Ok(build_openai_key_status()),
+            Err(_) if read_stored_openai_api_key().is_none() => {
+                Ok(build_openai_key_status())
+            }
+            Err(error) => Err(format!("Could not remove the API key: {error}")),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(build_openai_key_status())
+    }
+}
+
 fn transcribe_voice_capture_with_openai(
     audio_bytes: Vec<u8>,
     request: &VoiceTranscriptionRequest,
 ) -> Result<VoiceTranscriptionResponse, String> {
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .map_err(|_| "OPENAI_API_KEY is not set for native voice transcription".to_string())?;
+    let api_key = resolve_openai_api_key()?;
     let endpoint = std::env::var("TOKI_TRANSCRIPTION_URL")
         .unwrap_or_else(|_| "https://api.openai.com/v1/audio/transcriptions".to_string());
     let model = std::env::var("TOKI_TRANSCRIPTION_MODEL")
@@ -3191,8 +3351,13 @@ pub fn run() {
                 let _ = debug.hide();
             }
 
+            if let Some(preferences) = app.get_webview_window("preferences") {
+                let _ = preferences.hide();
+            }
+
             let tray_menu = MenuBuilder::new(app)
                 .text("open_settings", "Open Toki")
+                .text("open_preferences", "Preferences…")
                 .text("open_debug", "Open Debug")
                 .separator()
                 .text("quit", "Quit Toki")
@@ -3207,6 +3372,12 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open_settings" => {
                         show_settings_window(app);
+                    }
+                    "open_preferences" => {
+                        if let Some(window) = app.get_webview_window("preferences") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
                     }
                     "open_debug" => {
                         if let Some(window) = app.get_webview_window("debug") {
@@ -3292,6 +3463,9 @@ pub fn run() {
             set_top_utility_mode,
             toki_debug_export_status,
             clear_toki_debug_export,
+            openai_api_key_status,
+            set_openai_api_key,
+            clear_openai_api_key,
             transcribe_voice_capture,
             write_toki_debug_export
         ])

@@ -186,6 +186,14 @@ import {
   shouldClearDiagnosticsOnChange,
   type DiagnosticsSettings,
 } from "./diagnosticsSettings";
+import {
+  clearOpenAiKey,
+  describeOpenAiKeyStatus,
+  getOpenAiKeyStatus,
+  setOpenAiKey,
+  unknownOpenAiKeyStatus,
+  type OpenAiKeyStatus,
+} from "./openAiKey";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
@@ -640,6 +648,7 @@ function getTokiTopStatusModel({
   wristRollLock,
   cameraShutdown,
   cameraReframingActive,
+  handLandmarkerFailed,
   splitPhase,
   pointerLock,
   pointerLockFeedback,
@@ -657,6 +666,7 @@ function getTokiTopStatusModel({
   wristRollLock: GestureRuntimeDiagnostics["wristRollLock"];
   cameraShutdown: GestureRuntimeDiagnostics["cameraShutdown"];
   cameraReframingActive: boolean;
+  handLandmarkerFailed: boolean;
   splitPhase: GestureRuntimeDiagnostics["split"]["phase"];
   pointerLock: PointerLockSnapshot | null;
   pointerLockFeedback: GesturePointerLockFeedback;
@@ -676,6 +686,23 @@ function getTokiTopStatusModel({
       message:
         safetyDecision?.message ??
         "Choose Show target to reveal the guidance marker. Toki will not click it.",
+    };
+  }
+
+  // Ranked above even the re-framing warning: if the hand tracking model never
+  // loaded, no gesture can be recognised at all, and every other explanation
+  // would be misleading.
+  //
+  // This state was previously visible only in the debug window, which is not
+  // shipped, so a model that failed to load looked to a user exactly like a
+  // hand Toki could not see. A content security policy that blocked the
+  // WebAssembly would fail in precisely this silent way.
+  if (handLandmarkerFailed) {
+    return {
+      mode: "warning",
+      label: "Gesture tracking unavailable",
+      message:
+        "Toki could not start hand tracking. Restart Toki, and if it keeps happening the app may need reinstalling.",
     };
   }
 
@@ -2317,6 +2344,11 @@ function OverlayWindowApp() {
       gesturesEnabled: gestureRuntime.enabled,
       cameraStatus: alwaysOnGestureRuntime.camera.status,
     }),
+    // Only worth saying while gestures are meant to be running; otherwise the
+    // model has simply not been asked to load yet.
+    handLandmarkerFailed:
+      gestureRuntime.enabled &&
+      alwaysOnGestureRuntime.diagnostics.handLandmarkerStatus === "error",
     splitPhase: alwaysOnGestureRuntime.diagnostics.split.phase,
     pointerLock: gesturePointerLock,
     pointerLockFeedback: gesturePointerLockFeedback,
@@ -7833,9 +7865,155 @@ function DebugWindowApp() {
   );
 }
 
+function PreferencesWindowApp() {
+  const [keyStatus, setKeyStatus] = useState<OpenAiKeyStatus>(
+    unknownOpenAiKeyStatus,
+  );
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [diagnosticsSettings, setDiagnosticsSettings] =
+    useState<DiagnosticsSettings>(loadDiagnosticsSettings);
+
+  useEffect(() => {
+    getOpenAiKeyStatus()
+      .then(setKeyStatus)
+      .catch(() => setKeyStatus(unknownOpenAiKeyStatus));
+  }, []);
+
+  async function saveKey() {
+    setKeyBusy(true);
+    setKeyError(null);
+    try {
+      setKeyStatus(await setOpenAiKey(keyDraft));
+      // Clearing the field the moment it is stored keeps the secret from
+      // sitting in the DOM for the rest of the session.
+      setKeyDraft("");
+    } catch (error) {
+      setKeyError(String(error));
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
+  async function removeKey() {
+    setKeyBusy(true);
+    setKeyError(null);
+    try {
+      setKeyStatus(await clearOpenAiKey());
+    } catch (error) {
+      setKeyError(String(error));
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
+  function applyDiagnosticsSettings(next: DiagnosticsSettings) {
+    const normalized = normalizeDiagnosticsSettings(next);
+    setDiagnosticsSettings(normalized);
+    emitTo("overlay", "toki://overlay-command", {
+      type: "set-diagnostics-settings",
+      settings: normalized,
+    } satisfies OverlayCommand).catch(() => undefined);
+  }
+
+  return (
+    <main className="debug-shell" aria-label="Toki preferences">
+      <section className="debug-section">
+        <h2>Voice</h2>
+        <p className="debug-muted">{describeOpenAiKeyStatus(keyStatus)}</p>
+        <label>
+          OpenAI API key
+          <input
+            type="password"
+            value={keyDraft}
+            placeholder={keyStatus.stored ? "Replace saved key" : "sk-…"}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setKeyDraft(event.target.value)}
+          />
+        </label>
+        <div className="debug-section-header-row">
+          <button
+            type="button"
+            disabled={keyBusy || keyDraft.trim().length === 0}
+            onClick={() => void saveKey()}
+          >
+            {keyStatus.stored ? "Replace key" : "Save key"}
+          </button>
+          <button
+            type="button"
+            disabled={keyBusy || !keyStatus.stored}
+            onClick={() => void removeKey()}
+          >
+            Remove key
+          </button>
+        </div>
+        {keyError != null && <p className="debug-muted">{keyError}</p>}
+        <p className="debug-muted">
+          The key is stored in your macOS Keychain and sent only to OpenAI when
+          you use voice. Toki never writes it to diagnostics or logs.
+        </p>
+      </section>
+
+      <section className="debug-section">
+        <h2>Diagnostics</h2>
+        <p className="debug-muted">
+          Off by default. Toki writes nothing to disk unless you turn these on.
+        </p>
+        <label>
+          <input
+            type="checkbox"
+            checked={diagnosticsSettings.diagnosticsEnabled}
+            onChange={(event) =>
+              applyDiagnosticsSettings({
+                ...diagnosticsSettings,
+                diagnosticsEnabled: event.target.checked,
+              })
+            }
+          />{" "}
+          Share diagnostics — saves Toki&apos;s internal state locally to help
+          with support. Passwords and keys are removed.
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={diagnosticsSettings.screenCapturesEnabled}
+            disabled={!diagnosticsSettings.diagnosticsEnabled}
+            onChange={(event) =>
+              applyDiagnosticsSettings({
+                ...diagnosticsSettings,
+                screenCapturesEnabled: event.target.checked,
+              })
+            }
+          />{" "}
+          Include screen captures — also saves a picture of your screen. Only
+          turn this on if asked to.
+        </label>
+        <div className="debug-section-header-row">
+          <button
+            type="button"
+            onClick={() => {
+              emitTo("overlay", "toki://overlay-command", {
+                type: "clear-diagnostics",
+              } satisfies OverlayCommand).catch(() => undefined);
+            }}
+          >
+            Delete collected diagnostics
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function App() {
   if (currentWindowLabel === "settings") {
     return <SettingsWindowApp />;
+  }
+
+  if (currentWindowLabel === "preferences") {
+    return <PreferencesWindowApp />;
   }
 
   if (currentWindowLabel === "debug") {

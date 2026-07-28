@@ -45,6 +45,20 @@
         "visible": false
       },
       {
+        "label": "preferences",
+        "title": "Toki Preferences",
+        "width": 520,
+        "height": 460,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "resizable": true,
+        "shadow": true,
+        "skipTaskbar": false,
+        "visible": false
+      },
+      {
         "label": "debug",
         "title": "Toki Debug",
         "width": 760,
@@ -60,7 +74,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; media-src 'self' blob: mediastream:; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {
