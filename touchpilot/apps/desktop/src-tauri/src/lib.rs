@@ -2031,6 +2031,21 @@ fn capture_screenshot() -> Result<ScreenshotCapture, String> {
     result
 }
 
+/// Absolute path to a guidance CLI, for development only.
+///
+/// Deliberately an environment variable rather than a stored setting: a
+/// Finder-launched app inherits no environment, so this cannot be switched on
+/// by an ordinary user, and there is no UI anyone could be talked into using.
+const DEVELOPER_CLI_BIN_ENV: &str = "TOKI_DEVELOPER_CLI_BIN";
+
+/// Absolute path to a local Whisper build, for development only. Same rules as
+/// `DEVELOPER_CLI_BIN_ENV`.
+const WHISPER_BIN_ENV: &str = "WHISPER_CPP_BIN";
+
+/// Absolute path to the Whisper model file. Resolved the same way as the binary
+/// so the feature is configured entirely explicitly or not at all.
+const WHISPER_MODEL_ENV: &str = "WHISPER_CPP_MODEL";
+
 const TOKI_DEBUG_HISTORY_LIMIT: usize = 160;
 const TOKI_DEBUG_SNAPSHOT_MAX_BYTES: usize = 5_000_000;
 const TOKI_DEBUG_CAPTURE_MAX_BYTES: usize = 16_000_000;
@@ -2671,47 +2686,58 @@ fn native_voice_capture_reset(store: State<'_, Mutex<VoiceCaptureStore>>) -> Res
     Ok(())
 }
 
-fn find_codex_binary() -> Result<PathBuf, String> {
-    if let Ok(path) = std::env::var("TOKI_CODEX_BIN") {
-        let candidate = PathBuf::from(path);
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
+/// Resolve a helper executable that an operator has deliberately named.
+///
+/// Toki used to *search* for its helper binaries: the guidance CLI in
+/// `~/.local/bin`, `~/.npm-global/bin`, `/opt/homebrew/bin` and `PATH`; the
+/// local Whisper build in `~/tools/whisper.cpp` and `PATH`. Those locations are
+/// writable without sudo, and macOS attributes permissions to the responsible
+/// process -- so anything Toki launched ran inside Toki's camera, microphone,
+/// and screen-recording grants. Any program running as the user could drop a
+/// file with the right name into one of them and have its own code read the
+/// screen, a privilege it could never have obtained directly.
+///
+/// Searching is the vulnerability, not the specific directories. Renaming the
+/// binary changes nothing, and validating whatever a search turned up is not a
+/// fix either -- these tools ship as unsigned scripts, so a signature
+/// requirement would reject the real one and teach us to relax the check.
+///
+/// So nothing is searched for. The operator names an absolute path or the
+/// feature does not exist. A GUI application launched from Finder inherits no
+/// environment, so these variables are absent for every ordinary user and both
+/// paths are unreachable by construction -- the same mechanism that made the
+/// old `OPENAI_API_KEY` lookup fail for everyone, used deliberately this time.
+fn resolve_operator_binary(env_name: &str, purpose: &str) -> Result<PathBuf, String> {
+    let configured = std::env::var(env_name).map_err(|_| {
+        format!(
+            "{purpose} is a developer-only path and is not configured. \
+             Set {env_name} to an absolute path and launch Toki from a terminal."
+        )
+    })?;
+
+    let candidate = PathBuf::from(configured.trim());
+
+    // A relative path resolves against Toki's working directory, which
+    // reintroduces exactly the ambiguity this function exists to remove.
+    if !candidate.is_absolute() {
+        return Err(format!(
+            "{env_name} must be an absolute path, not {}",
+            candidate.display()
+        ));
     }
 
-    if let Ok(home) = std::env::var("HOME") {
-        for relative in [
-            ".local/bin/codex",
-            ".npm-global/bin/codex",
-            "Library/pnpm/codex",
-        ] {
-            let candidate = PathBuf::from(&home).join(relative);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
+    if !candidate.is_file() {
+        return Err(format!(
+            "{env_name} does not point at a file: {}",
+            candidate.display()
+        ));
     }
 
-    for candidate in [
-        PathBuf::from("/opt/homebrew/bin/codex"),
-        PathBuf::from("/usr/local/bin/codex"),
-    ] {
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
+    Ok(candidate)
+}
 
-    let output = Command::new("which")
-        .arg("codex")
-        .output()
-        .map_err(|error| format!("failed to search for Codex CLI: {error}"))?;
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if output.status.success() && !path.is_empty() {
-        return Ok(PathBuf::from(path));
-    }
-
-    Err("Codex CLI was not found. Install Codex and sign in with your ChatGPT account.".to_string())
+fn find_developer_cli_binary() -> Result<PathBuf, String> {
+    resolve_operator_binary(DEVELOPER_CLI_BIN_ENV, "CLI guidance")
 }
 
 fn truncate_process_detail(value: &str) -> String {
@@ -2811,7 +2837,7 @@ fn run_codex_vision_request(request: CodexVisionRequest) -> Result<CodexVisionRe
         fs::write(&schema_path, request.output_schema)
             .map_err(|error| format!("failed to write Codex output schema: {error}"))?;
 
-        let codex_bin = find_codex_binary()?;
+        let codex_bin = find_developer_cli_binary()?;
         let timeout =
             Duration::from_millis(request.timeout_ms.unwrap_or(25_000).clamp(5_000, 60_000));
         let mut command = Command::new(codex_bin);
@@ -3103,62 +3129,28 @@ fn transcribe_voice_capture_with_openai(
     })
 }
 
+/// Locate a local Whisper build, if an operator has named one.
+///
+/// Same rule as the guidance CLI above, and for the same reason: this used to
+/// search `~/tools/whisper.cpp/build/bin` and then `PATH` for `whisper-cli`,
+/// `whisper-cpp`, or `whisper`. Both are writable without sudo, so a planted
+/// file would have been executed inside Toki's microphone and screen-recording
+/// grants. See `resolve_operator_binary` for the full reasoning.
 fn find_local_whisper_binary() -> Result<String, String> {
-    if let Ok(path) = std::env::var("WHISPER_CPP_BIN") {
-        return Ok(path);
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        let local_path = PathBuf::from(home)
-            .join("tools")
-            .join("whisper.cpp")
-            .join("build")
-            .join("bin")
-            .join("whisper-cli");
-
-        if local_path.exists() {
-            return Ok(local_path.to_string_lossy().to_string());
-        }
-    }
-
-    for candidate in ["whisper-cli", "whisper-cpp", "whisper"] {
-        let status = Command::new("which")
-            .arg(candidate)
-            .output()
-            .map_err(|error| format!("failed to search for local Whisper binary: {error}"))?;
-
-        if status.status.success() {
-            let path = String::from_utf8_lossy(&status.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Ok(path);
-            }
-        }
-    }
-
-    Err("local Whisper binary not found. Build whisper.cpp or set WHISPER_CPP_BIN.".to_string())
+    resolve_operator_binary(WHISPER_BIN_ENV, "Local Whisper transcription")
+        .map(|path| path.to_string_lossy().to_string())
 }
 
+/// Locate the Whisper model an operator has named.
+///
+/// Lower stakes than the binary beside it -- this is a data file handed to a
+/// program the operator already chose explicitly, not something Toki executes.
+/// It is resolved the same way anyway: half a feature configured explicitly and
+/// half of it guessed from a writable directory is the kind of asymmetry that
+/// invites someone to reintroduce the searching later.
 fn local_whisper_model_path() -> Result<String, String> {
-    if let Ok(path) = std::env::var("WHISPER_CPP_MODEL") {
-        return Ok(path);
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        let local_path = PathBuf::from(home)
-            .join("tools")
-            .join("whisper.cpp")
-            .join("models")
-            .join("ggml-base.en.bin");
-
-        if local_path.exists() {
-            return Ok(local_path.to_string_lossy().to_string());
-        }
-    }
-
-    Err(
-        "WHISPER_CPP_MODEL is not set and no ~/tools/whisper.cpp base.en model was found."
-            .to_string(),
-    )
+    resolve_operator_binary(WHISPER_MODEL_ENV, "Local Whisper transcription")
+        .map(|path| path.to_string_lossy().to_string())
 }
 
 fn validate_voice_transcript(text: &str) -> Result<(), String> {

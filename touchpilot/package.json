@@ -63,6 +63,7 @@
     "test:diagnostics-settings": "node --import tsx --test scripts/diagnostics-settings.test.mjs",
     "test:openai-key": "node --import tsx --test scripts/openai-key-storage.test.mjs",
     "test:csp": "node --test scripts/content-security-policy.test.mjs",
+    "test:developer-cli-gate": "node --test scripts/developer-cli-gate.test.mjs",
     "test:app-updates": "node --import tsx --test scripts/app-updates.test.mjs",
     "test:api": "node --import tsx --test scripts/api-service.test.mjs",
     "test:version-consistency": "node --test scripts/version-consistency.test.mjs",
