@@ -25,7 +25,11 @@ export type RateLimitDecision = {
 };
 
 export type RateLimiter = {
-  take(key: string, now?: number): RateLimitDecision;
+  /**
+   * `limit` overrides the configured ceiling for this caller, so a paid tier
+   * gets its own allowance without a second limiter instance.
+   */
+  take(key: string, now?: number, limit?: number): RateLimitDecision;
 };
 
 const windowMs = 60_000;
@@ -36,7 +40,7 @@ export function createInMemoryRateLimiter(
   const hits = new Map<string, number[]>();
 
   return {
-    take(key, now = Date.now()) {
+    take(key, now = Date.now(), limit = requestsPerMinute) {
       const cutoff = now - windowMs;
       // Filtering on read rather than on a timer keeps this dependency-free and
       // means an idle key costs nothing until it is used again.
@@ -44,7 +48,7 @@ export function createInMemoryRateLimiter(
         (timestamp) => timestamp > cutoff,
       );
 
-      if (recent.length >= requestsPerMinute) {
+      if (recent.length >= limit) {
         const oldest = recent[0] ?? now;
         return {
           allowed: false,
@@ -61,7 +65,7 @@ export function createInMemoryRateLimiter(
 
       return {
         allowed: true,
-        remaining: Math.max(0, requestsPerMinute - recent.length),
+        remaining: Math.max(0, limit - recent.length),
         retryAfterSeconds: 0,
       };
     },

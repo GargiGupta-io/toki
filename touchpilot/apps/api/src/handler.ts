@@ -16,6 +16,18 @@ import {
   readLicenceKey,
   type LicenceStore,
 } from "./licences";
+import {
+  tokenRejectionMessages,
+  verifyAccessToken,
+  type VerifiedUser,
+} from "./auth";
+import {
+  freeSubscription,
+  isPaid,
+  tierRequestsPerMinute,
+  type Subscription,
+  type SubscriptionStore,
+} from "./subscriptions";
 import type { RateLimiter } from "./rateLimit";
 
 /**
@@ -45,7 +57,14 @@ export type ApiResponse = {
 
 export type HandlerDependencies = {
   config: ServiceConfig;
-  licences: LicenceStore;
+  /**
+   * Verifies the signature on the caller's access token. Absent only in the
+   * local development mode where no Supabase project is configured.
+   */
+  jwtSecret?: string;
+  subscriptions?: SubscriptionStore;
+  /** Development-only fallback while there is no auth project configured. */
+  licences?: LicenceStore;
   rateLimiter: RateLimiter;
   /**
    * Calls the model. Absent until credentials exist, which is what fixture mode
@@ -72,6 +91,71 @@ function unavailable(error: string): ApiResponse {
     error,
     providerName: "toki-api",
   } satisfies GuidanceProviderResponse);
+}
+
+type CallerResult =
+  | { ok: true; user: VerifiedUser; subscription: Subscription }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Establish who is calling, and what they are entitled to.
+ *
+ * A verified token is the only thing that names a user. Where no auth project
+ * is configured — local development against fixtures — a development licence
+ * key stands in, and that path is unreachable in a real deployment because
+ * `jwtSecret` is always present there.
+ */
+async function identifyCaller(
+  request: ApiRequest,
+  { jwtSecret, subscriptions, licences }: HandlerDependencies,
+): Promise<CallerResult> {
+  const bearer = readLicenceKey(request.headers);
+
+  if (jwtSecret == null) {
+    if (licences == null) {
+      return { ok: false, status: 503, error: "Authentication is not configured." };
+    }
+
+    const check = await checkLicence(bearer, licences);
+    if (!check.valid) {
+      // 401 for "who are you", 403 for "I know who you are and no".
+      return {
+        ok: false,
+        status: check.reason === "missing" ? 401 : 403,
+        error: licenceRejectionMessages[check.reason],
+      };
+    }
+
+    return {
+      ok: true,
+      user: { id: check.licence.key, email: null },
+      subscription: freeSubscription,
+    };
+  }
+
+  const verification = verifyAccessToken(bearer, jwtSecret);
+
+  if (!verification.valid) {
+    // 401 for "who are you"; a token that is present but wrong is still an
+    // identity failure rather than a permission one.
+    return {
+      ok: false,
+      status: 401,
+      error: tokenRejectionMessages[verification.reason],
+    };
+  }
+
+  const subscription =
+    subscriptions == null
+      ? freeSubscription
+      : await subscriptions.forUser(verification.user.id);
+
+  return { ok: true, user: verification.user, subscription };
+}
+
+/** Whether a paid feature may run for this caller. */
+export function requiresUpgrade(subscription: Subscription): boolean {
+  return !isPaid(subscription);
 }
 
 export async function handleApiRequest(
@@ -105,20 +189,23 @@ export async function handleApiRequest(
     });
   }
 
-  const licenceCheck = await checkLicence(
-    readLicenceKey(request.headers),
-    licences,
-  );
+  const caller = await identifyCaller(request, dependencies);
 
-  if (!licenceCheck.valid) {
-    // 401 for "who are you", 403 for "I know who you are and no".
-    const status = licenceCheck.reason === "missing" ? 401 : 403;
-    return json(status, {
-      error: licenceRejectionMessages[licenceCheck.reason],
-    });
+  if (!caller.ok) {
+    return json(caller.status, { error: caller.error });
   }
 
-  const decision = rateLimiter.take(licenceCheck.licence.key);
+  // Rate limited per user, because the account is what maps to a payer. An
+  // address-based limit would punish an office behind one address and do
+  // nothing about credentials shared publicly.
+  const decision = rateLimiter.take(
+    caller.user.id,
+    undefined,
+    Math.min(
+      config.limits.requestsPerMinute,
+      tierRequestsPerMinute[caller.subscription.tier],
+    ),
+  );
   if (!decision.allowed) {
     return {
       status: 429,

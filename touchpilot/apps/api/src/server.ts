@@ -4,6 +4,7 @@ import { describeServiceMode, loadServiceConfig } from "./config";
 import { handleApiRequest, type ApiRequest } from "./handler";
 import { createStubLicenceStore } from "./licences";
 import { createInMemoryRateLimiter } from "./rateLimit";
+import { createSupabaseSubscriptionStore } from "./subscriptions";
 
 /**
  * Node adapter for the handler.
@@ -14,9 +15,22 @@ import { createInMemoryRateLimiter } from "./rateLimit";
  */
 
 const config = loadServiceConfig();
+
+// Real authentication whenever a project is configured. The development
+// licence path stays reachable only while it is not, so a deployment cannot
+// accidentally fall back to it: the secret is always present there.
+const jwtSecret = process.env.SUPABASE_JWT_SECRET?.trim() || undefined;
+const supabaseUrl = process.env.SUPABASE_URL?.trim();
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+
 const dependencies = {
   config,
-  licences: createStubLicenceStore(),
+  jwtSecret,
+  subscriptions:
+    supabaseUrl && serviceRoleKey
+      ? createSupabaseSubscriptionStore({ supabaseUrl, serviceRoleKey })
+      : undefined,
+  licences: jwtSecret == null ? createStubLicenceStore() : undefined,
   rateLimiter: createInMemoryRateLimiter(config.limits.requestsPerMinute),
 };
 
@@ -73,4 +87,9 @@ const server = createServer(async (incoming, outgoing) => {
 server.listen(config.port, () => {
   console.log(`Toki API listening on http://127.0.0.1:${config.port}`);
   console.log(describeServiceMode(config));
+  console.log(
+    jwtSecret == null
+      ? "auth: development licence keys (no SUPABASE_JWT_SECRET set)"
+      : "auth: verifying Supabase access tokens",
+  );
 });

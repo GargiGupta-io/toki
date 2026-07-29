@@ -66,6 +66,7 @@
     "test:developer-cli-gate": "node --test scripts/developer-cli-gate.test.mjs",
     "test:app-updates": "node --import tsx --test scripts/app-updates.test.mjs",
     "test:api": "node --import tsx --test scripts/api-service.test.mjs",
+    "test:api-auth": "node --import tsx --test scripts/api-auth.test.mjs",
     "test:api-schema": "node --test scripts/api-schema.test.mjs",
     "test:version-consistency": "node --test scripts/version-consistency.test.mjs",
     "test:performance-budget": "node --test scripts/performance-budget.test.mjs",
