@@ -23,9 +23,35 @@ export type HandTrackingState = {
   tracks: Record<HandTrackId, HandTrackHistory>;
 };
 
+/**
+ * Why each detection got the track id it did.
+ *
+ * A hand that reappears with a *new* id looks identical to a new hand, so the
+ * pointer stops treating it as the one it was following and has to re-acquire
+ * the pose from scratch. From the outside that reads as Toki letting go while
+ * your hand is plainly in frame, and nothing in the pointer's own state says
+ * why. This records the decision at the point it is made.
+ */
+export type HandTrackAssignmentDiagnostic = {
+  trackId: HandTrackId;
+  /** False when a fresh id was minted — the case that resets the pointer. */
+  reusedExistingTrack: boolean;
+  /**
+   * Which matcher accepted it. `lenient` is the single-hand reacquisition path
+   * with its wider distance bound; `strict` is the general assignment pass.
+   */
+  matchedBy: "lenient" | "strict" | "new";
+  /** Distance to the matched track, against the bound that applied. */
+  matchDistance: number | null;
+  distanceLimit: number | null;
+  /** How long that track had been unseen. Compare with the reacquisition grace. */
+  msSinceTrackLastSeen: number | null;
+};
+
 export type HandTrackingResult = {
   state: HandTrackingState;
   frame: MultiHandLandmarkFrame;
+  assignments: HandTrackAssignmentDiagnostic[];
 };
 
 export const maxTrackedHands = 2;
@@ -89,11 +115,24 @@ export function advanceHandTracking({
   const nextTracks: Record<HandTrackId, HandTrackHistory> = { ...liveTracks };
   let nextTrackNumber = previousState.nextTrackNumber;
   const hands: TrackedHandLandmarkFrame[] = [];
+  const assignmentDiagnostics: HandTrackAssignmentDiagnostic[] = [];
 
   for (const current of currentDetections) {
-    const matchedTrack = assignments.get(current.detection);
+    const decision = assignments.get(current.detection);
+    const matchedTrack = decision?.track;
     const trackId = matchedTrack?.trackId ?? `hand-${nextTrackNumber++}`;
     const sequence = (matchedTrack?.sequence ?? 0) + 1;
+
+    assignmentDiagnostics.push({
+      trackId,
+      reusedExistingTrack: matchedTrack != null,
+      matchedBy: decision?.matchedBy ?? "new",
+      matchDistance: decision?.distance ?? null,
+      distanceLimit: decision?.distanceLimit ?? null,
+      msSinceTrackLastSeen:
+        matchedTrack != null ? nowMs - matchedTrack.lastSeenAtMs : null,
+    });
+
     const velocity = matchedTrack
       ? {
           x: current.center.x - matchedTrack.center.x,
@@ -129,6 +168,10 @@ export function advanceHandTracking({
 
   hands.sort((left, right) => left.trackId.localeCompare(right.trackId));
 
+  assignmentDiagnostics.sort((left, right) =>
+    left.trackId.localeCompare(right.trackId),
+  );
+
   return {
     state: {
       nextTrackNumber,
@@ -142,6 +185,7 @@ export function advanceHandTracking({
       mirrored,
       hands,
     },
+    assignments: assignmentDiagnostics,
   };
 }
 
@@ -168,6 +212,13 @@ export function getRetainedHandTrackIds(
   return Object.keys(state.tracks).sort();
 }
 
+type AssignmentDecision = {
+  track: HandTrackHistory;
+  matchedBy: "lenient" | "strict";
+  distance: number;
+  distanceLimit: number;
+};
+
 function assignDetectionsToTracks(
   detections: Array<{
     detection: HandLandmarkFrame;
@@ -175,8 +226,8 @@ function assignDetectionsToTracks(
   }>,
   tracks: Record<HandTrackId, HandTrackHistory>,
   nowMs: number,
-): Map<HandLandmarkFrame, HandTrackHistory> {
-  const assignment = new Map<HandLandmarkFrame, HandTrackHistory>();
+): Map<HandLandmarkFrame, AssignmentDecision> {
+  const assignment = new Map<HandLandmarkFrame, AssignmentDecision>();
   const usedTrackIds = new Set<HandTrackId>();
   const liveTrackList = Object.values(tracks);
 
@@ -192,7 +243,12 @@ function assignDetectionsToTracks(
       distance <= singleHandReacquisitionDistance &&
       handednessCanMatch(current.detection.handedness, track.handedness)
     ) {
-      assignment.set(current.detection, track);
+      assignment.set(current.detection, {
+        track,
+        matchedBy: "lenient",
+        distance,
+        distanceLimit: singleHandReacquisitionDistance,
+      });
       return assignment;
     }
   }
@@ -219,7 +275,12 @@ function assignDetectionsToTracks(
       continue;
     }
 
-    assignment.set(candidate.current.detection, candidate.track);
+    assignment.set(candidate.current.detection, {
+      track: candidate.track,
+      matchedBy: "strict",
+      distance: candidate.distance,
+      distanceLimit: maximumAssignmentDistance,
+    });
     usedTrackIds.add(candidate.track.trackId);
   }
 

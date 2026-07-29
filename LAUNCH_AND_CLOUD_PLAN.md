@@ -276,6 +276,23 @@ Replaces the CLI dependency on the shipping path.
 
 ---
 
+## Phase K2 — Retire the Preferences window (~1h)
+
+The Preferences window exists because credentials have to be entered by hand
+while there is no backend. Once the hosted service holds the model credentials,
+a user has nothing to type, and a window full of file paths and API keys is
+developer surface shipped to people who should never see it.
+
+**Do.** Fold the controls a user genuinely needs — the diagnostics consents,
+sign-in, subscription state — into the existing settings panel near the notch.
+Drop the API key field, the whisper paths, and the update check, or keep them
+behind a developer-only route.
+
+Depends on Phase I: the fields cannot go until the backend supplies what they
+configure.
+
+---
+
 ## Phase L — Presentation (~2h)
 
 For a portfolio project this is the highest-leverage work, and it is easy to

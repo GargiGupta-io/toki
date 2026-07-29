@@ -104,6 +104,18 @@ function printSummary(envelope, directory, history) {
   });
   showValue("Point", diagnostics.pointPose);
   showValue("Pointer", diagnostics.pointer);
+  showValue(
+    "Hand track assignments",
+    (diagnostics.handTrackAssignments ?? []).map((assignment) => ({
+      trackId: assignment.trackId,
+      // "new" means a fresh id was minted, which the pointer cannot follow
+      // through -- it stops tracking and has to re-acquire the pose.
+      matchedBy: assignment.matchedBy,
+      msSinceTrackLastSeen: assignment.msSinceTrackLastSeen,
+      distance: assignment.matchDistance,
+      limit: assignment.distanceLimit,
+    })),
+  );
   showValue("Wrist-roll lock", {
     pose: diagnostics.wristRollPose?.label,
     phase: diagnostics.wristRollLock?.phase,

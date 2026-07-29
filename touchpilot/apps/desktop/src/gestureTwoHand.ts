@@ -113,7 +113,28 @@ export function advanceGestureHandRoles({
   // visible. A live trace showed 33 such frames.
   const currentHands =
     confidentHands.length > 0 ? confidentHands : frame.hands;
-  const pointerTrackId = retained.has(previousState.pointerTrackId ?? "")
+  // A track stays retained for two seconds after its hand leaves so that a
+  // blink does not hand the pointer to the other hand. Keeping the role pinned
+  // to an absent holder has a cost though: pointerHand is resolved from the
+  // hands in *this* frame, so the classifier receives null while a hand is
+  // plainly visible, and any hand that does appear is pushed into the control
+  // role by the filter below -- where it can never become the pointer. A live
+  // trace caught 54 consecutive frames reporting no_hand with a hand in view.
+  //
+  // The hand that was *already* the control hand is a different case: it is
+  // mid-gesture with a job of its own, and promoting it would be worse than
+  // waiting. So an absent holder only blocks hands that were already spoken
+  // for; a hand that arrived free takes the role.
+  const previousPointerPresent = currentHands.some(
+    (hand) => hand.trackId === previousState.pointerTrackId,
+  );
+  const unclaimedHands = currentHands.filter(
+    (hand) => hand.trackId !== previousState.controlTrackId,
+  );
+  const keepPreviousPointer =
+    retained.has(previousState.pointerTrackId ?? "") &&
+    (previousPointerPresent || unclaimedHands.length === 0);
+  const pointerTrackId = keepPreviousPointer
     ? previousState.pointerTrackId
     : choosePointerHand(currentHands, preferredPointerHand, minDetectionConfidence)
         ?.trackId ?? null;

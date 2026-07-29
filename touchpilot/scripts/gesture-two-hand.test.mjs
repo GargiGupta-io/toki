@@ -177,6 +177,58 @@ test("pointer and control roles stay stable and the control hand is never promot
   assert.equal(pointerMissing.controlHand.trackId, "control-hand");
 });
 
+test("a free hand takes the pointer role when its holder is gone", () => {
+  // The counterpart to the test above. A departed pointer keeps its track for
+  // two seconds, and that must not strand a hand which arrives with no job of
+  // its own: the role stays pinned to the absent holder, the new hand is pushed
+  // into the control slot by the availability filter, and the pose classifier
+  // is handed null every frame. A live trace caught 54 consecutive frames
+  // reporting no_hand with a hand plainly in view, for 1981 ms against the
+  // 2000 ms retention.
+  const first = createSyntheticTrackedHand({
+    trackId: "first-hand",
+    handedness: "right",
+    pose: "point",
+    centerX: 0.3,
+  });
+  const started = advanceGestureHandRoles({
+    previousState: createInitialGestureHandRoleState(),
+    frame: createSyntheticMultiHandFrame({ hands: [first] }),
+    retainedTrackIds: ["first-hand"],
+    preferredPointerHand: "right",
+    minDetectionConfidence: 0.6,
+  });
+  assert.equal(started.state.pointerTrackId, "first-hand");
+  assert.equal(started.state.controlTrackId, null);
+
+  // The original leaves — still retained — and a different hand arrives.
+  const second = createSyntheticTrackedHand({
+    trackId: "second-hand",
+    handedness: "right",
+    pose: "point",
+    centerX: 0.6,
+    frameId: 2,
+  });
+  const handedOver = advanceGestureHandRoles({
+    previousState: started.state,
+    frame: createSyntheticMultiHandFrame({ frameId: 2, hands: [second] }),
+    retainedTrackIds: ["first-hand", "second-hand"],
+    preferredPointerHand: "right",
+    minDetectionConfidence: 0.6,
+  });
+
+  assert.equal(
+    handedOver.state.pointerTrackId,
+    "second-hand",
+    "a hand with no other role must be able to take the pointer",
+  );
+  assert.equal(
+    handedOver.pointerHand?.trackId,
+    "second-hand",
+    "the classifier must receive a hand rather than null",
+  );
+});
+
 test("two hands must join before separating can split the blob", () => {
   const pointerWide = createSyntheticTrackedHand({
     trackId: "pointer-hand",

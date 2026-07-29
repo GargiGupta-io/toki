@@ -195,6 +195,13 @@ import {
   type OpenAiKeyStatus,
 } from "./openAiKey";
 import {
+  describeLocalTranscription,
+  getOperatorSetting,
+  setOperatorSetting,
+  whisperBinarySetting,
+  whisperModelSetting,
+} from "./operatorSettings";
+import {
   checkForUpdate,
   describeUpdateState,
   downloadAndInstallUpdate,
@@ -1899,7 +1906,54 @@ function createDebugExportTransitionState(snapshot: DebugSnapshot) {
       enabled: snapshot.gestureRuntime.enabled,
       handCount: gesture.hands.length,
       pointPose: `${gesture.pointPose.label}:${gesture.pointPose.phase}`,
+      // The verdict alone cannot distinguish a classifier that is too strict
+      // from landmarks that are genuinely unusable. These are the measurements
+      // the verdict is computed from: if they hover near their thresholds and
+      // dip, the pose logic needs hysteresis on the way out; if they collapse
+      // to nonsense alongside an impossible wrist angle, the problem is
+      // upstream in inference and no threshold change would help.
+      // Which check rejected the frame. "missing_landmark" and "low_confidence"
+      // mean the pose was never measured at all, which no threshold change can
+      // fix; "not_pointing" means it was measured and judged.
+      pointInactiveReason: gesture.pointPose.inactiveReason ?? null,
+      pointMetrics:
+        gesture.pointPose.indexExtensionRatio == null
+          ? null
+          : {
+              extensionRatio: Number(
+                gesture.pointPose.indexExtensionRatio.toFixed(2),
+              ),
+              pipAngle:
+                gesture.pointPose.indexPipAngle == null
+                  ? null
+                  : Math.round(gesture.pointPose.indexPipAngle),
+              dipAngle:
+                gesture.pointPose.indexDipAngle == null
+                  ? null
+                  : Math.round(gesture.pointPose.indexDipAngle),
+              folded: gesture.pointPose.foldedFingerCount,
+              foldedNeeded: gesture.pointPose.requiredFoldedFingerCount,
+              confidence: Number(gesture.pointPose.confidence.toFixed(2)),
+            },
       pointerPhase: gesture.pointer?.phase ?? "inactive",
+      // The transition history only records a row when this object changes, so
+      // a track id that churns has to appear here or the moment the pointer
+      // loses its hand is invisible in the trace. `matchedBy` distinguishes the
+      // lenient single-hand reacquisition from the stricter general pass, which
+      // is the boundary a returning hand is suspected of falling off.
+      trackAssignments: gesture.handTrackAssignments
+        .map(
+          (assignment) =>
+            `${assignment.trackId}:${assignment.matchedBy}` +
+            (assignment.msSinceTrackLastSeen == null
+              ? ""
+              : `@${Math.round(assignment.msSinceTrackLastSeen)}ms`) +
+            (assignment.matchDistance == null
+              ? ""
+              : `/${assignment.matchDistance.toFixed(2)}of${assignment.distanceLimit?.toFixed(2)}`),
+        )
+        .join(" "),
+      pointerTrackId: gesture.pointer?.handTrackId ?? null,
       wristRollPose: gesture.wristRollPose.label,
       wristRollDegrees: gesture.wristRollLock.rotationDegrees ?? 0,
       lockPhase: gesture.wristRollLock.phase,
@@ -7889,11 +7943,31 @@ function PreferencesWindowApp() {
     ReturnType<typeof import("@tauri-apps/plugin-updater").check>
   > | null>(null);
 
+  const [whisperBinary, setWhisperBinary] = useState("");
+  const [whisperModel, setWhisperModel] = useState("");
+  const [whisperError, setWhisperError] = useState<string | null>(null);
+
   useEffect(() => {
     getOpenAiKeyStatus()
       .then(setKeyStatus)
       .catch(() => setKeyStatus(unknownOpenAiKeyStatus));
+    void getOperatorSetting(whisperBinarySetting).then((value) =>
+      setWhisperBinary(value ?? ""),
+    );
+    void getOperatorSetting(whisperModelSetting).then((value) =>
+      setWhisperModel(value ?? ""),
+    );
   }, []);
+
+  async function saveWhisperPaths() {
+    setWhisperError(null);
+    try {
+      await setOperatorSetting(whisperBinarySetting, whisperBinary);
+      await setOperatorSetting(whisperModelSetting, whisperModel);
+    } catch (error) {
+      setWhisperError(String(error));
+    }
+  }
 
   async function runUpdateCheck() {
     setUpdateState({ status: "checking" });
@@ -8016,6 +8090,44 @@ function PreferencesWindowApp() {
         <p className="debug-muted">
           The key is stored in your macOS Keychain and sent only to OpenAI when
           you use voice. Toki never writes it to diagnostics or logs.
+        </p>
+
+        <h2>Local transcription</h2>
+        <p className="debug-muted">
+          {describeLocalTranscription(
+            whisperBinary || null,
+            whisperModel || null,
+          )}
+        </p>
+        <label>
+          whisper.cpp binary
+          <input
+            type="text"
+            value={whisperBinary}
+            placeholder="/absolute/path/to/whisper-cli"
+            spellCheck={false}
+            onChange={(event) => setWhisperBinary(event.target.value)}
+          />
+        </label>
+        <label>
+          Model file
+          <input
+            type="text"
+            value={whisperModel}
+            placeholder="/absolute/path/to/ggml-base.en.bin"
+            spellCheck={false}
+            onChange={(event) => setWhisperModel(event.target.value)}
+          />
+        </label>
+        <div className="debug-section-header-row">
+          <button type="button" onClick={() => void saveWhisperPaths()}>
+            Save paths
+          </button>
+        </div>
+        {whisperError != null && <p className="debug-muted">{whisperError}</p>}
+        <p className="debug-muted">
+          Toki never searches for these — a path is used only because you
+          entered it. Leave them empty to use OpenAI instead.
         </p>
       </section>
 

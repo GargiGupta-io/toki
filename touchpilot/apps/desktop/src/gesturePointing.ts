@@ -30,10 +30,31 @@ const fallbackPointerFrameIntervalMs = 1_000 / 30;
 // genuinely lowered still clears promptly.
 export const pointerVisualRecoveryGraceMs = 500;
 
+/**
+ * Why a frame produced no pose.
+ *
+ * A live trace showed 35 consecutive frames with a hand visible, no
+ * measurements taken at all, and the pointer dead for 1.2 seconds. The verdict
+ * alone could not say whether the detection score had collapsed or the
+ * landmarks were missing, and those need different fixes.
+ */
+export type PointPoseInactiveReason =
+  /** No hand in the frame at all. */
+  | "no_hand"
+  /** A hand was detected but its score fell below the floor. */
+  | "low_confidence"
+  /** A hand was detected but a landmark the pose needs was absent. */
+  | "missing_landmark"
+  /** The palm measured zero, so every ratio would divide by zero. */
+  | "degenerate_palm"
+  /** Measured, but the pose is genuinely not a point. */
+  | "not_pointing";
+
 export type PointPoseClassification = {
   label: "none" | "point";
   phase: "inactive" | "candidate";
   confidence: number;
+  inactiveReason?: PointPoseInactiveReason;
   handTrackId: string | null;
   pointerTip: NormalizedGesturePoint | null;
   indexExtensionRatio: number | null;
@@ -52,6 +73,8 @@ export type GesturePointerCalibration = Readonly<{
   cameraMaxY: number;
   mirrorX: boolean;
   pointHoldMs: number;
+  /** How long the pose must keep failing before it is treated as over. */
+  poseExitHoldMs: number;
   trackingLossGraceMs: number;
   restingResponseMs: number;
   movingResponseMs: number;
@@ -78,6 +101,10 @@ export const defaultGesturePointerCalibration: GesturePointerCalibration =
     cameraMaxY: 1,
     mirrorX: true,
     pointHoldMs: 140,
+    // Three inference frames at 30 fps. Long enough to absorb the single-frame
+    // landmark glitches the trace was full of, short enough that releasing a
+    // pose still feels immediate.
+    poseExitHoldMs: 100,
     trackingLossGraceMs: 2_000,
     restingResponseMs: 85,
     movingResponseMs: 18,
@@ -122,7 +149,7 @@ export function classifyPointPose(
   if (frame.confidence < confidenceFloor) {
     // Pass the frame so diagnostics can tell a confidence rejection (track id
     // present) from a genuinely absent hand (track id null).
-    return createInactivePointPose(frame);
+    return createInactivePointPose(frame, "low_confidence");
   }
 
   const wrist = findLandmark(frame, "wrist");
@@ -132,12 +159,12 @@ export function classifyPointPose(
   const indexTip = findLandmark(frame, "index_tip");
 
   if (!wrist || !indexMcp || !indexPip || !indexDip || !indexTip) {
-    return createInactivePointPose(frame);
+    return createInactivePointPose(frame, "missing_landmark");
   }
 
   const palmSize = distance2d(wrist, indexMcp);
   if (palmSize <= 0) {
-    return createInactivePointPose(frame);
+    return createInactivePointPose(frame, "degenerate_palm");
   }
 
   const indexExtensionRatio = distance2d(wrist, indexTip) / palmSize;
@@ -156,6 +183,9 @@ export function classifyPointPose(
     label: isPointing ? "point" : "none",
     phase: isPointing ? "candidate" : "inactive",
     confidence: isPointing ? frame.confidence : 0,
+    // Reaching here means the landmarks were measurable, so a "none" verdict is
+    // a judgement about the pose rather than a failure to look at it.
+    inactiveReason: isPointing ? undefined : "not_pointing",
     handTrackId: getHandTrackId(frame),
     pointerTip: { x: indexTip.x, y: indexTip.y },
     indexExtensionRatio,
@@ -232,6 +262,22 @@ export function advanceGesturePointerTracking({
     classification.sourceFrameId == null ||
     classification.capturedAt == null
   ) {
+    // Entering the pose requires pointHoldMs of stable classification because a
+    // single frame is not trustworthy. Leaving it had no such requirement, so
+    // one bad frame ended the pose -- and a live trace showed that happening 13
+    // times in three minutes with the hand plainly visible and the frames on
+    // either side healthy (ratio 1.78 -> 0.65 -> 1.55). Hold the pose across a
+    // short run of failures so a glitch costs nothing, while a hand that has
+    // genuinely stopped pointing still clears in well under a fifth of a second.
+    const withinExitHold =
+      previousState.active &&
+      previousState.lastPointSeenAtMs != null &&
+      nowMs - previousState.lastPointSeenAtMs < calibration.poseExitHoldMs;
+
+    if (withinExitHold) {
+      return { state: previousState, pointer: previousState.pointer };
+    }
+
     return recoverOrResetPointer(previousState, nowMs, calibration);
   }
 
@@ -394,6 +440,7 @@ function smoothStep(lower: number, upper: number, value: number): number {
 
 function createInactivePointPose(
   frame?: HandLandmarkFrame,
+  inactiveReason: PointPoseInactiveReason = "no_hand",
 ): PointPoseClassification {
   return {
     label: "none",
@@ -406,6 +453,7 @@ function createInactivePointPose(
     indexDipAngle: null,
     foldedFingerCount: 0,
     requiredFoldedFingerCount,
+    inactiveReason,
     sourceFrameId: frame?.frameId,
     capturedAt: frame?.capturedAt,
   };

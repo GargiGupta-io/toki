@@ -113,6 +113,100 @@ test("point continuation tolerates a softened same-hand pose without weakening e
   assert.equal(continued.pointer?.handTrackId, strict.handTrackId);
 });
 
+test("a single glitched frame does not drop a hand that is still pointing", () => {
+  // Replays a real failure from a live trace. Over three minutes the pose was
+  // lost 16 times while the hand stayed plainly visible, and 13 of those lasted
+  // a single frame: the index extension ratio read 1.78, then 0.65, then 1.55
+  // again, with the landmarks unusable only in the middle frame. Entering the
+  // pose already required a stable hold; leaving it did not, so each of those
+  // glitches let go of a hand the user was still pointing with.
+  const calibration = { ...defaultGesturePointerCalibration, pointHoldMs: 0 };
+  const healthy = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", trackId: "pointer-hand" }),
+    0.6,
+  );
+  const active = advanceGesturePointerTracking({
+    previousState: resetGesturePointerTracking(),
+    classification: healthy,
+    display,
+    nowMs: 1_000,
+    calibration,
+  });
+  assert.equal(active.pointer?.phase, "active");
+
+  // One frame where the landmarks were never measurable at all.
+  const glitched = advanceGesturePointerTracking({
+    previousState: active.state,
+    classification: {
+      ...healthy,
+      label: "none",
+      phase: "inactive",
+      inactiveReason: "missing_landmark",
+      pointerTip: null,
+      indexExtensionRatio: null,
+      sourceFrameId: 2,
+    },
+    display,
+    nowMs: 1_033,
+    calibration,
+  });
+  assert.equal(
+    glitched.pointer?.phase,
+    "active",
+    "one unmeasurable frame must not let go of the hand",
+  );
+
+  // The very next frame is healthy again, as it was in the trace.
+  const resumed = advanceGesturePointerTracking({
+    previousState: glitched.state,
+    classification: { ...healthy, sourceFrameId: 3 },
+    display,
+    nowMs: 1_066,
+    calibration,
+  });
+  assert.equal(resumed.pointer?.phase, "active");
+  assert.equal(
+    resumed.state.active,
+    true,
+    "the pointer should never have needed to re-acquire",
+  );
+});
+
+test("a sustained pose failure still releases the pointer", () => {
+  // The hold must not become a way to keep a stale pointer alive: the same
+  // trace had genuine losses lasting 283 ms, 382 ms and 1206 ms, and those
+  // should clear.
+  const calibration = { ...defaultGesturePointerCalibration, pointHoldMs: 0 };
+  const healthy = classifyPointPose(
+    createSyntheticTrackedHand({ pose: "point", trackId: "pointer-hand" }),
+    0.6,
+  );
+  let current = advanceGesturePointerTracking({
+    previousState: resetGesturePointerTracking(),
+    classification: healthy,
+    display,
+    nowMs: 1_000,
+    calibration,
+  });
+
+  const missing = classifyPointPose(null, 0.6);
+  for (const nowMs of [1_033, 1_066, 1_100, 1_133]) {
+    current = advanceGesturePointerTracking({
+      previousState: current.state,
+      classification: missing,
+      display,
+      nowMs,
+      calibration,
+    });
+  }
+
+  assert.equal(
+    current.pointer?.phase,
+    "recovering",
+    "a failure lasting past the hold must release the pointer",
+  );
+});
+
 test("point continuation rejects a relaxed pose from another hand or an open palm", () => {
   const strict = classifyPointPose(
     createSyntheticTrackedHand({ pose: "point", trackId: "pointer-hand" }),
@@ -148,12 +242,28 @@ test("point continuation rejects a relaxed pose from another hand or an open pal
     0.6,
   );
 
+  // Within the exit hold the pointer stays put. Entering the pose already
+  // required pointHoldMs of stable classification because a single frame is not
+  // trustworthy; leaving it now takes the same care, so a one-frame landmark
+  // glitch no longer drops the hand the user is still pointing with.
   assert.equal(
     advanceGesturePointerTracking({
       previousState: started.state,
       classification: otherHand,
       display,
       nowMs: 1_050,
+    }).pointer?.phase,
+    "active",
+  );
+
+  // Past the hold the rejection stands: this pose is not a continuation, and a
+  // sustained failure still releases the pointer promptly.
+  assert.equal(
+    advanceGesturePointerTracking({
+      previousState: started.state,
+      classification: otherHand,
+      display,
+      nowMs: 1_000 + defaultGesturePointerCalibration.poseExitHoldMs + 1,
     }).pointer?.phase,
     "recovering",
   );

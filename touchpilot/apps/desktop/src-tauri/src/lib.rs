@@ -2046,7 +2046,14 @@ const WHISPER_BIN_ENV: &str = "WHISPER_CPP_BIN";
 /// so the feature is configured entirely explicitly or not at all.
 const WHISPER_MODEL_ENV: &str = "WHISPER_CPP_MODEL";
 
-const TOKI_DEBUG_HISTORY_LIMIT: usize = 160;
+/// How many transitions the local history keeps.
+///
+/// A transition is written roughly per inference frame while gestures are
+/// running, so 160 covered about three seconds — short enough that a
+/// thirty-second recording arrived containing only its own tail, and the event
+/// being investigated had already been discarded. Sized here for about half a
+/// minute of continuous gesture activity.
+const TOKI_DEBUG_HISTORY_LIMIT: usize = 2_000;
 const TOKI_DEBUG_SNAPSHOT_MAX_BYTES: usize = 5_000_000;
 const TOKI_DEBUG_CAPTURE_MAX_BYTES: usize = 16_000_000;
 
@@ -2708,12 +2715,20 @@ fn native_voice_capture_reset(store: State<'_, Mutex<VoiceCaptureStore>>) -> Res
 /// paths are unreachable by construction -- the same mechanism that made the
 /// old `OPENAI_API_KEY` lookup fail for everyone, used deliberately this time.
 fn resolve_operator_binary(env_name: &str, purpose: &str) -> Result<PathBuf, String> {
-    let configured = std::env::var(env_name).map_err(|_| {
-        format!(
-            "{purpose} is a developer-only path and is not configured. \
-             Set {env_name} to an absolute path and launch Toki from a terminal."
-        )
-    })?;
+    // Stored setting first, environment second. Requiring the environment alone
+    // repeated the mistake this codebase already fixed once for the API key: a
+    // GUI application launched from Finder inherits no environment, so a value
+    // that works from a terminal is simply absent the rest of the time. The
+    // security property that matters is that nothing is *searched for* -- an
+    // operator naming a path in Preferences is as deliberate as exporting it.
+    let configured = read_stored_setting(env_name)
+        .or_else(|| std::env::var(env_name).ok())
+        .ok_or_else(|| {
+            format!(
+                "{purpose} is not configured. Set a path in Toki's Preferences, \
+                 or export {env_name} and launch Toki from a terminal."
+            )
+        })?;
 
     let candidate = PathBuf::from(configured.trim());
 
@@ -2913,6 +2928,66 @@ async fn request_codex_vision_guidance(
 ///
 /// The service name is the bundle identifier so the entry is attributable in
 /// Keychain Access, and so a user can find and remove it without our help.
+/// Operator-configured paths, kept beside the API key.
+///
+/// These are not secrets -- they are filesystem paths the user chose. They live
+/// in the Keychain only because it is the store this app already has, and it
+/// keeps the "nothing is searched for" property intact: a value is present
+/// because someone typed it, never because a directory was scanned.
+#[cfg(target_os = "macos")]
+fn read_stored_setting(name: &str) -> Option<String> {
+    security_framework::passwords::get_generic_password(OPENAI_KEYCHAIN_SERVICE, name)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_stored_setting(_name: &str) -> Option<String> {
+    None
+}
+
+#[tauri::command]
+fn operator_setting_status(name: String) -> Option<String> {
+    read_stored_setting(&name)
+}
+
+#[tauri::command]
+fn set_operator_setting(name: String, value: String) -> Result<(), String> {
+    let trimmed = value.trim();
+
+    #[cfg(target_os = "macos")]
+    {
+        if trimmed.is_empty() {
+            let _ = security_framework::passwords::delete_generic_password(
+                OPENAI_KEYCHAIN_SERVICE,
+                &name,
+            );
+            return Ok(());
+        }
+
+        // Refuse a relative path here rather than at use time, so the mistake is
+        // reported while the user is looking at the field.
+        if !std::path::Path::new(trimmed).is_absolute() {
+            return Err("Enter an absolute path.".to_string());
+        }
+
+        security_framework::passwords::set_generic_password(
+            OPENAI_KEYCHAIN_SERVICE,
+            &name,
+            trimmed.as_bytes(),
+        )
+        .map_err(|error| format!("Could not save the setting: {error}"))
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = trimmed;
+        Err("Storing settings is only supported on macOS.".to_string())
+    }
+}
+
 const OPENAI_KEYCHAIN_SERVICE: &str = "app.toki.desktop";
 const OPENAI_KEYCHAIN_ACCOUNT: &str = "openai-api-key";
 
@@ -3461,6 +3536,8 @@ pub fn run() {
             toki_debug_export_status,
             clear_toki_debug_export,
             openai_api_key_status,
+            operator_setting_status,
+            set_operator_setting,
             set_openai_api_key,
             clear_openai_api_key,
             transcribe_voice_capture,

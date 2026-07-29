@@ -75,6 +75,26 @@ test("the path must be named explicitly by an operator", () => {
   assert.doesNotMatch(source, /developer_cli.*keychain/iu);
 });
 
+test("a stored setting works without an environment variable", () => {
+  // Requiring the environment alone broke local transcription: a Finder-
+  // launched app inherits none, so a value that worked from a terminal was
+  // absent for every ordinary launch, and voice failed at the last step after
+  // the pinch and the recording had already succeeded. This is the same trap
+  // the OPENAI_API_KEY lookup fell into, repeated one fix later.
+  assert.match(resolver, /read_stored_setting\(env_name\)/u);
+
+  const storedAt = resolver.indexOf("read_stored_setting");
+  const envAt = resolver.indexOf("std::env::var(env_name)");
+  assert.ok(
+    storedAt !== -1 && envAt !== -1 && storedAt < envAt,
+    "the stored setting must be consulted before the environment",
+  );
+
+  // The security property is unchanged: a path exists because someone entered
+  // it, never because a directory was scanned.
+  assert.doesNotMatch(resolver, /read_dir|glob|Command::new/u);
+});
+
 test("a relative path is refused", () => {
   // A relative path resolves against Toki's working directory, which
   // reintroduces the ambiguity the explicit path exists to remove.

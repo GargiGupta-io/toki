@@ -62,6 +62,7 @@ import {
   advanceHandTracking,
   createInitialHandTrackingState,
   getRetainedHandTrackIds,
+  type HandTrackAssignmentDiagnostic,
   type HandTrackingState,
 } from "./gestureHandTracking";
 import {
@@ -174,6 +175,7 @@ export type GestureRuntimeDiagnostics = {
   handLandmarkerStatus: HandLandmarkerStatus;
   handLandmarkerAssetMode: typeof handLandmarkerAssetMode;
   handLandmarkerError: string | null;
+  handTrackAssignments: HandTrackAssignmentDiagnostic[];
   hand: HandLandmarkSummary | null;
   hands: HandLandmarkSummary[];
   handRoles: Partial<Record<HandTrackId, GestureHandRole>>;
@@ -264,6 +266,7 @@ export function createEmptyGestureRuntimeDiagnostics(
     handLandmarkerStatus: "idle",
     handLandmarkerAssetMode,
     handLandmarkerError: null,
+    handTrackAssignments: [],
     hand: null,
     hands: [],
     handRoles: {},
@@ -329,6 +332,14 @@ export function useAlwaysOnGestureRuntime({
   const [cameraPermission, setCameraPermission] =
     useState<CameraPermissionState>("unknown");
   const [cameraError, setCameraError] = useState<string | null>(null);
+  // Why each hand got the track id it did. A hand that returns with a *new* id
+  // is indistinguishable from a new hand, so the pointer stops following it and
+  // must re-acquire the pose — which is what "Toki let go while my hand was
+  // right there" looks like from the inside. Nothing else in the diagnostics
+  // records that decision.
+  const [handTrackAssignments, setHandTrackAssignments] = useState<
+    HandTrackAssignmentDiagnostic[]
+  >([]);
   const [handLandmarkerStatus, setHandLandmarkerStatus] =
     useState<HandLandmarkerStatus>("idle");
   const [handLandmarkerError, setHandLandmarkerError] = useState<string | null>(null);
@@ -651,6 +662,7 @@ export function useAlwaysOnGestureRuntime({
                   adaptiveSettings.pointerCalibration.trackingLossGraceMs,
               });
               handTrackingStateRef.current = tracking.state;
+              setHandTrackAssignments(tracking.assignments);
               const roles = advanceGestureHandRoles({
                 previousState: handRoleStateRef.current,
                 frame: tracking.frame,
@@ -1095,6 +1107,7 @@ export function useAlwaysOnGestureRuntime({
       handLandmarkerStatus,
       handLandmarkerAssetMode,
       handLandmarkerError,
+      handTrackAssignments,
       hand: handLandmarkFrame
         ? {
             frameId: handLandmarkFrame.frameId,
