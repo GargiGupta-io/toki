@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Gargi Gupta. All rights reserved.
+// Source-available for evaluation only; see LICENSE at the repository root.
+// Not open source: no redistribution, derivative works, or presenting as your own.
+
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
