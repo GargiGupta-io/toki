@@ -5,6 +5,8 @@ import { handleApiRequest, type ApiRequest } from "./handler";
 import { createStubLicenceStore } from "./licences";
 import { createInMemoryRateLimiter } from "./rateLimit";
 import { createSupabaseSubscriptionStore } from "./subscriptions";
+import { createSupabaseBillingWriter } from "./billing";
+import { createAnthropicVisionProvider } from "./vision";
 
 /**
  * Node adapter for the handler.
@@ -31,6 +33,18 @@ const dependencies = {
       ? createSupabaseSubscriptionStore({ supabaseUrl, serviceRoleKey })
       : undefined,
   licences: jwtSecret == null ? createStubLicenceStore() : undefined,
+  billing:
+    supabaseUrl && serviceRoleKey && config.stripe
+      ? createSupabaseBillingWriter({ supabaseUrl, serviceRoleKey })
+      : undefined,
+  vision:
+    config.vision.apiKey == null
+      ? undefined
+      : createAnthropicVisionProvider({
+          apiKey: config.vision.apiKey,
+          model: config.vision.model,
+          effort: config.vision.effort,
+        }),
   rateLimiter: createInMemoryRateLimiter(config.limits.requestsPerMinute),
 };
 
@@ -91,5 +105,15 @@ server.listen(config.port, () => {
     jwtSecret == null
       ? "auth: development licence keys (no SUPABASE_JWT_SECRET set)"
       : "auth: verifying Supabase access tokens",
+  );
+  console.log(
+    config.vision.apiKey == null
+      ? "vision: not configured (needs ANTHROPIC_API_KEY)"
+      : `vision: ${config.vision.model}`,
+  );
+  console.log(
+    config.stripe == null
+      ? "payments: not configured (needs STRIPE_SECRET_KEY, STRIPE_PRICE_ID, STRIPE_WEBHOOK_SECRET)"
+      : "payments: Stripe checkout and signed webhooks enabled",
   );
 });

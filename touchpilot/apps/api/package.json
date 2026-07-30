@@ -5,14 +5,16 @@
   "type": "module",
   "description": "Toki guidance and transcription service. Runs in fixture mode until provider credentials exist.",
   "scripts": {
-    "dev": "node --import tsx src/server.ts",
-    "typecheck": "tsc --project tsconfig.json"
+    "dev": "node --env-file-if-exists=.env --import tsx src/server.ts",
+    "typecheck": "tsc --project tsconfig.json",
+    "start": "node --env-file-if-exists=.env --import tsx src/server.ts"
   },
   "dependencies": {
-    "@toki/shared": "0.1.0"
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@toki/shared": "0.1.0",
+    "tsx": "^4.22.4"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
-    "tsx": "^4.22.4"
+    "@types/node": "^25.9.1"
   }
 }

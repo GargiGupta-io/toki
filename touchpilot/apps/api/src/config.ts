@@ -15,6 +15,11 @@
  * body, at startup, and on the health endpoint.
  */
 
+import type { StripeConfig } from "./stripe";
+import type { VisionEffort } from "./vision";
+
+const visionEfforts = ["low", "medium", "high", "xhigh", "max"] as const;
+
 export type ServiceMode = "fixture" | "live";
 
 export type ServiceConfig = {
@@ -30,6 +35,18 @@ export type ServiceConfig = {
     transcriptionModel: string;
     baseUrl: string;
   };
+  /** Vision guidance. Separate credential and model from the two above. */
+  vision: {
+    apiKey: string | null;
+    model: string;
+    /** Unset takes the model's default. Worth measuring before pinning. */
+    effort?: VisionEffort;
+  };
+  /**
+   * Payments. Absent while there is no Stripe account wired up, which leaves
+   * the billing endpoints reporting that plainly rather than half-working.
+   */
+  stripe: StripeConfig | null;
   limits: {
     /** Guidance requests carry a base64 screenshot, so bodies are large. */
     maxRequestBytes: number;
@@ -63,6 +80,16 @@ export function loadServiceConfig(
       transcriptionModel: env.TOKI_TRANSCRIPTION_MODEL ?? "gpt-4o-transcribe",
       baseUrl: env.TOKI_PROVIDER_BASE_URL ?? "https://api.openai.com/v1",
     },
+    vision: {
+      apiKey: env.ANTHROPIC_API_KEY?.trim() || null,
+      model: env.TOKI_VISION_MODEL?.trim() || "claude-opus-5",
+      effort: (visionEfforts as readonly string[]).includes(
+        env.TOKI_VISION_EFFORT?.trim() ?? "",
+      )
+        ? (env.TOKI_VISION_EFFORT?.trim() as VisionEffort)
+        : undefined,
+    },
+    stripe: readStripeConfig(env),
     limits: {
       // A 4K screenshot encodes to several megabytes. Serverless hosts often
       // cap request bodies well below this; whichever host is chosen has to
@@ -70,6 +97,54 @@ export function loadServiceConfig(
       maxRequestBytes: readNumber(env.TOKI_MAX_REQUEST_BYTES, 12 * 1024 * 1024),
       requestsPerMinute: readNumber(env.TOKI_REQUESTS_PER_MINUTE, 20),
     },
+  };
+}
+
+/**
+ * Payments are configured only when all three parts are present.
+ *
+ * A secret key without a webhook secret is the dangerous half-configuration:
+ * checkout works, money moves, and nothing ever grants the access it paid for
+ * -- so it is treated as not configured at all rather than partly working.
+ */
+function readStripeConfig(
+  env: Record<string, string | undefined>,
+): StripeConfig | null {
+  const secretKey = env.STRIPE_SECRET_KEY?.trim();
+  const priceId = env.STRIPE_PRICE_ID?.trim();
+  const webhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim();
+
+  if (!secretKey || !priceId || !webhookSecret) {
+    return null;
+  }
+
+  // Where Stripe sends the customer's browser afterwards.
+  //
+  // This service serves those two pages itself, so the default is its own
+  // address and checkout needs no website to exist. On Fly that address is
+  // derivable from the app name, which means a working deploy configures this
+  // with nothing set at all.
+  //
+  // Pointing it at a marketing site is a later choice, not a prerequisite. The
+  // previous default named a domain nobody owned, which would have left a
+  // paying customer on a dead page -- the payment succeeds either way, because
+  // access comes from the webhook, but the person has no way to know that.
+  const flyHost = env.FLY_APP_NAME?.trim()
+    ? `https://${env.FLY_APP_NAME.trim()}.fly.dev`
+    : null;
+  const site = env.TOKI_SITE_URL?.trim() || flyHost;
+
+  return {
+    secretKey,
+    priceId,
+    webhookSecret,
+    successUrl:
+      env.STRIPE_SUCCESS_URL?.trim() ||
+      (site ? `${site}/thanks` : "http://127.0.0.1:8787/thanks"),
+    cancelUrl:
+      env.STRIPE_CANCEL_URL?.trim() ||
+      (site ? `${site}/pricing` : "http://127.0.0.1:8787/pricing"),
+    baseUrl: env.STRIPE_BASE_URL?.trim() ?? "https://api.stripe.com",
   };
 }
 

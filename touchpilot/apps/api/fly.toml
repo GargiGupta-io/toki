@@ -1,0 +1,45 @@
+# Fly.io deployment for the Toki API.
+#
+# Deploy from the repository root so the Docker build can see the whole
+# workspace:
+#   fly deploy --config apps/api/fly.toml --dockerfile apps/api/Dockerfile .
+#
+# Secrets are never written here. This file is committed; `fly secrets set`
+# stores credentials encrypted on Fly's side and injects them at run time.
+
+app = "toki-ai"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8787"
+  # A guidance request carries a base64 screenshot; a retina window encodes to
+  # several megabytes. A host that caps bodies below this rejects real requests.
+  TOKI_MAX_REQUEST_BYTES = "12582912"
+
+[http_service]
+  internal_port = 8787
+  # Credentials and screenshots travel on every request. There is no reason to
+  # ever accept a plain http one.
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # Zero is what makes this cheap to run while nobody is using it. The cost is
+  # a cold start on the first request after an idle period.
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  # The service holds one screenshot in memory per in-flight request and does
+  # no image processing itself, so memory is about concurrency, not size.
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

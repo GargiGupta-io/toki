@@ -20,6 +20,9 @@ export type Subscription = {
   tier: SubscriptionTier;
   status: string;
   currentPeriodEnd: string | null;
+  /** Present once someone has been through checkout. Needed to open the
+   * billing page where they change a card or cancel. */
+  stripeCustomerId: string | null;
 };
 
 export type SubscriptionStore = {
@@ -36,6 +39,7 @@ export const freeSubscription: Subscription = Object.freeze({
   tier: "free",
   status: "inactive",
   currentPeriodEnd: null,
+  stripeCustomerId: null,
 });
 
 /**
@@ -75,7 +79,10 @@ export function createSupabaseSubscriptionStore({
   return {
     async forUser(userId) {
       const url = new URL("/rest/v1/subscriptions", supabaseUrl);
-      url.searchParams.set("select", "tier,status,current_period_end");
+      url.searchParams.set(
+        "select",
+        "tier,status,current_period_end,stripe_customer_id",
+      );
       url.searchParams.set("user_id", `eq.${userId}`);
       url.searchParams.set("limit", "1");
 
@@ -97,6 +104,7 @@ export function createSupabaseSubscriptionStore({
         tier?: string;
         status?: string;
         current_period_end?: string | null;
+        stripe_customer_id?: string | null;
       }>;
       const row = rows[0];
 
@@ -108,6 +116,7 @@ export function createSupabaseSubscriptionStore({
         tier: row.tier === "pro" ? "pro" : "free",
         status: row.status ?? "inactive",
         currentPeriodEnd: row.current_period_end ?? null,
+        stripeCustomerId: row.stripe_customer_id ?? null,
       };
     },
   };

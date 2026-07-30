@@ -29,6 +29,10 @@ import {
   type SubscriptionStore,
 } from "./subscriptions";
 import type { RateLimiter } from "./rateLimit";
+import { handleStripeWebhook, type BillingWriter } from "./billing";
+import { createCheckoutSession, createPortalSession } from "./stripe";
+import type { VisionProvider } from "./vision";
+import { htmlResponse, pricingPage, thanksPage } from "./pages";
 
 /**
  * The service, as a plain function from request to response.
@@ -72,6 +76,12 @@ export type HandlerDependencies = {
    */
   requestGuidance?: (request: GuidanceRequest) => Promise<GuidanceProviderResponse>;
   transcribe?: (audioBase64: string, format: string) => Promise<string>;
+  /** Writes subscription state from Stripe events. Absent without payments. */
+  billing?: BillingWriter;
+  /** Injected so payment tests never reach the network. */
+  fetchImpl?: typeof fetch;
+  /** Looks at a screenshot. Absent until a model credential exists. */
+  vision?: VisionProvider;
 };
 
 function json(status: number, value: unknown): ApiResponse {
@@ -172,11 +182,56 @@ export async function handleApiRequest(
     });
   }
 
+  // Where Stripe sends a customer's browser after checkout. Reached by a
+  // person, with a GET, carrying no credentials -- so they are answered before
+  // the POST-only rule and before authentication.
+  //
+  // Serving them here is what lets payments work with no website and no domain.
+  // Neither page grants anything: anyone can visit either by typing the
+  // address, and entitlement comes from the signed webhook alone.
+  if (request.path === "/thanks") {
+    return htmlResponse(thanksPage);
+  }
+
+  if (request.path === "/pricing") {
+    return htmlResponse(pricingPage);
+  }
+
   if (request.method !== "POST") {
     return json(405, { error: "Only POST is supported." });
   }
 
-  if (request.path !== "/guidance" && request.path !== "/transcription") {
+  // The webhook is answered before anything else touches the request.
+  //
+  // It carries no access token -- the caller is Stripe, not a signed-in person
+  // -- so it cannot go through `identifyCaller`, and its body must reach the
+  // signature check as the exact bytes that were sent. Any parsing before this
+  // point would be parsing something unproven.
+  if (request.path === "/billing/webhook") {
+    if (config.stripe == null || dependencies.billing == null) {
+      return json(503, { error: "Payments are not configured." });
+    }
+
+    const outcome = await handleStripeWebhook({
+      payload: request.body,
+      signatureHeader:
+        request.headers["stripe-signature"] ?? request.headers["Stripe-Signature"],
+      config: config.stripe,
+      writer: dependencies.billing,
+    });
+
+    return json(outcome.status, outcome.body);
+  }
+
+  const knownPaths = [
+    "/guidance",
+    "/transcription",
+    "/vision",
+    "/account",
+    "/billing/checkout",
+    "/billing/portal",
+  ];
+  if (!knownPaths.includes(request.path)) {
     return json(404, { error: "Unknown endpoint." });
   }
 
@@ -219,6 +274,35 @@ export async function handleApiRequest(
     };
   }
 
+  /**
+   * What this account is entitled to.
+   *
+   * Without this the app can only discover someone's plan by attempting a paid
+   * request and being refused, which means a paying customer's own app cannot
+   * tell them they are paying, and offers to sell them what they already have.
+   *
+   * Everything here is read from the database against the id in the verified
+   * token. Nothing is taken from the request.
+   */
+  if (request.path === "/account") {
+    return json(200, {
+      userId: caller.user.id,
+      email: caller.user.email,
+      tier: caller.subscription.tier,
+      status: caller.subscription.status,
+      currentPeriodEnd: caller.subscription.currentPeriodEnd,
+      // The single answer the client actually acts on. Whether a cancelled
+      // subscription still counts is decided here, once, rather than in every
+      // caller that has to re-derive it from a status and a date.
+      entitled: isPaid(caller.subscription),
+      hasBillingAccount: caller.subscription.stripeCustomerId != null,
+    });
+  }
+
+  if (request.path === "/billing/checkout" || request.path === "/billing/portal") {
+    return handleBilling(request.path, caller.user, caller.subscription, dependencies);
+  }
+
   let payload: unknown;
   try {
     payload = JSON.parse(request.body);
@@ -230,7 +314,133 @@ export async function handleApiRequest(
     return handleGuidance(payload, dependencies);
   }
 
+  if (request.path === "/vision") {
+    return handleVision(payload, caller.subscription, dependencies);
+  }
+
   return handleTranscription(payload, dependencies);
+}
+
+/**
+ * Start a payment, or open the page for managing one.
+ *
+ * Nothing about the price, the plan, or the account comes from the request
+ * body. The user is whoever the verified token says, and the price is whatever
+ * the service is configured with -- a request cannot ask to be charged less.
+ */
+async function handleBilling(
+  path: string,
+  user: VerifiedUser,
+  subscription: Subscription,
+  { config, fetchImpl }: HandlerDependencies,
+): Promise<ApiResponse> {
+  if (config.stripe == null) {
+    return json(503, { error: "Payments are not configured." });
+  }
+
+  try {
+    if (path === "/billing/portal") {
+      if (subscription.stripeCustomerId == null) {
+        // Nobody to manage. Sending them to checkout instead of an error is
+        // the honest answer to "manage my subscription" when there is none.
+        return json(409, {
+          error: "There is no subscription to manage yet.",
+        });
+      }
+
+      return json(
+        200,
+        await createPortalSession(
+          subscription.stripeCustomerId,
+          config.stripe,
+          fetchImpl,
+        ),
+      );
+    }
+
+    const session = await createCheckoutSession(
+      { userId: user.id, email: user.email },
+      config.stripe,
+      fetchImpl,
+    );
+
+    // Only the URL. The desktop app opens it in the browser, because card
+    // details must be entered on Stripe's own page and never inside Toki.
+    return json(200, { url: session.url });
+  } catch (error) {
+    console.error("stripe request failed", { name: (error as Error)?.name });
+    return json(502, { error: "Payments are temporarily unavailable." });
+  }
+}
+
+/**
+ * Look at a screenshot and name one control on it.
+ *
+ * The prompt and the response schema are the client's, not this service's. The
+ * client knows the display geometry, the calibration, and which candidates its
+ * own accessibility scan found; turning an answer back into a place on screen
+ * happens there. All this endpoint does is put a picture in front of a model,
+ * which is also the least it could know about the user.
+ */
+async function handleVision(
+  payload: unknown,
+  subscription: Subscription,
+  { config, vision }: HandlerDependencies,
+): Promise<ApiResponse> {
+  const request = payload as {
+    prompt?: string;
+    imageBase64?: string;
+    imageFormat?: string;
+    outputSchema?: unknown;
+  };
+
+  if (
+    typeof request?.prompt !== "string" ||
+    request.prompt.trim().length === 0 ||
+    typeof request.imageBase64 !== "string" ||
+    request.imageBase64.length === 0
+  ) {
+    return json(400, { error: "A prompt and a screenshot are required." });
+  }
+
+  // The gate. Everything above this line is free; looking at a screenshot with
+  // a model costs real money per call, so it is what the paid tier buys.
+  if (requiresUpgrade(subscription)) {
+    return json(402, {
+      error: "Live guidance is part of Toki Pro.",
+      upgrade: true,
+    });
+  }
+
+  if (config.vision.apiKey == null || vision == null) {
+    return unavailable(
+      "This Toki service has no vision credentials configured, so it cannot look at screenshots yet.",
+    );
+  }
+
+  try {
+    return json(
+      200,
+      await vision({
+        prompt: request.prompt,
+        imageBase64: request.imageBase64,
+        imageFormat: request.imageFormat === "png" ? "png" : "jpeg",
+        // Passed straight through. It shapes the client's own reply and gives
+        // the caller nothing they could not already ask for in the prompt.
+        outputSchema:
+          typeof request.outputSchema === "object" && request.outputSchema != null
+            ? (request.outputSchema as Record<string, unknown>)
+            : undefined,
+      }),
+    );
+  } catch (error) {
+    // The provider's message can quote the request, and the request is a
+    // picture of someone's screen. Only the error's class is recorded.
+    console.error("vision provider call failed", {
+      name: (error as Error)?.name,
+    });
+    return unavailable("The guidance provider could not be reached.");
+  }
 }
 
 async function handleGuidance(
