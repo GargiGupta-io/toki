@@ -203,7 +203,7 @@ something shared once more than one instance runs.
 
 ---
 
-## Phase G — Desktop sign-in (~2h)
+## Phase G — Desktop sign-in (~2h) — **done**
 
 - Register the `toki://` scheme; add `tauri-plugin-deep-link` **and its
   capability permission** — the same class of bug already shipped once
@@ -214,9 +214,36 @@ something shared once more than one instance runs.
 - Refresh before expiry; sign out clears the Keychain and revokes server-side
 - Handle the cold-start callback: macOS launches the app to deliver the deep link
 
+**What was built.** `authPkce.ts` (verifier/challenge, callback parsing, token
+requests), `authSession.ts` (the session's whole life, every outside thing
+injected so it is testable), `authBindings.ts` (the Tauri-only wiring), three
+Keychain commands and one network command in Rust, an Account section in
+Preferences, and 14 tests in `scripts/desktop-auth.test.mjs`.
+
+**Two decisions worth recording.**
+
+*The token calls go through Rust, not the webview.* The window's security policy
+permits no remote origin, and relaxing it for Supabase would relax it for every
+script in the window. Rust makes the call instead, so the window keeps no
+network reach at all and the exchange never passes through the JavaScript heap.
+The URL is built in Rust from the configured project and refused unless it is
+https, so the command cannot be pointed anywhere else.
+
+*The verifier is never written to disk.* It lives in one variable and is cleared
+before the code is redeemed, so a replayed callback cannot buy a second session.
+The cost is that a callback arriving after the app has quit cannot complete —
+the user is told to sign in again. Persisting the verifier to close that gap
+would leave a second copy of the only secret in the flow sitting on disk, which
+is a worse trade than one retry.
+
+Three files have to agree for any of this to work — `Info.plist`, `tauri.conf.json`,
+and the capability list — and a mismatch fails *silently*: the browser finishes,
+macOS finds nothing to hand the link to, and the app waits forever. A test in
+`scripts/app-updates.test.mjs` now asserts all three.
+
 ---
 
-## Phase H — Payments (~2h)
+## Phase H — Payments (~2h) — **done**
 
 - Stripe **test-mode** product and price
 - `POST /billing/checkout` for the signed-in user
@@ -226,9 +253,34 @@ something shared once more than one instance runs.
 - Idempotency via `webhook_events` — Stripe retries and will send duplicates
 - Honour `current_period_end` on cancellation rather than cutting off immediately
 
+**What was built.** `stripe.ts` (signature check and the two API calls),
+`billing.ts` (events into entitlement, and the Supabase writer), `/billing/checkout`,
+`/billing/portal`, `/billing/webhook`, migration `003_billing.sql`, and 19 tests
+in `scripts/api-billing.test.mjs`.
+
+**Three decisions worth recording.**
+
+*The webhook is answered before authentication and before any parsing.* It
+carries no token — the caller is Stripe, not a person — and its body has to
+reach the signature check as the exact bytes that were sent. Parsing the JSON
+and re-serialising it produces a different string and every real event then
+fails, which is the usual way this check ends up being turned off.
+
+*A failed event gives its claim back.* Event ids are claimed before the work, so
+two deliveries racing cannot both get through. If the work then fails the claim
+is released and a 500 is returned, because a 500 is what asks Stripe to retry.
+Answering 200 on a failure drops the event for good and leaves someone paying
+for access they never received.
+
+*Out-of-order events cannot undo a newer state.* Webhooks are not delivered in
+order, and a retried older event landing after a newer one would revive a
+cancelled subscription or cancel a live one. `003_billing.sql` adds
+`last_event_at`, and the writer filters on it, so an older event matches no row
+and changes nothing.
+
 ---
 
-## Phase I — Real guidance, and minimising what the server sees (~2h)
+## Phase I — Real guidance, and minimising what the server sees (~2h) — **done**
 
 Replaces the CLI dependency on the shipping path.
 
@@ -252,9 +304,36 @@ Replaces the CLI dependency on the shipping path.
 - **Say so plainly in the README.** For an app with these permissions, that
   statement is a feature
 
+**What was built.** `vision.ts` on the server, `hostedVisionProvider.ts` and
+`tokiApiClient.ts` on the desktop, a `/vision` endpoint behind the paid gate,
+and 15 tests in `scripts/hosted-guidance.test.mjs`.
+
+**The split of work is the design.** The server is given a prompt and one image
+and knows nothing about the user's display, calibration, or what their
+accessibility scan found. Turning the model's answer back into a place on screen
+happens on the desktop, where that knowledge already lives. The server's copy of
+the data is as close to useless as it can be made.
+
+**The plan's own warning turned out to be the bug.** The first version set
+`max_tokens` to 1024 — enough for the small JSON target object. Thinking is on
+by default on this model family and is counted inside that ceiling, so the
+response would have truncated mid-object the moment the model reasoned at all,
+and it would have looked like a parse bug rather than a budget one. Now 8192,
+with a test asserting the headroom.
+
+**Effort is still unmeasured.** It is the latency dial and someone is waiting to
+be shown where to click. It is configurable through `TOKI_VISION_EFFORT` and
+left unset, taking the model's default, because guessing a value without
+measuring on real screenshots would be picking a number and calling it a
+decision. **This is the one open item in this phase.**
+
+**Screenshot minimisation was already true.** Live guidance refuses to run
+without an active-window crop — it throws rather than sending the whole desktop.
+That predates this phase; it is now also bounded server-side at 5 MB.
+
 ---
 
-## Phase J — Deploy (~1h)
+## Phase J — Deploy (~1h) — **built, not yet deployed**
 
 - `Dockerfile` with the base image **pinned by digest**
 - `fly.toml` — health check on `/health`, memory sized for base64 payloads
@@ -264,15 +343,69 @@ Replaces the CLI dependency on the shipping path.
 - Point the Stripe webhook at the deployed URL
 - Confirm `/health` reports **live**, not fixture
 
+**What was built.** `apps/api/Dockerfile` (multi-stage, base image pinned by
+digest, no dev tooling, runs as `node` not root), `apps/api/fly.toml` (https
+enforced, health check on `/health`, scale to zero), `DEPLOYMENT_RUNBOOK.md`,
+and 7 tests in `scripts/deployment-config.test.mjs` including one that fails if
+any credential-shaped string appears in a committed deployment file.
+
+**Verified:** the service starts, `/health` answers, and the startup log
+correctly reports which of authentication, vision, and payments is configured.
+An unsigned webhook and an untokened `/vision` call were both refused against
+the running process.
+
+**Not verified: the image has never been built.** Docker is installed on this
+machine but not running, so `docker build` was never executed. The Dockerfile is
+reasoned about, not proven. **Build it once before trusting the deploy.**
+
 ---
 
-## Phase K — Connect the desktop app (~45 min)
+## Phase K — Connect the desktop app (~45 min) — **done**
 
-- **Add the API origin to `connect-src`.** The policy currently permits no remote
-  origin, so guidance will fail silently until this lands — the CSP test already
-  carries a comment flagging it
+- ~~**Add the API origin to `connect-src`.**~~ **This turned out to be the wrong
+  fix and was not done.** Allowing the API's origin in the window's policy would
+  allow it for every script in that window, not only for Toki's own code. The
+  request goes out through Rust instead, so the policy stays absolute: the
+  window still reaches no remote origin at all. Sign-in, guidance, and billing
+  all take the same route. A new test asserts that neither the API client nor
+  the token exchange calls `fetch`, because a direct call would be blocked at
+  runtime and would surface as a feature that mysteriously does nothing.
 - Build-time API base URL, defaulting to localhost
 - Honest states: signed out, no subscription, network unreachable
+
+---
+
+## Phase K3 — Two gaps found by asking "does the app know I paid?" — **done**
+
+Both would have shipped and both looked fine in isolation.
+
+**A sign-in did not reach the part that needed it.** Toki runs the overlay and
+Preferences as separate windows, each with its own JavaScript context and so its
+own copy of the session. Sign-in happens in Preferences; the overlay is what
+makes guidance requests. The overlay read the store once at launch, so a user
+would sign in, see "signed in" in Preferences, and have guidance keep refusing
+them until they quit and reopened the app.
+
+Fixed in both directions, because they need different mechanisms. A sign-in is
+picked up lazily — an empty session asks the store once before concluding nobody
+is signed in, which costs nothing since it only runs while signed out. A sign-out
+cannot work that way: the token the overlay already holds stays valid until it
+expires, so Preferences announces the change and the overlay drops its copy.
+Otherwise a signed-out user keeps making paid requests.
+
+**Nothing told the app what plan someone was on.** Entitlement could only be
+discovered by attempting a paid request and being refused, which meant a paying
+customer's own app could not tell them they were paying — and offered to sell
+them what they already had.
+
+Added `POST /account`, read from the database against the id in the verified
+token. Preferences now names the plan, shows "Upgrade" only to someone who is
+not entitled and "Manage plan" only to someone with a Stripe customer, and
+re-checks when the window regains focus — payment completes in the browser and
+is confirmed to the *service*, so returning to the window is when a person
+expects to see what they bought.
+
+Both are covered by tests that were confirmed to fail without the fix.
 
 ---
 
