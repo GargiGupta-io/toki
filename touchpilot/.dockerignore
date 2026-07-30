@@ -1,0 +1,55 @@
+# What never goes to the image builder.
+#
+# Two separate reasons, and the first one is the serious one.
+#
+# **Secrets.** The Dockerfile copies `apps/api` wholesale, and that directory
+# holds `.env` -- the Supabase service role key, which reads and writes every
+# row in the database ignoring all access rules, and the Stripe secret, which
+# can move money. Without this file both are baked into the image, and an image
+# is a thing that gets pushed to a registry and pulled by build systems. The
+# Dockerfile's own comment claims nothing secret is baked in; this is what makes
+# that true.
+#
+# **Size.** The build context is everything in this directory, sent to the
+# builder before the first instruction runs. That is 2.9 GB here, almost all of
+# it the Rust build output, for an image that needs about 250 KB of source. Left
+# alone it turns every deploy into a multi-gigabyte upload.
+#
+# Credentials are handed to the running container as environment variables by
+# the host instead, so they exist while the process runs and nowhere else.
+
+# --- Secrets --------------------------------------------------------------
+# Every form, at every depth. `.env.example` holds names and never values, but
+# the image has no use for it either.
+**/.env
+**/.env.*
+
+# --- Build output ---------------------------------------------------------
+# 2.7 GB of compiled Rust for the desktop app, which this service never touches.
+target/
+**/node_modules/
+**/dist/
+**/build/
+
+# --- The rest of the monorepo ---------------------------------------------
+# The API needs `apps/api` and `packages/shared`. Everything else is the desktop
+# app, its tooling and its assets, none of which is copied by the Dockerfile --
+# but all of which would still be uploaded as part of the context.
+apps/desktop/
+apps/browser-extension/
+packages/ai/
+packages/design/
+packages/evals/
+packages/ui/
+assets/
+scripts/
+src-tauri/
+
+# --- Development noise ----------------------------------------------------
+.git/
+.github/
+.gitignore
+**/.DS_Store
+**/*.log
+Cargo.toml
+Cargo.lock

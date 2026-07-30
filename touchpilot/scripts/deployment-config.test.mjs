@@ -142,3 +142,36 @@ test("every SQL migration is numbered and ordered", () => {
     );
   });
 });
+
+test("the image build cannot sweep up a credentials file", () => {
+  // The Dockerfile copies `apps/api` wholesale, and that directory holds
+  // `.env` -- the service role key and the Stripe secret. Without an ignore
+  // rule both are baked into the image, and an image is pushed to a registry
+  // and pulled by build systems. Nothing about the Dockerfile makes this
+  // visible; the COPY looks entirely ordinary.
+  const ignore = read(".dockerignore");
+
+  assert.match(ignore, /^\*\*\/\.env$/m, "no rule excludes .env at any depth");
+  assert.match(ignore, /^\*\*\/\.env\.\*$/m, "no rule excludes .env.local and friends");
+
+  // The Dockerfile's comment promises this. The promise is only kept by the
+  // ignore file, so the two are checked together.
+  assert.match(
+    dockerfile,
+    /Nothing secret is baked in/,
+    "the Dockerfile no longer states the guarantee this test enforces",
+  );
+});
+
+test("the build context stays small enough to upload", () => {
+  // Everything in the directory is sent to the builder before the first
+  // instruction runs. Unignored, that is the Rust build output -- gigabytes,
+  // on every deploy, for a service that needs a few hundred kilobytes.
+  const ignore = read(".dockerignore");
+  for (const heavy of ["target/", "**/node_modules/", "apps/desktop/"]) {
+    assert.ok(
+      ignore.includes(heavy),
+      `${heavy} is not excluded from the build context`,
+    );
+  }
+});
