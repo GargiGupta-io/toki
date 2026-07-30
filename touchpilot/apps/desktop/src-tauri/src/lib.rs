@@ -3145,6 +3145,207 @@ fn clear_openai_api_key() -> Result<OpenAiKeyStatus, String> {
     }
 }
 
+/// Where the signed-in session lives.
+///
+/// The refresh token is a long-lived credential: anyone holding it can mint
+/// access tokens until it is revoked. That rules out a file in Application
+/// Support, which any process running as the user can read. The Keychain is
+/// encrypted at rest and scoped to this app, so a copy of the disk without the
+/// login password yields nothing.
+///
+/// The tokens deliberately never reach the frontend's own storage — no
+/// localStorage, no cookie. They cross into JavaScript only in memory, for the
+/// duration of a request.
+#[cfg(target_os = "macos")]
+const AUTH_SESSION_ACCOUNT: &str = "auth-session";
+
+#[tauri::command]
+fn read_auth_session() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        security_framework::passwords::get_generic_password(
+            OPENAI_KEYCHAIN_SERVICE,
+            AUTH_SESSION_ACCOUNT,
+        )
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .filter(|value| !value.trim().is_empty())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+#[tauri::command]
+fn store_auth_session(session: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        security_framework::passwords::set_generic_password(
+            OPENAI_KEYCHAIN_SERVICE,
+            AUTH_SESSION_ACCOUNT,
+            session.as_bytes(),
+        )
+        .map_err(|error| format!("Could not save the sign-in to the Keychain: {error}"))
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = session;
+        Err("Storing a sign-in is only supported on macOS.".to_string())
+    }
+}
+
+#[tauri::command]
+fn clear_auth_session() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Signing out must succeed even when nothing was stored, otherwise a
+        // half-finished sign-in leaves the user unable to get out of it.
+        match security_framework::passwords::delete_generic_password(
+            OPENAI_KEYCHAIN_SERVICE,
+            AUTH_SESSION_ACCOUNT,
+        ) {
+            Ok(()) => Ok(()),
+            Err(_) if read_auth_session().is_none() => Ok(()),
+            Err(error) => Err(format!("Could not remove the sign-in: {error}")),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
+/// Send a token request on the webview's behalf.
+///
+/// The window's content security policy permits no remote origin, so a request
+/// made from JavaScript would be blocked before it left the process. Relaxing
+/// that policy to allow one host would relax it for every script in the window;
+/// making the call here keeps the window with no network reach at all, and
+/// keeps the exchange out of a place where an injected script could watch it.
+///
+/// The URL is built here rather than accepted from the caller, so the only
+/// thing this can ever talk to is the configured project's token endpoint.
+#[tauri::command]
+async fn auth_token_request(
+    supabase_url: String,
+    anon_key: String,
+    grant_type: String,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if grant_type != "pkce" && grant_type != "refresh_token" {
+        return Err("Unsupported sign-in request.".to_string());
+    }
+
+    let base = reqwest::Url::parse(supabase_url.trim())
+        .map_err(|_| "The sign-in project address is not a valid URL.".to_string())?;
+
+    // Credentials must never travel in the clear, and refusing here means a
+    // misconfigured build fails loudly instead of leaking tokens quietly.
+    if base.scheme() != "https" {
+        return Err("The sign-in project address must use https.".to_string());
+    }
+
+    let mut endpoint = base
+        .join("/auth/v1/token")
+        .map_err(|_| "Could not build the sign-in request.".to_string())?;
+    endpoint.set_query(Some(&format!("grant_type={grant_type}")));
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|error| format!("Could not start the sign-in request: {error}"))?;
+
+        let response = client
+            .post(endpoint)
+            .header("apikey", anon_key)
+            .json(&payload)
+            .send()
+            .map_err(|error| format!("Sign-in could not reach the server: {error}"))?;
+
+        // The body is returned whatever the status, because the failure detail
+        // the user needs ("this link expired") lives in it. The caller decides
+        // what a response without tokens means.
+        response
+            .json::<serde_json::Value>()
+            .map_err(|_| "The sign-in server sent an unreadable reply.".to_string())
+    })
+    .await
+    .map_err(|error| format!("The sign-in request could not be run: {error}"))?
+}
+
+#[derive(serde::Serialize)]
+struct ApiReply {
+    status: u16,
+    body: serde_json::Value,
+}
+
+/// Call Toki's own service on the webview's behalf.
+///
+/// Same reason as the sign-in exchange: the window is allowed to reach no
+/// remote origin at all, and opening it for one host opens it for every script
+/// in the window. Requests go out from here instead, which also keeps the
+/// access token out of the JavaScript heap on the way.
+///
+/// The status is returned rather than turned into an error, because 401, 402
+/// and 429 each need a different offer to the user -- sign in, upgrade, wait --
+/// and collapsing them into one failure is what makes a locked feature look
+/// broken.
+#[tauri::command]
+async fn toki_api_request(
+    endpoint: String,
+    path: String,
+    access_token: String,
+    body: serde_json::Value,
+) -> Result<ApiReply, String> {
+    let base = reqwest::Url::parse(endpoint.trim())
+        .map_err(|_| "The guidance service address is not a valid URL.".to_string())?;
+
+    // Bearer tokens must not travel in the clear. Localhost is the exception
+    // that makes running the service on this machine during development
+    // possible without weakening the rule anywhere else.
+    let is_local = matches!(base.host_str(), Some("127.0.0.1") | Some("localhost"));
+    if base.scheme() != "https" && !is_local {
+        return Err("The guidance service address must use https.".to_string());
+    }
+
+    let url = base
+        .join(&path)
+        .map_err(|_| "Could not build the guidance request.".to_string())?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = reqwest::blocking::Client::builder()
+            // Long enough for a model to look at a screenshot, short enough
+            // that a hung request does not leave the pointer waiting forever.
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .map_err(|error| format!("Could not start the request: {error}"))?;
+
+        let response = client
+            .post(url)
+            .bearer_auth(access_token)
+            .json(&body)
+            .send()
+            .map_err(|error| format!("Toki could not reach the guidance service: {error}"))?;
+
+        let status = response.status().as_u16();
+        // A body that is not JSON still has to produce something the caller can
+        // report, so an unreadable reply becomes an empty object rather than an
+        // error that loses the status code.
+        let body = response
+            .json::<serde_json::Value>()
+            .unwrap_or_else(|_| serde_json::json!({}));
+
+        Ok(ApiReply { status, body })
+    })
+    .await
+    .map_err(|error| format!("The request could not be run: {error}"))?
+}
+
 fn transcribe_voice_capture_with_openai(
     audio_bytes: Vec<u8>,
     request: &VoiceTranscriptionRequest,
@@ -3391,6 +3592,10 @@ pub fn run() {
         // need to be allowed in connect-src.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // Sign-in returns from the browser through a toki:// link. macOS
+        // launches the app to deliver one, so the callback has to survive a
+        // cold start, not only arrive while the app is already open.
+        .plugin(tauri_plugin_deep_link::init())
         .manage(Mutex::new(VoiceCaptureStore::default()))
         .manage(native_click_monitor_state.clone())
         .setup(|app| {
@@ -3435,7 +3640,17 @@ pub fn run() {
                 .text("quit", "Quit Toki")
                 .build()?;
 
-            let default_icon = app.default_window_icon().cloned();
+            // The menu bar wants a template image, not the app icon.
+            //
+            // macOS recolours these itself -- black on a light menu bar, white
+            // on a dark one -- and only a solid shape with an alpha channel
+            // survives that. Handing it the colourful app icon, which is what
+            // `default_window_icon` returns, produces something that looks
+            // wrong on whichever appearance the user is not using.
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!(
+                "../icons/trayTemplate@2x.png"
+            ))
+            .ok();
             let mut tray = TrayIconBuilder::new()
                 .menu(&tray_menu)
                 .tooltip("Toki")
@@ -3463,8 +3678,8 @@ pub fn run() {
                     _ => {}
                 });
 
-            if let Some(icon) = default_icon {
-                tray = tray.icon(icon);
+            if let Some(icon) = tray_icon {
+                tray = tray.icon(icon).icon_as_template(true);
             }
 
             let _tray = tray.build(app)?;
@@ -3540,6 +3755,11 @@ pub fn run() {
             set_operator_setting,
             set_openai_api_key,
             clear_openai_api_key,
+            read_auth_session,
+            store_auth_session,
+            clear_auth_session,
+            auth_token_request,
+            toki_api_request,
             transcribe_voice_capture,
             write_toki_debug_export
         ])

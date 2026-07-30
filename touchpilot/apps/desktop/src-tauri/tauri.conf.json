@@ -83,6 +83,13 @@
         "https://github.com/GargiGupta-io/toki/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGQzBFMDU4OUI5RUIzQUIKUldTcnM1NmJXT0RBYjkreU5lQlh5WlNQZkordnpneTlPeEZXd3BkWEFPY0grbjlZaGl5UXVTeFkK"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "toki"
+        ]
+      }
     }
   },
   "bundle": {

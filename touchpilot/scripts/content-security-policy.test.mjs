@@ -67,15 +67,40 @@ test("the Tauri bridge is reachable", () => {
 });
 
 test("the policy allows no remote origin", () => {
-  // MediaPipe's assets are bundled and checksum-pinned, and the OpenAI call is
-  // made from Rust rather than the webview, so nothing in the page needs to
-  // reach the network.
+  // MediaPipe's assets are bundled and checksum-pinned, and every outbound
+  // call -- sign-in, guidance, billing -- is made from Rust rather than from
+  // the webview, so nothing in the page needs to reach the network.
   //
-  // When the hosted backend arrives, its origin must be added to connect-src
-  // here. requestRealGuidance() fetches from VITE_TOKI_GUIDANCE_ENDPOINT in the
-  // webview, so it will be blocked by this policy until that happens.
+  // The hosted backend did not change this. Allowing its origin here would
+  // allow it for every script in the window, not only for Toki's own code, so
+  // the request goes out through `toki_api_request` in Rust instead and this
+  // policy stays absolute. Adding an origin here should be a deliberate
+  // decision, not a way to make a fetch work.
   assert.doesNotMatch(csp, /https:\/\//u, "no remote https origin is permitted");
   assert.doesNotMatch(csp, /\*/u, "no wildcard origins");
+});
+
+test("the window makes no network call of its own", () => {
+  // The rule above is only real if nothing in the app tries to bypass it. Any
+  // direct fetch() to a configured remote endpoint from the webview would be
+  // blocked at runtime -- which surfaces as a feature that mysteriously does
+  // nothing, so it is worth catching here instead.
+  const client = readFileSync(
+    path.join(desktopSource, "tokiApiClient.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    client,
+    /\bfetch\s*\(/u,
+    "API calls must go through Rust, not fetch",
+  );
+
+  const auth = readFileSync(path.join(desktopSource, "authPkce.ts"), "utf8");
+  assert.doesNotMatch(
+    auth,
+    /\bfetch\s*\(/u,
+    "the token exchange must go through Rust, not fetch",
+  );
 });
 
 test("dangerous sinks stay closed", () => {

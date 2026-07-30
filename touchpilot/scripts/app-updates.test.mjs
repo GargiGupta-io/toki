@@ -36,6 +36,32 @@ test("every window that calls Rust is granted a capability", () => {
   }
 });
 
+test("the sign-in callback scheme is registered everywhere it has to be", () => {
+  // Three separate files have to agree, and a mismatch fails silently: the
+  // browser finishes sign-in, macOS finds nothing to hand the link to, and the
+  // app waits forever on a callback that was never delivered.
+  const infoPlist = readFileSync(
+    path.join(tauriDirectory, "Info.plist"),
+    "utf8",
+  );
+  assert.match(
+    infoPlist,
+    /<key>CFBundleURLSchemes<\/key>\s*<array>\s*<string>toki<\/string>/,
+    "macOS routes toki:// links using Info.plist; without this the callback never arrives",
+  );
+
+  assert.deepEqual(
+    config.plugins?.["deep-link"]?.desktop?.schemes,
+    ["toki"],
+    "the bundler registers the scheme from tauri.conf.json",
+  );
+
+  assert.ok(
+    capability.permissions.includes("deep-link:default"),
+    "without the permission the callback listener is denied and sign-in never completes",
+  );
+});
+
 test("the updater is configured with a host and a verification key", () => {
   const updater = config.plugins?.updater;
   assert.ok(updater, "no updater configuration");

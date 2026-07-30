@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
@@ -153,6 +153,7 @@ import type {
   ViewportMetrics,
 } from "./overlayGeometry";
 import { createGuidanceProviderAdapter } from "./guidanceProvider";
+import { createTokiApiClient, type AccountState } from "./tokiApiClient";
 import { verifyGuidanceTarget } from "./targetVerification";
 import { requireScreenCaptureAccess } from "./captureAccess";
 import {
@@ -194,6 +195,14 @@ import {
   unknownOpenAiKeyStatus,
   type OpenAiKeyStatus,
 } from "./openAiKey";
+import { createAuthSession, listenForAuthCallback } from "./authBindings";
+import {
+  describeAuthState,
+  describePlan,
+  signedOut,
+  type AuthSession,
+  type AuthState,
+} from "./authSession";
 import {
   describeLocalTranscription,
   getOperatorSetting,
@@ -323,6 +332,11 @@ type OverlayCommand =
   | { type: "advance-workflow-step" }
   | { type: "retreat-workflow-step" }
   | { type: "stop-workflow" }
+  // Signing in or out happens in Preferences, and the overlay is what makes
+  // guidance requests. Re-reading the store on demand would eventually notice a
+  // sign-in but never a sign-out, because the overlay's copy stays valid in
+  // memory after the stored one is gone.
+  | { type: "auth-changed" }
   | { type: "set-camera-gestures-enabled"; enabled: boolean }
   | { type: "refresh-camera-devices" }
   | { type: "start-gesture-calibration" }
@@ -2104,12 +2118,22 @@ function getGestureCalibrationCandidate(
 }
 
 function OverlayWindowApp() {
+  /**
+   * The signed-in session, used to authorise guidance requests.
+   *
+   * Restored once at launch and held in a ref rather than in state: nothing on
+   * screen changes when it refreshes, and re-rendering the overlay for it would
+   * interrupt the pointer.
+   */
+  const authSessionRef = useRef<AuthSession | null>(null);
   const [overlayState, setOverlayState] = useState<OverlayState>("idle");
   const [guidanceFixture, setGuidanceFixture] = useState<GuidanceFixture>("safe");
   const [captureMetadata, setCaptureMetadata] = useState<CaptureMetadata | null>(null);
   const [screenshotCapture, setScreenshotCapture] = useState<ScreenshotCapture | null>(null);
   const [guidanceProviderMode, setGuidanceProviderMode] =
     useState<GuidanceProviderMode>("unavailable");
+  /** Set when the service says this needs a paid plan, so the offer is shown. */
+  const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [guidanceProviderName, setGuidanceProviderName] = useState<string | null>(null);
   const [guidanceProviderDebug, setGuidanceProviderDebug] =
     useState<GuidanceProviderResponse["debug"] | null>(null);
@@ -2239,6 +2263,15 @@ function OverlayWindowApp() {
         gesturePointerLockFeedback.validation === "locked" ||
         gesturePointerLockFeedback.validation === "limited"),
   });
+  // Restore the sign-in once, at launch. A guidance request made before this
+  // finishes simply finds no token and reports that, rather than sending a
+  // screenshot on a call that cannot succeed.
+  useEffect(() => {
+    const session = createAuthSession();
+    authSessionRef.current = session;
+    void session?.restore();
+  }, []);
+
   useEffect(() => {
     const candidate = getGestureCalibrationCandidate(
       gestureCalibration,
@@ -2349,10 +2382,17 @@ function OverlayWindowApp() {
     !isRefreshingCapture &&
     overlayState !== "paused";
   const hasAcceptedGuidance = acceptedTarget != null || workflowTarget != null;
-  const visibleGuidanceFailure =
+  const baseGuidanceFailure =
     !isRefreshingCapture && !hasAcceptedGuidance
       ? captureError ?? guidanceProviderError
       : null;
+  // A locked feature is not a broken one, and the message has to say which.
+  // The overlay stays out of the way -- no buttons on a transparent window
+  // floating over someone's work -- so it names where the control is instead.
+  const visibleGuidanceFailure =
+    upgradeRequired && baseGuidanceFailure != null
+      ? `${baseGuidanceFailure} Open Toki Preferences to upgrade.`
+      : baseGuidanceFailure;
   const activeTarget: RenderedGuidanceTarget =
     acceptedTarget != null && acceptedStep != null
       ? {
@@ -3790,8 +3830,24 @@ function OverlayWindowApp() {
         const configuredCodexTimeoutMs = Number(
           import.meta.env.VITE_TOKI_CODEX_TIMEOUT_MS,
         );
+        const apiClient = createTokiApiClient({
+          endpoint,
+          session: authSessionRef.current,
+        });
         const provider = createGuidanceProviderAdapter(providerMode, {
           endpoint,
+          // Present only in a build that has both a service and a sign-in.
+          // Without it the older endpoint shape still works for local smoke
+          // testing, which is what keeps development possible offline.
+          hostedVision: apiClient.configured
+            ? {
+                send: async (body) => {
+                  const reply = await apiClient.vision(body);
+                  setUpgradeRequired(reply.kind === "upgrade_required");
+                  return reply;
+                },
+              }
+            : undefined,
           localCandidateProvider: createLocalCandidateGuidance,
           codex: {
             model: import.meta.env.VITE_TOKI_CODEX_MODEL,
@@ -5233,6 +5289,16 @@ function OverlayWindowApp() {
           blockedReason: "Workflow stopped manually.",
         }));
         setOverlayState("idle");
+        return;
+      }
+
+      if (event.payload.type === "auth-changed") {
+        // Drop the in-memory copy so the next guidance request reads the store
+        // again. A sign-out has to be noticed here: the token this window holds
+        // stays valid until it expires, so without this the overlay would keep
+        // making paid requests as a user who has signed out.
+        authSessionRef.current?.invalidate();
+        setUpgradeRequired(false);
         return;
       }
 
@@ -7947,6 +8013,158 @@ function PreferencesWindowApp() {
   const [whisperModel, setWhisperModel] = useState("");
   const [whisperError, setWhisperError] = useState<string | null>(null);
 
+  const [authState, setAuthState] = useState<AuthState>(signedOut);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [account, setAccount] = useState<AccountState | null>(null);
+  const [planChecked, setPlanChecked] = useState(false);
+  const authRef = useRef<AuthSession | null>(null);
+
+  useEffect(() => {
+    const session = createAuthSession();
+    authRef.current = session;
+
+    if (session == null) {
+      return;
+    }
+
+    void session.restore().then(setAuthState);
+
+    // Registered before anything else can finish, because macOS may have
+    // launched this window specifically to deliver the callback.
+    const stopping = listenForAuthCallback((url) => {
+      void session.completeSignIn(url).then((next) => {
+        setAuthState(next);
+        if (next.status === "signed_in") {
+          announceAuthChange();
+        }
+      });
+    });
+
+    return () => {
+      void stopping.then((stop) => stop()).catch(() => undefined);
+    };
+  }, []);
+
+  async function beginSignIn() {
+    const session = authRef.current;
+    if (session == null) {
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      setAuthState(await session.signIn());
+    } catch (error) {
+      setAuthState({ status: "error", message: String(error) });
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  /**
+   * Read the plan from the service.
+   *
+   * Run whenever the sign-in changes, and again after returning from Stripe:
+   * the webhook that grants access arrives at the service, not at this app, so
+   * the only way to see the result of a payment is to ask.
+   */
+  const refreshAccount = useCallback(async () => {
+    const session = authRef.current;
+    if (session == null) {
+      setAccount(null);
+      setPlanChecked(true);
+      return;
+    }
+
+    const client = createTokiApiClient({
+      endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
+      session,
+    });
+    setAccount(await client.account());
+    setPlanChecked(true);
+  }, []);
+
+  useEffect(() => {
+    if (authState.status === "signed_in") {
+      void refreshAccount();
+    } else {
+      setAccount(null);
+      setPlanChecked(authState.status !== "waiting_for_browser");
+    }
+  }, [authState.status, refreshAccount]);
+
+  // Payment finishes in the browser and is confirmed to the service by Stripe,
+  // not to this app. Coming back to this window is the moment a person expects
+  // to see what they just bought, so that is when it is checked again.
+  useEffect(() => {
+    if (authState.status !== "signed_in") {
+      return;
+    }
+
+    const onFocus = () => void refreshAccount();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [authState.status, refreshAccount]);
+
+  /**
+   * Send someone to Stripe to start or change a subscription.
+   *
+   * Card details are entered on Stripe's own page in the browser, never inside
+   * Toki. That is not only good manners: an app that never sees a card number
+   * cannot leak one, and it keeps this project out of the scope of handling
+   * card data itself.
+   */
+  async function openBilling(kind: "checkout" | "manage") {
+    const session = authRef.current;
+    if (session == null) {
+      return;
+    }
+
+    setAuthBusy(true);
+    setPlanError(null);
+    try {
+      const client = createTokiApiClient({
+        endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
+        session,
+      });
+      const result =
+        kind === "checkout"
+          ? await client.startCheckout()
+          : await client.manageSubscription();
+
+      if ("url" in result) {
+        const { openUrl } = await import("@tauri-apps/plugin-opener");
+        await openUrl(result.url);
+      } else {
+        setPlanError(result.error);
+      }
+    } catch (error) {
+      setPlanError(String(error));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function endSignIn() {
+    const session = authRef.current;
+    if (session == null) {
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      setAuthState(await session.signOut());
+      announceAuthChange();
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  function announceAuthChange() {
+    emitTo("overlay", "toki://overlay-command", {
+      type: "auth-changed",
+    } satisfies OverlayCommand).catch(() => undefined);
+  }
+
   useEffect(() => {
     getOpenAiKeyStatus()
       .then(setKeyStatus)
@@ -8026,6 +8244,61 @@ function PreferencesWindowApp() {
 
   return (
     <main className="debug-shell" aria-label="Toki preferences">
+      {authRef.current != null && (
+        <section className="debug-section">
+          <h2>Account</h2>
+          <p className="debug-muted">{describeAuthState(authState)}</p>
+          {authState.status === "signed_in" ? (
+            <>
+              <p className="debug-muted">
+                {planChecked ? describePlan(account) : "Checking your plan…"}
+              </p>
+              <button type="button" onClick={endSignIn} disabled={authBusy}>
+                Sign out
+              </button>
+              {/*
+                Offering "Upgrade" to somebody who already pays is the clearest
+                possible sign an app does not know who its customers are, so the
+                offer follows what the service actually says. While the plan is
+                unknown neither is shown -- guessing wrong in either direction
+                is worse than waiting a moment.
+              */}
+              {planChecked && account != null && !account.entitled ? (
+                <button
+                  type="button"
+                  onClick={() => void openBilling("checkout")}
+                  disabled={authBusy}
+                >
+                  Upgrade to Pro
+                </button>
+              ) : null}
+              {planChecked && account?.hasBillingAccount ? (
+                <button
+                  type="button"
+                  onClick={() => void openBilling("manage")}
+                  disabled={authBusy}
+                >
+                  Manage plan
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void refreshAccount()}
+                disabled={authBusy}
+              >
+                Refresh plan
+              </button>
+              {planError ? <p className="debug-muted">{planError}</p> : null}
+            </>
+          ) : (
+            <button type="button" onClick={beginSignIn} disabled={authBusy}>
+              {authState.status === "waiting_for_browser"
+                ? "Waiting for your browser…"
+                : "Sign in"}
+            </button>
+          )}
+        </section>
+      )}
       <section className="debug-section">
         <h2>Updates</h2>
         <p className="debug-muted">
