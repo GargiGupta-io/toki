@@ -91,7 +91,7 @@ reads it rather than being clicked together by hand.
    | `STRIPE_SECRET_KEY` | Moves money |
    | `STRIPE_PRICE_ID` | |
    | `STRIPE_WEBHOOK_SECRET` | Set after step 5 |
-   | `ANTHROPIC_API_KEY` | Leave blank until there are credits |
+   | `TOKI_PROVIDER_API_KEY` | OpenAI. Leave blank until there are credits |
 
 4. Deploy. The first build takes a few minutes; it builds the Docker image.
 5. Register the webhook: Stripe → Developers → Webhooks → Add endpoint, at
@@ -112,7 +112,7 @@ lose events — it just answers the first one slowly.
 | `SUPABASE_JWT_SECRET` | Mint a token for any account |
 | `STRIPE_SECRET_KEY` | Move money |
 | `STRIPE_WEBHOOK_SECRET` | Grant anyone a paid subscription for free |
-| `ANTHROPIC_API_KEY` | Spend your model credits |
+| `TOKI_PROVIDER_API_KEY` | Spend your model credits |
 | `SUPABASE_ANON_KEY` | **Nothing.** Public by design; it ships inside the app. The access rules protect the data, not this key's secrecy |
 
 ---

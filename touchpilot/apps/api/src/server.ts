@@ -6,7 +6,7 @@ import { createStubLicenceStore } from "./licences";
 import { createInMemoryRateLimiter } from "./rateLimit";
 import { createSupabaseSubscriptionStore } from "./subscriptions";
 import { createSupabaseBillingWriter } from "./billing";
-import { createAnthropicVisionProvider } from "./vision";
+import { createOpenAiVisionProvider } from "./vision";
 
 /**
  * Node adapter for the handler.
@@ -38,12 +38,12 @@ const dependencies = {
       ? createSupabaseBillingWriter({ supabaseUrl, serviceRoleKey })
       : undefined,
   vision:
-    config.vision.apiKey == null
+    config.provider.apiKey == null
       ? undefined
-      : createAnthropicVisionProvider({
-          apiKey: config.vision.apiKey,
-          model: config.vision.model,
-          effort: config.vision.effort,
+      : createOpenAiVisionProvider({
+          apiKey: config.provider.apiKey,
+          model: config.provider.guidanceModel,
+          baseUrl: config.provider.baseUrl,
         }),
   rateLimiter: createInMemoryRateLimiter(config.limits.requestsPerMinute),
 };
@@ -111,9 +111,9 @@ server.listen(config.port, () => {
       : "auth: verifying Supabase access tokens",
   );
   console.log(
-    config.vision.apiKey == null
-      ? "vision: not configured (needs ANTHROPIC_API_KEY)"
-      : `vision: ${config.vision.model}`,
+    config.provider.apiKey == null
+      ? "vision: not configured (needs TOKI_PROVIDER_API_KEY)"
+      : `vision: ${config.provider.guidanceModel} via ${config.provider.baseUrl}`,
   );
   console.log(
     config.stripe == null

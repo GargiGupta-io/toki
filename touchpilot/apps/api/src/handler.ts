@@ -412,7 +412,7 @@ async function handleVision(
     });
   }
 
-  if (config.vision.apiKey == null || vision == null) {
+  if (config.provider.apiKey == null || vision == null) {
     return unavailable(
       "This Toki service has no vision credentials configured, so it cannot look at screenshots yet.",
     );

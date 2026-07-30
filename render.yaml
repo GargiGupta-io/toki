@@ -62,5 +62,5 @@ services:
 
       # Absent until there are model credits. The service then answers with
       # fixtures and says so on every reply, rather than pretending.
-      - key: ANTHROPIC_API_KEY
+      - key: TOKI_PROVIDER_API_KEY
         sync: false

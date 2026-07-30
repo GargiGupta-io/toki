@@ -7,7 +7,7 @@ import { loadServiceConfig } from "../apps/api/src/config.ts";
 import { createInMemoryRateLimiter } from "../apps/api/src/rateLimit.ts";
 import { freeSubscription } from "../apps/api/src/subscriptions.ts";
 import {
-  createAnthropicVisionProvider,
+  createOpenAiVisionProvider,
   maxImageBytes,
 } from "../apps/api/src/vision.ts";
 import { readHostedVisionResponse } from "../apps/desktop/src/hostedVisionProvider.ts";
@@ -23,6 +23,15 @@ function accessToken(sub = "user-1") {
     .update(`${head}.${body}`)
     .digest("base64url");
   return `${head}.${body}.${signature}`;
+}
+
+/** A chat completion, as the provider would return it. */
+function reply(content) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ choices: [{ message: { content } }] }),
+  };
 }
 
 const paidSubscription = {
@@ -42,7 +51,7 @@ function visionRequest(body) {
 }
 
 function deps(overrides = {}) {
-  const config = loadServiceConfig({ ANTHROPIC_API_KEY: "sk-ant-test" });
+  const config = loadServiceConfig({ TOKI_PROVIDER_API_KEY: "sk-test" });
   return {
     config,
     jwtSecret,
@@ -117,16 +126,13 @@ test("the provider's own error text is never relayed to the client", async () =>
 
 test("an oversized screenshot is refused without being sent", async () => {
   let sent = false;
-  const provider = createAnthropicVisionProvider({
-    apiKey: "sk-ant-test",
-    model: "claude-opus-5",
-    client: {
-      messages: {
-        async create() {
-          sent = true;
-          return { content: [{ type: "text", text: "{}" }] };
-        },
-      },
+  const provider = createOpenAiVisionProvider({
+    apiKey: "sk-test",
+    model: "gpt-4o",
+    baseUrl: "https://api.openai.test/v1",
+    fetchImpl: async () => {
+      sent = true;
+      return reply("{}");
     },
   });
 
@@ -143,52 +149,49 @@ test("the token budget leaves room for reasoning as well as the answer", async (
   // max_tokens. A budget sized for the small JSON object alone truncates the
   // response the moment the model thinks, and it reads as a parse bug.
   let seen = null;
-  const provider = createAnthropicVisionProvider({
-    apiKey: "sk-ant-test",
-    model: "claude-opus-5",
-    client: {
-      messages: {
-        async create(body) {
-          seen = body;
-          return { content: [{ type: "text", text: "{}" }] };
-        },
-      },
+  const provider = createOpenAiVisionProvider({
+    apiKey: "sk-test",
+    model: "gpt-4o",
+    baseUrl: "https://api.openai.test/v1",
+    fetchImpl: async (_url, init) => {
+      seen = JSON.parse(init.body);
+      return reply("{}");
     },
   });
 
   await provider({ prompt: "p", imageBase64: "aaaa", imageFormat: "png" });
   assert.ok(
-    seen.max_tokens >= 4096,
-    `max_tokens is ${seen.max_tokens}, too small once thinking is counted`,
+    seen.max_tokens >= 1024,
+    `max_tokens is ${seen.max_tokens}, too small for the target object`,
   );
+  assert.equal(seen.temperature, 0, "guidance should be repeatable");
 });
 
 test("the answer is constrained to the shape the client can read", async () => {
   let seen = null;
-  const provider = createAnthropicVisionProvider({
-    apiKey: "sk-ant-test",
-    model: "claude-opus-5",
-    effort: "medium",
-    client: {
-      messages: {
-        async create(body) {
-          seen = body;
-          return { content: [{ type: "text", text: "{}" }] };
-        },
-      },
+  const provider = createOpenAiVisionProvider({
+    apiKey: "sk-test",
+    model: "gpt-4o",
+    baseUrl: "https://api.openai.test/v1",
+    fetchImpl: async (_url, init) => {
+      seen = JSON.parse(init.body);
+      return reply("{}");
     },
   });
 
   await provider({
-    prompt: "p",
+    prompt: "locate the Save button",
     imageBase64: "aaaa",
     imageFormat: "png",
     outputSchema: { type: "object", properties: { target: { type: "null" } } },
   });
 
-  assert.equal(seen.output_config.format.type, "json_schema");
-  assert.equal(seen.output_config.format.schema.type, "object");
-  assert.equal(seen.output_config.effort, "medium");
+  assert.equal(seen.response_format.type, "json_object");
+  // The schema is carried in the prompt rather than as a strict response
+  // format, because strict mode refuses the client's nullable target.
+  const text = seen.messages[0].content.find((part) => part.type === "text").text;
+  assert.match(text, /locate the Save button/);
+  assert.match(text, /"target"/, "the schema has to reach the model somehow");
 });
 
 test("the desktop sends the same schema it parses against", async () => {
@@ -232,16 +235,13 @@ test("the desktop sends the same schema it parses against", async () => {
 
 test("the model is asked with the image and the client's own prompt", async () => {
   let seen = null;
-  const provider = createAnthropicVisionProvider({
-    apiKey: "sk-ant-test",
-    model: "claude-opus-5",
-    client: {
-      messages: {
-        async create(body) {
-          seen = body;
-          return { content: [{ type: "text", text: '{"target":null}' }] };
-        },
-      },
+  const provider = createOpenAiVisionProvider({
+    apiKey: "sk-test",
+    model: "gpt-4o",
+    baseUrl: "https://api.openai.test/v1",
+    fetchImpl: async (_url, init) => {
+      seen = JSON.parse(init.body);
+      return reply('{"target":null}');
     },
   });
 
@@ -251,14 +251,14 @@ test("the model is asked with the image and the client's own prompt", async () =
     imageFormat: "jpeg",
   });
 
-  assert.equal(seen.model, "claude-opus-5");
-  const [image, text] = seen.messages[0].content;
-  assert.equal(image.type, "image");
-  assert.equal(image.source.media_type, "image/jpeg");
-  assert.equal(image.source.data, "aGVsbG8=");
+  assert.equal(seen.model, "gpt-4o");
+  const [text, image] = seen.messages[0].content;
+  assert.equal(image.type, "image_url");
+  assert.equal(image.image_url.url, "data:image/jpeg;base64,aGVsbG8=");
+  assert.equal(image.image_url.detail, "high", "small controls need the detail");
   assert.equal(text.text, "locate the Save button");
   assert.equal(result.rawAnswer, '{"target":null}');
-  assert.equal(result.providerName, "anthropic:claude-opus-5");
+  assert.equal(result.providerName, "openai:gpt-4o");
 });
 
 // --- What the desktop makes of each reply -----------------------------------

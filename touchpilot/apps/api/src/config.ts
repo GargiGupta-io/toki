@@ -16,9 +16,6 @@
  */
 
 import type { StripeConfig } from "./stripe";
-import type { VisionEffort } from "./vision";
-
-const visionEfforts = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export type ServiceMode = "fixture" | "live";
 
@@ -34,13 +31,6 @@ export type ServiceConfig = {
     guidanceModel: string;
     transcriptionModel: string;
     baseUrl: string;
-  };
-  /** Vision guidance. Separate credential and model from the two above. */
-  vision: {
-    apiKey: string | null;
-    model: string;
-    /** Unset takes the model's default. Worth measuring before pinning. */
-    effort?: VisionEffort;
   };
   /**
    * Payments. Absent while there is no Stripe account wired up, which leaves
@@ -79,15 +69,6 @@ export function loadServiceConfig(
       guidanceModel: env.TOKI_GUIDANCE_MODEL ?? "gpt-4o",
       transcriptionModel: env.TOKI_TRANSCRIPTION_MODEL ?? "gpt-4o-transcribe",
       baseUrl: env.TOKI_PROVIDER_BASE_URL ?? "https://api.openai.com/v1",
-    },
-    vision: {
-      apiKey: env.ANTHROPIC_API_KEY?.trim() || null,
-      model: env.TOKI_VISION_MODEL?.trim() || "claude-opus-5",
-      effort: (visionEfforts as readonly string[]).includes(
-        env.TOKI_VISION_EFFORT?.trim() ?? "",
-      )
-        ? (env.TOKI_VISION_EFFORT?.trim() as VisionEffort)
-        : undefined,
     },
     stripe: readStripeConfig(env),
     limits: {
