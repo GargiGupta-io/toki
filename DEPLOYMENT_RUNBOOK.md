@@ -35,29 +35,20 @@ first), and the deploy itself.
 
 ---
 
-## What `<your-app>.fly.dev` is
+## What the deployed address is
 
-It is **not a landing page and not a website you have to build.** When you
-deploy, Fly issues an address derived from the app name in `fly.toml`. That name
-is **`toki-ai`**, so the address is `https://toki-ai.fly.dev`. It costs nothing,
-needs no domain purchase, and appears the moment the deploy succeeds.
+Render gives the service a URL when it first deploys, of the form
+`https://toki-api.onrender.com`. It costs nothing and needs no domain.
 
-Fly app names are unique across every Fly account, not just yours. `toki` and
-`toki-api` are both already registered by other people; `toki-ai` was checked and
-is free. If `fly launch` still refuses it — someone may claim it first, and DNS
-is strong evidence rather than the authority — pick another name, change
-`app = ` in `apps/api/fly.toml`, and every address below follows from it.
-
-It is a machine address. Two things use it and no human visits it:
+It is a machine address; two things use it and no human visits it:
 
 | Address | Who calls it | Why |
 |---|---|---|
-| `…fly.dev/billing/webhook` | Stripe's servers | To say "this person paid". Nothing else may grant access |
-| `…fly.dev/vision` | The Toki app on a Mac | To ask a model where to click |
+| `…/billing/webhook` | Stripe's servers | To say "this person paid". Nothing else may grant access |
+| `…/vision` | The Toki app on a Mac | To ask a model where to click |
 
-**Toki needs no landing page to work.** After checkout Stripe sends the
-customer's browser to `…fly.dev/thanks`, a small page this service serves
-itself. A marketing site is a later choice; nothing here waits on it.
+**Toki needs no landing page.** After checkout Stripe returns the customer's
+browser to `…/thanks`, a small page this service serves itself.
 
 ---
 
@@ -65,119 +56,83 @@ itself. A marketing site is a later choice; nothing here waits on it.
 
 ### 1. Run the database migrations
 
-In the Supabase dashboard, SQL editor, in this order:
+Supabase dashboard, SQL editor, in this order:
 
 | File | What it does |
 |---|---|
-| `apps/api/sql/001_schema.sql` | Tables, and the trigger that gives every new account a free tier |
+| `apps/api/sql/001_schema.sql` | Tables, and the trigger giving every new account a free tier |
 | `apps/api/sql/002_rls.sql` | The access rules. **The tables are dangerous without this** |
 | `apps/api/sql/003_billing.sql` | One column that stops an out-of-order webhook undoing a newer one |
 
-`003` is new for payments. If `001` and `002` are already applied, run only `003`.
+All three are already applied on the live project, verified 2026-07-31.
 
-### 2. The Stripe price — already done in Phase D
+### 2. The Stripe price — already done
 
-You created this already. Have the id to hand for the `fly secrets set` command
-below. It starts with `price_`, not `prod_` — the product id is not what
-checkout takes.
-
-Only if you cannot find it: Stripe dashboard **in test mode** → Products → your
-product → the price beneath it.
-
-### 3. Register the webhook endpoint
-
-Stripe → Developers → Webhooks → Add endpoint.
-
-**This step comes after the first deploy**, because the address does not exist
-until then. The order is: deploy → register the endpoint → set
-`STRIPE_WEBHOOK_SECRET` → deploy again.
-
-- URL: **`https://toki-ai.fly.dev/billing/webhook`**
-- Events: `checkout.session.completed`, `customer.subscription.created`,
-  `customer.subscription.updated`, `customer.subscription.deleted`
-
-Copy the signing secret it shows you — it starts with `whsec_`. **This is the
-one that matters.** It is the only thing standing between the endpoint and
-anyone who finds the URL granting themselves a subscription, because the
-endpoint has no login on it by design: the caller is Stripe, not a person.
+Have the id to hand for the dashboard. It starts with `price_`, not `prod_`.
 
 ---
 
 ## Deploying
 
-```bash
-cd touchpilot
-fly launch --no-deploy --config apps/api/fly.toml   # first time only
-```
+The whole configuration is `render.yaml` at the repository root, so Render
+reads it rather than being clicked together by hand.
 
-Then set the credentials. These are stored encrypted on Fly's side and injected
-into the process at run time; they are never in the image:
+1. Push the branch to GitHub.
+2. Render → **New → Blueprint** → pick the repository. It finds `render.yaml`
+   and proposes one free web service called `toki-api`.
+3. It will ask for the values marked `sync: false`. Paste them from
+   `apps/api/.env`:
 
-```bash
-fly secrets set \
-  SUPABASE_URL=... \
-  SUPABASE_SERVICE_ROLE_KEY=... \
-  SUPABASE_JWT_SECRET=... \
-  ANTHROPIC_API_KEY=... \
-  STRIPE_SECRET_KEY=sk_test_... \
-  STRIPE_PRICE_ID=price_... \
-  STRIPE_WEBHOOK_SECRET=whsec_...
-```
+   | Variable | Notes |
+   |---|---|
+   | `SUPABASE_URL` | |
+   | `SUPABASE_SERVICE_ROLE_KEY` | **Bypasses every access rule.** Server only |
+   | `SUPABASE_JWT_SECRET` | Mints a token for any account. Server only |
+   | `STRIPE_SECRET_KEY` | Moves money |
+   | `STRIPE_PRICE_ID` | |
+   | `STRIPE_WEBHOOK_SECRET` | Set after step 5 |
+   | `ANTHROPIC_API_KEY` | Leave blank until there are credits |
 
-`TOKI_SITE_URL` is deliberately absent. Without it the service returns customers
-to its own `/thanks` page, which is what makes checkout work with no website.
-Set it later, if a marketing site ever exists.
+4. Deploy. The first build takes a few minutes; it builds the Docker image.
+5. Register the webhook: Stripe → Developers → Webhooks → Add endpoint, at
+   `https://<your-service>.onrender.com/billing/webhook`, with the events
+   `checkout.session.completed`, `customer.subscription.created`,
+   `customer.subscription.updated`, `customer.subscription.deleted`.
+   Copy the `whsec_` it shows, set it in Render, and let it redeploy.
 
-Then deploy, from the repository root so the build can see the whole workspace:
-
-```bash
-fly deploy --config apps/api/fly.toml --dockerfile apps/api/Dockerfile .
-```
+**The free tier sleeps after fifteen minutes idle** and takes about a minute to
+wake. Stripe retries a webhook that times out, so a sleeping service does not
+lose events — it just answers the first one slowly.
 
 ### Which secret is which
 
-| Secret | Where it comes from | What it can do if leaked |
-|---|---|---|
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project settings → API | **Reads and writes every row in the database, ignoring all access rules.** Server only. Never in the desktop app |
-| `SUPABASE_JWT_SECRET` | Supabase → Project settings → API → JWT secret | Mint a token for any account. Server only |
-| `STRIPE_SECRET_KEY` | Stripe → Developers → API keys | Move money |
-| `STRIPE_WEBHOOK_SECRET` | Shown when the endpoint is registered | Grant anyone a paid subscription for free |
-| `ANTHROPIC_API_KEY` | console.anthropic.com | Spend your model credits |
-| `SUPABASE_ANON_KEY` | Supabase → API | **Nothing.** Public by design; it ships inside the desktop app. The access rules are what protect the data, not this key's secrecy |
+| Secret | What it can do if leaked |
+|---|---|
+| `SUPABASE_SERVICE_ROLE_KEY` | **Reads and writes every row, ignoring all access rules** |
+| `SUPABASE_JWT_SECRET` | Mint a token for any account |
+| `STRIPE_SECRET_KEY` | Move money |
+| `STRIPE_WEBHOOK_SECRET` | Grant anyone a paid subscription for free |
+| `ANTHROPIC_API_KEY` | Spend your model credits |
+| `SUPABASE_ANON_KEY` | **Nothing.** Public by design; it ships inside the app. The access rules protect the data, not this key's secrecy |
 
 ---
 
-## Checking it actually worked
+## Checking it worked
 
 ```bash
-curl https://toki-ai.fly.dev/health
+curl https://<your-service>.onrender.com/health
 ```
 
 The reply names the mode. `fixture` means no model credential reached the
-process, and the service will return placeholder answers rather than pretending.
+process, so answers are placeholders — said plainly rather than pretended.
 
-```bash
-fly logs
-```
+Render's log tab prints one line each for authentication, vision, and payments
+at startup, saying which are configured. A missing credential shows up there
+rather than as a confusing failure later.
 
-Startup prints one line each for authentication, vision, and payments, saying
-which of them is configured. A missing credential shows up there rather than as
-a confusing failure later.
-
-**The log lines carry no request bodies.** Bodies hold screenshots and voice, so
-the request logging records the method, the path, and the status and nothing
-else. That is deliberate; do not add body logging to debug something.
-
-### Testing the webhook without paying
-
-```bash
-stripe listen --forward-to https://toki-ai.fly.dev/billing/webhook
-stripe trigger checkout.session.completed
-```
-
-`stripe listen` prints its own signing secret, which is different from the
-dashboard one. Use whichever matches the path you are testing, or the signature
-check will refuse the event — which is the check doing its job.
+**The logs carry no request bodies.** Bodies hold screenshots and voice, so
+logging records method, path, and status and nothing else. That is deliberate;
+do not add body logging to debug something.
 
 ---
 
@@ -188,12 +143,19 @@ The app needs to know where the service is. In `apps/desktop/.env`:
 ```
 VITE_TOKI_SUPABASE_URL=https://<project>.supabase.co
 VITE_TOKI_SUPABASE_ANON_KEY=<anon public key>
-VITE_TOKI_GUIDANCE_ENDPOINT=https://toki-ai.fly.dev
+VITE_TOKI_GUIDANCE_ENDPOINT=https://<your-service>.onrender.com
 ```
 
-These are compiled into the app, so they must all be values that are safe to
-publish. The service role key and the Stripe secret are not, and neither has any
-business being in a desktop build.
+These are compiled into the app, so all three must be safe to publish. The
+service role key and the Stripe secret are not, and neither belongs in a
+desktop build.
+
+Sign-in does **not** need the service — the token exchange goes straight to
+Supabase — so the first two alone make sign-in work. The third is what turns on
+guidance and billing.
+
+Supabase also needs `toki://auth/callback` added under Authentication → URL
+Configuration → Redirect URLs, or the provider refuses to send anyone back.
 
 ---
 
