@@ -1,5 +1,14 @@
 # Deploying the Toki API
 
+> **Host: Render, free tier.** 750 instance hours a month, no card required.
+> The service sleeps after fifteen minutes idle and takes about a minute to
+> wake; the desktop app reports a slow first request rather than failing.
+>
+> **Fly.io was the earlier plan and is out** -- no free tier for new accounts,
+> and it refuses to create an app without payment details. `apps/api/fly.toml`
+> is kept because the container is identical either way, so moving back costs
+> nothing if that ever changes.
+
 Everything below runs against real services and costs real money in small
 amounts. Nothing here needs to happen for the desktop app to build or for the
 tests to pass — the service reports plainly when it is unconfigured rather than

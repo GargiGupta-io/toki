@@ -1,0 +1,66 @@
+# Deployment for the Toki API, on Render's free tier.
+#
+# Free because this project has no budget: 750 instance hours a month, no card
+# required. The service spins down after fifteen minutes of inactivity and takes
+# about a minute to wake, which is the price of free and is fine here -- the
+# desktop app reports a slow first request rather than failing.
+#
+# Fly.io was the earlier plan and is out: it has no free tier for new accounts
+# and refuses to create an app without payment details on file.
+#
+# Nothing secret is in this file. Every credential is marked `sync: false`,
+# which tells Render to expect it to be set in the dashboard and never to read
+# it from the repository.
+
+services:
+  - type: web
+    name: toki-api
+    runtime: docker
+    plan: free
+    region: oregon
+
+    # The Dockerfile lives beside the service, but the build context is the
+    # workspace root -- the service is one package in a monorepo and needs the
+    # root lockfile and `packages/shared` to resolve at all.
+    dockerfilePath: ./touchpilot/apps/api/Dockerfile
+    dockerContext: ./touchpilot
+
+    # Answered before authentication, so the check cannot fail for want of a
+    # credential. Render uses it to decide a deploy succeeded.
+    healthCheckPath: /health
+
+    envVars:
+      # A guidance request carries a base64 screenshot; a retina window encodes
+      # to several megabytes. Render places no small cap on request bodies,
+      # which is the reason a container host is used rather than a serverless
+      # one -- those cap bodies well below this.
+      - key: TOKI_MAX_REQUEST_BYTES
+        value: "12582912"
+      - key: TOKI_REQUESTS_PER_MINUTE
+        value: "20"
+      - key: NODE_ENV
+        value: production
+
+      # Set in the dashboard, never here.
+      #
+      # The first two are the dangerous ones: the service role key reads and
+      # writes every row in the database ignoring all access rules, and the
+      # Stripe secret can move money. The webhook secret is what stops anyone
+      # who finds the endpoint granting themselves a subscription.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+      # Absent until there are model credits. The service then answers with
+      # fixtures and says so on every reply, rather than pretending.
+      - key: ANTHROPIC_API_KEY
+        sync: false

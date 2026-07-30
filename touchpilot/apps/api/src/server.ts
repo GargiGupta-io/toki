@@ -99,7 +99,11 @@ const server = createServer(async (incoming, outgoing) => {
 });
 
 server.listen(config.port, () => {
-  console.log(`Toki API listening on http://127.0.0.1:${config.port}`);
+  // Port only, not an address. Passing no host binds every interface, which is
+  // what a container host requires; naming 127.0.0.1 here would read as a
+  // loopback-only service and send anyone debugging a deploy in the wrong
+  // direction.
+  console.log(`Toki API listening on port ${config.port}`);
   console.log(describeServiceMode(config));
   console.log(
     jwtSecret == null
