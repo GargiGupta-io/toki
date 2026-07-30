@@ -150,3 +150,53 @@ test("nothing anywhere resolves an executable through PATH", () => {
     `these resolve through PATH: ${bareNameInvocations.join(", ")}`,
   );
 });
+
+// --- The shape of the command that is actually run --------------------------
+
+test("the CLI is invoked in an order that does not swallow the prompt", () => {
+  // `--allowedTools` and `--add-dir` each take a list, so they keep consuming
+  // arguments until one begins with a dash. Leaving either last eats the
+  // prompt as another value, and the CLI exits saying no prompt was given --
+  // which reads as an empty prompt rather than as an ordering problem. Proven
+  // against the real CLI before this test was written.
+  const rust = readFileSync(
+    path.join(workspaceRoot, "apps", "desktop", "src-tauri", "src", "lib.rs"),
+    "utf8",
+  );
+
+  const listFlags = ['"--allowedTools"', '"--add-dir"'];
+  const promptAt = rust.indexOf('.arg("--print").arg(prompt)');
+  assert.ok(promptAt > 0, "the prompt is no longer the trailing argument");
+
+  for (const flag of listFlags) {
+    const flagAt = rust.indexOf(flag);
+    assert.ok(flagAt > 0, `${flag} is not passed`);
+    assert.ok(
+      flagAt < promptAt,
+      `${flag} takes a list and must not be the last flag before the prompt`,
+    );
+  }
+});
+
+test("standard input is closed rather than inherited", () => {
+  // A CLI handed an open pipe waits to be given a prompt on it -- three
+  // seconds, on every single guidance request, before giving up. Nothing is
+  // ever sent that way; the prompt is an argument.
+  const rust = readFileSync(
+    path.join(workspaceRoot, "apps", "desktop", "src-tauri", "src", "lib.rs"),
+    "utf8",
+  );
+  assert.match(rust, /\.stdin\(Stdio::null\(\)\)/);
+});
+
+test("the CLI is given reading and nothing else", () => {
+  // It runs inside Toki's screen-recording and camera grants, because macOS
+  // attaches permissions to the process that launched it. Anything beyond
+  // opening the one screenshot would be lending those out.
+  const rust = readFileSync(
+    path.join(workspaceRoot, "apps", "desktop", "src-tauri", "src", "lib.rs"),
+    "utf8",
+  );
+  assert.match(rust, /\.arg\("--allowedTools"\)\s*\n\s*\.arg\("Read"\)/);
+  assert.match(rust, /\.arg\("--permission-mode"\)\s*\n\s*\.arg\("dontAsk"\)/);
+});

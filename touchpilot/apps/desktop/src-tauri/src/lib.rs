@@ -2773,16 +2773,21 @@ fn run_command_with_timeout(
     stderr_path: &PathBuf,
 ) -> Result<(ExitStatus, String, String), String> {
     let stdout_file = fs::File::create(stdout_path)
-        .map_err(|error| format!("failed to create Codex stdout capture: {error}"))?;
+        .map_err(|error| format!("failed to capture CLI output: {error}"))?;
     let stderr_file = fs::File::create(stderr_path)
-        .map_err(|error| format!("failed to create Codex stderr capture: {error}"))?;
+        .map_err(|error| format!("failed to capture CLI errors: {error}"))?;
     command
         .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file));
+        .stderr(Stdio::from(stderr_file))
+        // Closed, not inherited. A CLI that reads a prompt from standard input
+        // waits for one when it is handed an open pipe -- three seconds of it,
+        // on every guidance request, before giving up and carrying on. Nothing
+        // is ever sent this way; the prompt is an argument.
+        .stdin(Stdio::null());
 
     let mut child = command
         .spawn()
-        .map_err(|error| format!("failed to start Codex CLI: {error}"))?;
+        .map_err(|error| format!("failed to start the guidance CLI: {error}"))?;
     let started = Instant::now();
 
     let status = loop {
@@ -2842,38 +2847,56 @@ fn run_codex_vision_request(request: CodexVisionRequest) -> Result<CodexVisionRe
         "png"
     };
     let image_path = work_dir.join(format!("screen.{image_extension}"));
-    let schema_path = work_dir.join("target-schema.json");
     let stdout_path = work_dir.join("stdout.txt");
     let stderr_path = work_dir.join("stderr.txt");
 
     let result = (|| {
         fs::write(&image_path, image_bytes)
             .map_err(|error| format!("failed to write Codex screenshot: {error}"))?;
-        fs::write(&schema_path, request.output_schema)
-            .map_err(|error| format!("failed to write Codex output schema: {error}"))?;
-
-        let codex_bin = find_developer_cli_binary()?;
+        let cli_bin = find_developer_cli_binary()?;
         let timeout =
             Duration::from_millis(request.timeout_ms.unwrap_or(25_000).clamp(5_000, 60_000));
-        let mut command = Command::new(codex_bin);
+
+        // The CLI has no flag for attaching an image and none for constraining
+        // the reply to a schema, so the prompt carries both: the image as a
+        // path for the CLI's own file-reading tool to open, and the schema
+        // inline. That is also how the hosted provider does it, for the same
+        // reason -- an answer the client cannot parse is worth nothing.
+        let prompt = format!(
+            "Read the image at {}.\n\n{}\n\nReturn only a JSON object matching \
+             this schema. No prose, no explanation, no markdown fence.\n\n{}",
+            image_path.display(),
+            request.prompt.trim(),
+            request.output_schema.trim(),
+        );
+
+        // Argument order matters here, and not for style.
+        //
+        // `--allowedTools` and `--add-dir` each take a *list*, so they keep
+        // consuming arguments until something that starts with a dash stops
+        // them. Leaving either of them last swallows the prompt as one more
+        // value, and the CLI then exits saying no prompt was given -- which
+        // reads as the prompt being empty rather than as an argument order
+        // problem. The list-taking flags therefore go first, and the prompt
+        // comes last, behind flags that take exactly one value.
+        let mut command = Command::new(cli_bin);
         command
-            .arg("exec")
-            .arg("--ephemeral")
-            .arg("--ignore-user-config")
-            .arg("--ignore-rules")
-            .arg("--skip-git-repo-check")
-            .arg("--sandbox")
-            .arg("read-only")
-            .arg("--color")
-            .arg("never")
-            .arg("-c")
-            .arg("model_reasoning_effort=\"low\"")
-            .arg("--cd")
+            // Reading one file is the entire capability this needs. The CLI
+            // inherits Toki's screen-recording and camera grants when Toki
+            // launches it, so anything broader would be lending them out.
+            .arg("--allowedTools")
+            .arg("Read")
+            // Confine it to the throwaway directory holding the screenshot.
+            .arg("--add-dir")
             .arg(&work_dir)
-            .arg("--image")
-            .arg(&image_path)
-            .arg("--output-schema")
-            .arg(&schema_path);
+            .arg("--output-format")
+            .arg("text")
+            // Never stop to ask a human. The default mode pauses on an
+            // unapproved tool, which here is a request that hangs until the
+            // timeout kills it -- and nobody is watching to answer.
+            .arg("--permission-mode")
+            .arg("dontAsk")
+            .current_dir(&work_dir);
 
         let model = request
             .model
@@ -2883,7 +2906,10 @@ fn run_codex_vision_request(request: CodexVisionRequest) -> Result<CodexVisionRe
         if let Some(model) = model {
             command.arg("--model").arg(model);
         }
-        command.arg(request.prompt);
+
+        // Last two, in this order: the flag that turns on one-shot mode, then
+        // the prompt as the trailing positional argument.
+        command.arg("--print").arg(prompt);
 
         let started = Instant::now();
         let (status, stdout, stderr) =
