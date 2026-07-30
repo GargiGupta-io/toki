@@ -1,0 +1,50 @@
+# Keep the API from falling asleep.
+#
+# Render's free tier suspends a service after fifteen minutes without a request
+# and takes about a minute to wake it. Nothing breaks -- Stripe retries a
+# webhook that times out, so no payment is lost -- but the first guidance
+# request after a quiet spell would sit there for a minute, which is exactly
+# when somebody is looking at it.
+#
+# The free tier grants 750 instance hours a month and a month is about 730, so
+# a single service can stay awake the whole time and still be inside the
+# allowance. That is why this is legitimate rather than a trick: the hours are
+# yours, this only decides when to spend them.
+#
+# The window below is deliberately not the full day. Round-the-clock polling
+# would use ~730 of the 750 hours and leave nothing spare, so a second free
+# service, or a long redeploy, would run the workspace out and stop everything
+# until the next month. Fifteen hours a day is about 450, which leaves room.
+#
+# Runs only if TOKI_HEALTH_URL is set as a repository variable, so a fork or a
+# clone does not start pinging a stranger's service.
+
+name: Keep API awake
+
+on:
+  schedule:
+    # Every ten minutes, 03:30-18:00 UTC. That is roughly 09:00 to 23:30 in
+    # India, where this is developed. GitHub runs scheduled jobs late under
+    # load, which is fine: the point is a request every so often, not on time.
+    - cron: "*/10 3-18 * * *"
+  # So it can be woken by hand before a demo without waiting for the schedule.
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the service
+        env:
+          HEALTH_URL: ${{ vars.TOKI_HEALTH_URL }}
+        run: |
+          if [ -z "$HEALTH_URL" ]; then
+            echo "TOKI_HEALTH_URL is not set; nothing to ping."
+            exit 0
+          fi
+
+          # A sleeping service takes about a minute to answer, so the timeout
+          # has to be generous or this fails on exactly the call that matters.
+          # --fail turns an error status into a non-zero exit; without it curl
+          # reports success for a 502 and a broken deploy looks healthy.
+          curl --silent --show-error --fail --max-time 120 "$HEALTH_URL"
