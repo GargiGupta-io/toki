@@ -54,14 +54,19 @@
   inset: 0 var(--shoulder);
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--line);
-  border-top: 0;
+  /*
+   * No border and no drop shadow.
+   *
+   * A shadow implies something is floating above a surface. This hangs off the
+   * top edge of the display with nothing behind it, so the shadow had nothing
+   * to fall on and read as a grey haze around the panel instead. The outline
+   * was doing the same job badly -- a hairline rectangle drawn around a shape
+   * whose whole point is that it curves away at the top.
+   */
+  border: 0;
   /* Square where it meets the notch, generously rounded where it ends. */
   border-radius: 0 0 22px 22px;
   background: #08090b;
-  box-shadow:
-    0 20px 44px rgba(0, 0, 0, 0.62),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: var(--ink);
   font-size: 12px;
   user-select: none;
