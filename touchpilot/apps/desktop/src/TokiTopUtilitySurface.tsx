@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { CameraPermissionState, CameraStreamStatus } from "@toki/shared";
 
 import type { TokiTopStatusModel, TopUtilityMode } from "./topUtility";
@@ -128,6 +129,9 @@ export function TokiTopUtilitySurface({
 }) {
   const [activeTab, setActiveTab] = useState<UtilityTab>("voice");
   const expanded = mode === "expanded";
+  const shellRef = useRef<HTMLElement | null>(null);
+
+  useFittedHeight(shellRef, expanded, activeTab, status?.mode);
 
   const visibleStatus =
     status ??
@@ -154,6 +158,7 @@ export function TokiTopUtilitySurface({
 
   return (
     <section
+      ref={shellRef}
       className="toki-top-utility"
       data-mode={mode}
       data-status={visibleStatus.mode}
@@ -487,6 +492,67 @@ export function TokiTopUtilitySurface({
       ) : null}
     </section>
   );
+}
+
+/**
+ * Keep the window exactly as tall as what is inside it.
+ *
+ * Each tab needs a different amount of room, and a window fixed at the tallest
+ * leaves the shortest sitting above a slab of empty black. Measuring is the
+ * only honest way to know: the content is text at the system font size, so its
+ * height depends on wrapping, on the user's display, and on how long a status
+ * message happens to be.
+ *
+ * `useLayoutEffect` rather than `useEffect` -- the measurement has to happen
+ * before the frame is shown, or the panel is briefly the wrong size on every
+ * tab change and visibly jumps.
+ */
+function useFittedHeight(
+  ref: React.RefObject<HTMLElement | null>,
+  expanded: boolean,
+  ...whenTheseChange: unknown[]
+) {
+  const lastSent = useRef(0);
+
+  useLayoutEffect(() => {
+    if (!expanded) {
+      return;
+    }
+
+    const element = ref.current;
+    if (element == null) {
+      return;
+    }
+
+    const send = () => {
+      // The panel is `position: fixed; inset: 0`, so it fills the window rather
+      // than reporting what it needs. Its children are what have a natural
+      // height.
+      const measured = Array.from(element.children).reduce(
+        (total, child) => total + child.getBoundingClientRect().height,
+        0,
+      );
+      const height = Math.ceil(measured) + 1;
+
+      // A pixel of jitter between measurements is normal on a fractional
+      // display scale. Resizing on it would leave the window trembling.
+      if (height > 0 && Math.abs(height - lastSent.current) > 2) {
+        lastSent.current = height;
+        void invoke("set_top_utility_height", { height }).catch(() => undefined);
+      }
+    };
+
+    send();
+
+    // Content can change height without a tab change: a status message
+    // arrives, an error appears, the plan finishes loading.
+    const observer = new ResizeObserver(send);
+    for (const child of Array.from(element.children)) {
+      observer.observe(child);
+    }
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, ...whenTheseChange]);
 }
 
 /** Toki's mark: the inked ring from the app icon, drawn small. */

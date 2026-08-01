@@ -275,14 +275,25 @@ test("the top utility is a top-attached interactive fullscreen auxiliary panel",
     `panel background ${hex} is too light to sit over other windows`,
   );
 
-  // The expanded panel has to be big enough for the settings it now holds,
-  // since the separate Preferences window was removed. Sized by intent rather
-  // than by an exact number, which only says what someone typed.
   const width = Number(nativeSource.match(/TOP_UTILITY_EXPANDED_WIDTH: f64 = ([\d.]+)/)[1]);
-  const height = Number(nativeSource.match(/TOP_UTILITY_EXPANDED_HEIGHT: f64 = ([\d.]+)/)[1]);
-  const peekHeight = Number(nativeSource.match(/TOP_UTILITY_PEEK_HEIGHT: f64 = ([\d.]+)/)[1]);
   assert.ok(width >= 380, `expanded panel is ${width}px wide; too narrow for a path field`);
-  assert.ok(height > peekHeight * 4, `expanded panel is ${height}px tall; too short for the settings it absorbed`);
+
+  // The panel sizes itself to whichever tab is showing rather than standing at
+  // a fixed height. Fixed meant sizing to the tallest tab, which left every
+  // other one above a slab of empty black.
+  assert.match(nativeSource, /fn set_top_utility_height/);
+  assert.match(topUtilitySource, /set_top_utility_height/);
+
+  // Measured in the webview, so the value is not trusted: a layout caught
+  // mid-transition can report something absurd, and a window taller than the
+  // display cannot be dismissed.
+  assert.match(nativeSource, /height\.clamp\(/);
+  const ceiling = Number(nativeSource.match(/TOP_UTILITY_MAX_HEIGHT: f64 = ([\d.]+)/)[1]);
+  const peekHeight = Number(nativeSource.match(/TOP_UTILITY_PEEK_HEIGHT: f64 = ([\d.]+)/)[1]);
+  assert.ok(
+    ceiling > peekHeight * 4,
+    `the ceiling is ${ceiling}px; too low for the settings the panel absorbed`,
+  );
 });
 
 test("completed voice notices expire back to a hidden inactive notch", () => {

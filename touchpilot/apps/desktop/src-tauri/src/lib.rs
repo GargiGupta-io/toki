@@ -162,11 +162,20 @@ struct TopUtilityModePayload {
 
 const TOP_UTILITY_PEEK_WIDTH: f64 = 380.0;
 const TOP_UTILITY_PEEK_HEIGHT: f64 = 58.0;
-// Sized for the tallest tab rather than the shortest. Setup holds a key field,
-// two switches and the update controls; sizing to Voice and letting the rest
-// scroll would hide most of Setup behind a scrollbar in a panel this narrow.
 const TOP_UTILITY_EXPANDED_WIDTH: f64 = 420.0;
-const TOP_UTILITY_EXPANDED_HEIGHT: f64 = 430.0;
+
+/// Height before the panel has measured itself.
+///
+/// Only ever seen for the instant between the window appearing and the first
+/// measurement, so it is sized for the smallest tab. Guessing high instead
+/// makes the panel flash tall and then shrink, which is more noticeable than
+/// growing.
+const TOP_UTILITY_EXPANDED_HEIGHT: f64 = 210.0;
+
+/// The tallest the panel may become. Beyond this its own content scrolls,
+/// because a settings panel that reaches the bottom of the display has stopped
+/// being a panel hanging from the notch.
+const TOP_UTILITY_MAX_HEIGHT: f64 = 520.0;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2378,6 +2387,29 @@ fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     apply_top_utility_mode(&window, "hidden", false)
 }
 
+/// Resize the panel to fit whatever it is currently showing.
+///
+/// Each tab needs a different amount of room -- Voice is a button and a switch,
+/// Setup is two key fields, two switches and the update controls. A window
+/// fixed at the tallest leaves the shortest tab sitting above a slab of empty
+/// black, which is exactly how it looked before this existed.
+///
+/// Only the height moves. The panel hangs from the top edge, so its position
+/// and width are unaffected and it stays centred under the notch.
+#[tauri::command]
+fn set_top_utility_height(app: tauri::AppHandle, height: f64) -> Result<(), String> {
+    let window = app
+        .get_webview_window("settings")
+        .ok_or_else(|| "settings window is not available".to_string())?;
+
+    // Clamped rather than trusted. The value is measured in the webview, and a
+    // layout mid-transition can report something absurd; a window taller than
+    // the display cannot be dismissed.
+    let clamped = height.clamp(120.0, TOP_UTILITY_MAX_HEIGHT);
+
+    position_top_utility(&window, TOP_UTILITY_EXPANDED_WIDTH, clamped)
+}
+
 #[tauri::command]
 fn set_top_utility_mode(
     app: tauri::AppHandle,
@@ -3767,6 +3799,7 @@ pub fn run() {
             request_codex_vision_guidance,
             set_overlay_surface_mode,
             set_top_utility_mode,
+            set_top_utility_height,
             toki_debug_export_status,
             clear_toki_debug_export,
             openai_api_key_status,

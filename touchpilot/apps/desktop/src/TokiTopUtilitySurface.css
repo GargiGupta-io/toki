@@ -164,8 +164,7 @@
 /* --- Tabs --------------------------------------------------------------- */
 
 .toki-top-utility__expanded {
-  flex: 1;
-  min-height: 0;
+  flex: none;
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--line);
@@ -208,8 +207,14 @@
 }
 
 .toki-top-utility__tab-panel {
-  flex: 1;
-  min-height: 0;
+  /* Sized by its content, not stretched to fill.
+
+     The window resizes to whatever this measures, so a panel that grew to fill
+     the window would measure the window and never shrink -- each would be
+     waiting on the other. It scrolls only if the content passes the ceiling
+     the window will agree to. */
+  flex: none;
+  max-height: 460px;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--step) calc(var(--step) * 1.5) calc(var(--step) * 1.5);
