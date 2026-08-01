@@ -62,9 +62,9 @@
         "label": "preferences",
         "title": "Toki Settings",
         "width": 720,
-        "height": 520,
+        "height": 430,
         "minWidth": 560,
-        "minHeight": 420,
+        "minHeight": 340,
         "center": true,
         "decorations": true,
         "transparent": false,
@@ -72,7 +72,9 @@
         "resizable": true,
         "shadow": true,
         "skipTaskbar": false,
-        "visible": false
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

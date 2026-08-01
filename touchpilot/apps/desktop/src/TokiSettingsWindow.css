@@ -39,7 +39,9 @@
   flex: none;
   display: flex;
   gap: 2px;
-  padding: calc(var(--step) * 1.25) var(--step) var(--step);
+  /* Cleared past the traffic lights, which now float over the window's own
+     background rather than sitting on a light strip of their own. */
+  padding: calc(var(--step) * 3.5) var(--step) var(--step);
   border-bottom: 1px solid var(--line);
   /* The strip is the window's title area, so it drags the window. */
   -webkit-app-region: drag;
@@ -86,7 +88,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: calc(var(--step) * 2.5) calc(var(--step) * 3);
+  padding: calc(var(--step) * 2) calc(var(--step) * 3) calc(var(--step) * 3);
   display: flex;
   flex-direction: column;
   gap: calc(var(--step) * 1.25);
