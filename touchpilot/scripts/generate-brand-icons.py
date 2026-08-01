@@ -622,6 +622,11 @@ def main():
     write_png(tray_icon(22), ICONS / "trayTemplate.png")
     write_png(tray_icon(44), ICONS / "trayTemplate@2x.png")
 
+    # Google's OAuth consent screen asks for 120x120. Generated with the tile
+    # rather than on transparency: that screen is dark, and a dark mark on
+    # nothing would vanish into it.
+    write_png(app_icon(120), BRAND / "google-consent-logo-120.png")
+
     print("Reference:")
     write_png(app_icon(1024), BRAND / "toki-mark-1024.png")
     write_png(tray_icon(512), BRAND / "toki-mark-silhouette.png")
