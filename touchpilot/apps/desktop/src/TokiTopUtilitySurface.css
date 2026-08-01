@@ -270,21 +270,40 @@
 
 /* --- Push to talk ------------------------------------------------------- */
 
+/*
+ * A pill with nothing in it, not a filled box.
+ *
+ * This used to rest at 4% white inside a hairline border. On a near-black
+ * panel that reads as a *disabled region* -- a greyed-out area -- rather than
+ * something you press, which is the opposite of what the largest control in
+ * the panel should say.
+ *
+ * Emptying the resting state also gives the fill exactly one meaning. The
+ * panel's rule is that white means live; spending a grey fill on "here is a
+ * button" left the listening state with only a slightly-less-grey fill to
+ * distinguish itself. Now at rest it is text on the panel, and while held it
+ * inverts completely -- the same white-on-dark language the settings window
+ * already uses for on.
+ */
 .toki-talk {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
   gap: calc(var(--step) * 1.25);
   width: 100%;
-  padding: calc(var(--step) * 1.125) calc(var(--step) * 1.25);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--raise);
+  /* Wider side padding than a rectangle needs: a pill's ends curve away, so
+     text set to the old inset would crowd the curve. */
+  padding: calc(var(--step) * 1.125) calc(var(--step) * 1.75);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .toki-talk:hover {
@@ -292,8 +311,18 @@
 }
 
 .toki-talk[data-active="true"] {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--live);
+  color: #08090b;
+}
+
+/* On white, the second line has to darken rather than dim -- a lighter grey
+   would vanish instead of receding. */
+.toki-talk[data-active="true"] small {
+  color: rgba(8, 9, 11, 0.62);
+}
+
+.toki-talk[data-active="true"] .toki-talk__meter {
+  color: #08090b;
 }
 
 /* The two lines stack. Without this they run together on one line, which is
@@ -325,9 +354,9 @@
   color: var(--ink-faint);
 }
 
-.toki-talk[data-active="true"] .toki-talk__meter {
-  color: var(--live);
-}
+/* The active meter colour is set with the rest of the inverted state above.
+   It used to go white here, which was right when the pill stayed dark and is
+   now exactly wrong -- white bars on a white pill are invisible. */
 
 .toki-talk__meter i {
   width: 2px;
