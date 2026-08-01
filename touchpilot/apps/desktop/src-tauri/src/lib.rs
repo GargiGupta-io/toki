@@ -2865,19 +2865,19 @@ fn resolve_operator_binary(env_name: &str, purpose: &str) -> Result<PathBuf, Str
     // security property that matters is that nothing is *searched for* -- an
     // operator naming a path in Settings is as deliberate as exporting it.
     //
-    // The message names the route, not the concept. It used to say "Toki's
-    // Preferences", which was the name of a window that no longer exists --
-    // sending the one person who reads this to look for something that is not
-    // there is worse than saying nothing.
+    // The route belongs to the caller, not to this function.
+    //
+    // This said "Toki's Preferences" -- a window that no longer exists. The
+    // repair named the Speech tab instead, which is right for the Whisper paths
+    // and wrong for the developer CLI, whose path has no field anywhere in the
+    // interface. Both versions confidently sent someone to look for something
+    // that was not there.
+    //
+    // So the caller supplies the route it actually has, and a caller with no
+    // route says so rather than inventing one.
     let configured = read_stored_setting(env_name)
         .or_else(|| std::env::var(env_name).ok())
-        .ok_or_else(|| {
-            format!(
-                "{purpose} is not configured. Open the gear on the Toki panel, \
-                 choose Speech, and enter a path -- or export {env_name} and \
-                 launch Toki from a terminal."
-            )
-        })?;
+        .ok_or_else(|| format!("{purpose} is not configured."))?;
 
     let candidate = PathBuf::from(configured.trim());
 
@@ -2900,8 +2900,13 @@ fn resolve_operator_binary(env_name: &str, purpose: &str) -> Result<PathBuf, Str
     Ok(candidate)
 }
 
+/// The developer CLI has no field in the interface, on purpose -- it is a
+/// development stand-in for the hosted service, not something a user sets up.
+/// So the message must not send anyone looking for one.
 fn find_developer_cli_binary() -> Result<PathBuf, String> {
-    resolve_operator_binary(DEVELOPER_CLI_BIN_ENV, "CLI guidance")
+    resolve_operator_binary(DEVELOPER_CLI_BIN_ENV, "CLI guidance").map_err(|error| {
+        format!("{error} It is a development-only path; set {DEVELOPER_CLI_BIN_ENV} and launch Toki from a terminal.")
+    })
 }
 
 fn truncate_process_detail(value: &str) -> String {
@@ -3590,6 +3595,7 @@ fn transcribe_voice_capture_with_openai(
 fn find_local_whisper_binary() -> Result<String, String> {
     resolve_operator_binary(WHISPER_BIN_ENV, "Local Whisper transcription")
         .map(|path| path.to_string_lossy().to_string())
+        .map_err(|error| format!("{error} Open the gear on the Toki panel, choose Speech, and enter a path."))
 }
 
 /// Locate the Whisper model an operator has named.
@@ -3602,6 +3608,7 @@ fn find_local_whisper_binary() -> Result<String, String> {
 fn local_whisper_model_path() -> Result<String, String> {
     resolve_operator_binary(WHISPER_MODEL_ENV, "Local Whisper transcription")
         .map(|path| path.to_string_lossy().to_string())
+        .map_err(|error| format!("{error} Open the gear on the Toki panel, choose Speech, and enter a path."))
 }
 
 /// Which backend can actually transcribe, given what has been configured.
@@ -4009,6 +4016,25 @@ pub fn run() {
             transcribe_voice_capture,
             write_toki_debug_export
         ])
+        // Closing a secondary window hides it; it does not destroy it.
+        //
+        // Tauri destroys a window when its close button is used. Both of these
+        // are reopened by asking for them by label, so once destroyed the
+        // lookup returns nothing and the gear silently stops working for the
+        // rest of the session -- the failure looks like a dead button, and the
+        // only cure was quitting Toki.
+        //
+        // Toki is an accessory application with no Dock icon, so there is no
+        // "reopen from the Dock" route either. Keeping the window alive and
+        // hidden is what makes closing it reversible.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if matches!(window.label(), "preferences" | "debug") {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -106,7 +106,16 @@ export function readHostedVisionResponse(
   if (status === 401) {
     return {
       kind: "signed_out",
-      error: "Your sign-in has expired. Sign in again to use live guidance.",
+      // The service distinguishes five reasons -- missing, unreadable, wrong
+      // signature, expired, unsupported algorithm -- and only one of them is
+      // cured by signing in again. Replacing all of them with "your sign-in
+      // has expired" sent someone who was demonstrably signed in to sign in
+      // once more, which produces another token signed by the same key and
+      // fails identically. Keep what the service said; it knows.
+      error:
+        typeof body.error === "string" && body.error.trim().length > 0
+          ? body.error
+          : "Sign in to use live guidance.",
     };
   }
 

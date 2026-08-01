@@ -144,6 +144,10 @@ export type WristRollLockAdvanceResult = {
 export type PointerLockInvalidationReason =
   | "camera_unavailable"
   | "display_changed"
+  // The lock survived every check here and was then given up by whatever asked
+  // to explain it. Its own reason is on the card; this only records that the
+  // lock is gone, so a fresh pinch is eligible again.
+  | "explanation_refused"
   | "point_outside_active_window"
   | "screen_capture_unavailable"
   | "screen_state_changed"

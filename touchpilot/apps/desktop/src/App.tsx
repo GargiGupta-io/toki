@@ -2167,6 +2167,26 @@ function OverlayWindowApp() {
       reason: null,
       updatedAt: new Date().toISOString(),
     });
+  const [lockReleaseToken, setLockReleaseToken] = useState(0);
+
+  /**
+   * Give up a lock, on both sides.
+   *
+   * The wrist-roll controller in the gesture runtime holds its own lock state
+   * and will not offer a new one while it believes it is still locked. Clearing
+   * only this half left the pointer moving with every gesture ignored, and no
+   * way back except restarting Toki. Anything that abandons a lock for a reason
+   * the runtime cannot observe has to come through here.
+   */
+  function releasePointerLock(reason: PointerLockInvalidationReason) {
+    setGesturePointerLock(null);
+    setGesturePointerLockFeedback({
+      validation: "invalidated",
+      reason,
+      updatedAt: new Date().toISOString(),
+    });
+    setLockReleaseToken((current) => current + 1);
+  }
   const [
     gestureWindowValidationDiagnostics,
     setGestureWindowValidationDiagnostics,
@@ -2235,6 +2255,7 @@ function OverlayWindowApp() {
       gesturePointerLock == null &&
       voiceCapturePhaseRef.current === "idle" &&
       !pointerExplanationInFlightRef.current,
+    lockReleaseToken,
     controlVoiceCanStart:
       gesturePointerLock != null &&
       (gesturePointerLockFeedback.validation === "checking" ||
@@ -2873,12 +2894,7 @@ function OverlayWindowApp() {
       return;
     }
 
-    setGesturePointerLock(null);
-    setGesturePointerLockFeedback({
-      validation: "invalidated",
-      reason: invalidationReason,
-      updatedAt: new Date().toISOString(),
-    });
+    releasePointerLock(invalidationReason);
   }, [
     gesturePointerDisplay.height,
     gesturePointerDisplay.id,
@@ -2900,12 +2916,7 @@ function OverlayWindowApp() {
       return;
     }
 
-    setGesturePointerLock(null);
-    setGesturePointerLockFeedback({
-      validation: "invalidated",
-      reason: "camera_unavailable",
-      updatedAt: new Date().toISOString(),
-    });
+    releasePointerLock("camera_unavailable");
   }, [
     alwaysOnGestureRuntime.camera.permission,
     alwaysOnGestureRuntime.camera.status,
@@ -3323,6 +3334,19 @@ function OverlayWindowApp() {
           debug,
         }),
       );
+
+      // Release the lock the refusal is about.
+      //
+      // Every message here asks for the control to be locked again, and the
+      // lock was still being held while they said so -- which is the one state
+      // that makes locking again impossible. An ordinary pinch is only eligible
+      // when no lock is held, so a single refusal left Toki holding a lock it
+      // had already given up on, ignoring every gesture aimed at replacing it,
+      // until the app was restarted.
+      //
+      // The card stays. It is the only account of what went wrong, and nothing
+      // clears it when the lock goes.
+      releasePointerLock("explanation_refused");
     };
 
     try {
@@ -4296,7 +4320,9 @@ function OverlayWindowApp() {
       setIsRefreshingCapture(false);
     }
 
-    await refreshCaptureMetadata(guidanceSession.originalGoal, "codex-subscription", {
+    // Same path a spoken command takes; continuing a session must not reach for
+    // a different provider than the one that started it.
+    await refreshCaptureMetadata(guidanceSession.originalGoal, "real", {
       source: "session",
     });
   }
@@ -5133,7 +5159,8 @@ function OverlayWindowApp() {
 
   useEffect(() => {
     window.__tokiRunRealGuidanceSmoke = (goal = "Show me what to click next.") => {
-      void refreshCaptureMetadata(goal, "codex-subscription", { source: "debug" });
+      // Named "real guidance smoke" and, until now, running the Codex path.
+      void refreshCaptureMetadata(goal, "real", { source: "debug" });
     };
 
     return () => {
@@ -5429,7 +5456,14 @@ function OverlayWindowApp() {
         })
       : shouldExplainPointer && pointerIntent != null
         ? explainFrozenGesturePointer(command, pointerIntent)
-        : refreshCaptureMetadata(command.text, "codex-subscription", {
+        : // Live mode, not the Codex one. That mode goes straight to a
+          // developer CLI on the machine, skipping both the free local pass and
+          // the hosted service -- so a spoken command asked for a tool no user
+          // has installed and failed with instructions naming an environment
+          // variable. These call sites were never moved across when the service
+          // shipped. Live mode reads the screen locally first and only sends a
+          // screenshot for what that cannot answer.
+          refreshCaptureMetadata(command.text, "real", {
             traceId: command.traceId,
             source: "voice",
             transcript: command.text,

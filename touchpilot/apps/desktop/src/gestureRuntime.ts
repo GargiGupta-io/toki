@@ -316,6 +316,7 @@ export function useAlwaysOnGestureRuntime({
   adaptiveProfile,
   ordinaryVoiceCanStart,
   controlVoiceCanStart,
+  lockReleaseToken,
 }: {
   cameraEnabled: boolean;
   gesturesEnabled: boolean;
@@ -325,6 +326,18 @@ export function useAlwaysOnGestureRuntime({
   adaptiveProfile: AdaptiveGestureProfile | null;
   ordinaryVoiceCanStart: boolean;
   controlVoiceCanStart: boolean;
+  /**
+   * Bumped when whatever held the lock has given it up for a reason this
+   * runtime cannot see -- a refused explanation, a display change, the camera
+   * going away.
+   *
+   * The wrist-roll controller keeps its own lock state, so clearing the lock
+   * elsewhere left this half still believing it held one. In that state it
+   * emits no new lock request, and the only visible symptom is that the pointer
+   * still moves while no gesture does anything: locking again was impossible
+   * because the controller thought it was already locked.
+   */
+  lockReleaseToken: number;
 }): AlwaysOnGestureRuntime {
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceSummary[]>([]);
   const [cameraProbeStatus, setCameraProbeStatus] =
@@ -1032,6 +1045,20 @@ export function useAlwaysOnGestureRuntime({
     gesturePointer?.sourceFrameId,
     thresholds.minDetectionConfidence,
   ]);
+
+  // Let go when the holder has let go.
+  //
+  // Deliberately keyed on a counter rather than on the lock being absent: the
+  // lock is absent for the whole time before the first one, and resetting on
+  // that would fight the controller on every frame.
+  useEffect(() => {
+    wristRollLockStateRef.current = resetWristRollLockController(
+      pointerTrackingStateRef.current.pointer,
+    );
+    setWristRollLock({ phase: "idle" });
+    setLockRequest(null);
+    setUnlockRequest(null);
+  }, [lockReleaseToken]);
 
   useEffect(() => {
     if (!gesturesEnabled || cameraStatus !== "active") {
