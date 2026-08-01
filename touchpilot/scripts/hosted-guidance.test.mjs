@@ -345,3 +345,42 @@ test("checkout returns a URL to open in the browser", async () => {
 
   assert.deepEqual(await client.startCheckout(), { url: "https://checkout.test/1" });
 });
+
+test("a host that is still waking is retried once, and nothing else is", async () => {
+  // The service sleeps when idle and its host answers 502 for the first
+  // moments of a cold start. Treating that as a real failure reported the plan
+  // as uncheckable whenever the app was opened after a quiet spell.
+  const statuses = [];
+  const client = createTokiApiClient({
+    endpoint: "https://api.toki.test",
+    session: { async accessToken() { return "token"; } },
+    send: async () => {
+      const status = statuses.length === 0 ? 502 : 200;
+      statuses.push(status);
+      return { status, body: { tier: "pro", entitled: true } };
+    },
+  });
+
+  const account = await client.account();
+  assert.deepEqual(statuses, [502, 200], "a waking host gets one more chance");
+  assert.equal(account?.entitled, true);
+
+  // A refusal is an answer. Repeating a request that spends money is not a fix.
+  let calls = 0;
+  const refused = createTokiApiClient({
+    endpoint: "https://api.toki.test",
+    session: { async accessToken() { return "token"; } },
+    send: async () => {
+      calls += 1;
+      return { status: 402, body: { error: "Live guidance is part of Toki Pro." } };
+    },
+  });
+
+  const reply = await refused.vision({
+    prompt: "p",
+    imageBase64: "aaaa",
+    imageFormat: "png",
+  });
+  assert.equal(calls, 1, "a 402 must not be retried");
+  assert.equal(reply.kind, "upgrade_required");
+});

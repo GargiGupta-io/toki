@@ -51,6 +51,14 @@ export type TokiApiClient = {
   manageSubscription(): Promise<{ url: string } | { error: string }>;
 };
 
+/**
+ * How long to wait before the single cold-start retry.
+ *
+ * Long enough for a container to finish starting, short enough that somebody
+ * watching does not conclude the app has hung.
+ */
+const coldStartWaitMs = 4_000;
+
 const signedOutReply: HostedVisionReply = {
   kind: "signed_out",
   error: "Sign in to use live guidance.",
@@ -84,7 +92,26 @@ export function createTokiApiClient({
     // `accessToken` refreshes an expiring token before returning it, and
     // returns null once the session is genuinely over.
     const token = await session?.accessToken();
-    return token == null ? null : send(path, token, body);
+    if (token == null) {
+      return null;
+    }
+
+    const reply = await send(path, token, body);
+
+    // One retry, only for a host that is still waking up.
+    //
+    // The service sleeps when idle and its host answers 502 or 503 for the
+    // first moments of a cold start, before the process is listening. Treating
+    // that as a real failure meant the app reported the plan as uncheckable
+    // whenever somebody opened it after a quiet spell -- which is most of the
+    // time. Nothing else is retried: a 4xx is an answer, and repeating a
+    // request that costs money is not a fix for anything.
+    if (reply.status === 502 || reply.status === 503) {
+      await new Promise((resolve) => setTimeout(resolve, coldStartWaitMs));
+      return send(path, token, body);
+    }
+
+    return reply;
   }
 
   return {
