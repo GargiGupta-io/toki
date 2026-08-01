@@ -1,5 +1,14 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+
+import {
+  CameraIcon,
+  GearIcon,
+  MarkIcon,
+  PauseIcon,
+  PlayIcon,
+  RefreshIcon,
+} from "./TokiIcons";
 import type { CameraPermissionState, CameraStreamStatus } from "@toki/shared";
 
 import type { TokiTopStatusModel, TopUtilityMode } from "./topUtility";
@@ -16,8 +25,6 @@ import "./TokiTopUtilitySurface.css";
  * The tabs are ordered by how often they are touched: talking and pausing
  * every session, the account occasionally, setup once.
  */
-
-type UtilityTab = "voice" | "controls" | "account" | "setup";
 
 /** Sign-in and plan. Absent when the build has no service configured. */
 export type UtilityAccount = {
@@ -84,23 +91,20 @@ export function TokiTopUtilitySurface({
   voiceActive,
   voiceLabel,
   voiceMessage,
-  pointerExplanationSpeechMuted,
   cameraGesturesEnabled,
   cameraStatus,
   cameraPermission,
   cameraError,
   idleStatusText,
-  account,
-  setup,
   onVoicePressStart,
   onVoicePressEnd,
   onRefreshCapture,
   onPauseToggle,
   onCameraGesturesToggle,
-  onPointerExplanationSpeechMuteToggle,
   onRevealTarget,
   onStartDrag,
   onClose,
+  onOpenSettings,
 }: {
   mode: Exclude<TopUtilityMode, "hidden">;
   status: TokiTopStatusModel | null;
@@ -109,29 +113,26 @@ export function TokiTopUtilitySurface({
   voiceActive: boolean;
   voiceLabel: string;
   voiceMessage: string;
-  pointerExplanationSpeechMuted: boolean;
   cameraGesturesEnabled: boolean;
   cameraStatus: CameraStreamStatus;
   cameraPermission: CameraPermissionState;
   cameraError: string | null;
   idleStatusText: string;
-  account: UtilityAccount | null;
-  setup: UtilitySetup;
   onVoicePressStart: () => void;
   onVoicePressEnd: () => void;
   onRefreshCapture: () => void;
   onPauseToggle: () => void;
   onCameraGesturesToggle: () => void;
-  onPointerExplanationSpeechMuteToggle: () => void;
   onRevealTarget: () => void;
+  /** Opens the settings window, where everything configured once now lives. */
+  onOpenSettings: () => void;
   onStartDrag: () => void;
   onClose: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<UtilityTab>("voice");
   const expanded = mode === "expanded";
   const shellRef = useRef<HTMLElement | null>(null);
 
-  useFittedHeight(shellRef, expanded, activeTab, status?.mode);
+  useFittedHeight(shellRef, expanded, status?.mode, isPaused, cameraGesturesEnabled);
 
   const visibleStatus =
     status ??
@@ -147,14 +148,6 @@ export function TokiTopUtilitySurface({
     permission: cameraPermission,
     error: cameraError,
   });
-
-  // A tab that leads nowhere is worse than one fewer tab.
-  const tabs: Array<{ id: UtilityTab; label: string }> = [
-    { id: "voice", label: "Voice" },
-    { id: "controls", label: "Controls" },
-    ...(account ? ([{ id: "account", label: "Account" }] as const) : []),
-    { id: "setup", label: "Setup" },
-  ];
 
   return (
     <section
@@ -179,7 +172,7 @@ export function TokiTopUtilitySurface({
         }}
       >
         <span className="toki-top-utility__identity" aria-hidden="true">
-          <TokiMark />
+          <MarkIcon />
         </span>
         <span className="toki-top-utility__status-copy" aria-live="polite">
           <strong>{visibleStatus.label}</strong>
@@ -214,280 +207,75 @@ export function TokiTopUtilitySurface({
         </div>
       ) : expanded ? (
         <div className="toki-top-utility__expanded">
-          <nav
-            className="toki-top-utility__tabs"
-            role="tablist"
-            aria-label="Toki controls"
+          <button
+            className="toki-talk"
+            type="button"
+            data-active={voiceActive}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onVoicePressStart();
+            }}
+            onPointerUp={(event) => {
+              event.preventDefault();
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+              onVoicePressEnd();
+            }}
+            onPointerCancel={onVoicePressEnd}
+            onKeyDown={(event) => {
+              if (!event.repeat && (event.key === " " || event.key === "Enter")) {
+                event.preventDefault();
+                onVoicePressStart();
+              }
+            }}
+            onKeyUp={(event) => {
+              if (event.key === " " || event.key === "Enter") {
+                event.preventDefault();
+                onVoicePressEnd();
+              }
+            }}
           >
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                data-active={activeTab === tab.id}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+            <span className="toki-talk__meter" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span>
+              <strong>{voiceLabel}</strong>
+              <small>{voiceMessage}</small>
+            </span>
+          </button>
 
-          {activeTab === "voice" && (
-            <div className="toki-top-utility__tab-panel" role="tabpanel">
-              <button
-                className="toki-top-utility__talk"
-                type="button"
-                data-active={voiceActive}
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  onVoicePressStart();
-                }}
-                onPointerUp={(event) => {
-                  event.preventDefault();
-                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                    event.currentTarget.releasePointerCapture(event.pointerId);
-                  }
-                  onVoicePressEnd();
-                }}
-                onPointerCancel={onVoicePressEnd}
-                onKeyDown={(event) => {
-                  if (!event.repeat && (event.key === " " || event.key === "Enter")) {
-                    event.preventDefault();
-                    onVoicePressStart();
-                  }
-                }}
-                onKeyUp={(event) => {
-                  if (event.key === " " || event.key === "Enter") {
-                    event.preventDefault();
-                    onVoicePressEnd();
-                  }
-                }}
-              >
-                <span className="toki-top-utility__mini-signal" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span>
-                  <strong>{voiceLabel}</strong>
-                  <small>{voiceMessage}</small>
-                </span>
-              </button>
-
-              <p className="toki-note">
-                Hold Option anywhere to talk without opening this panel.
-              </p>
-
-              <Toggle
-                label="Speak explanations"
-                detail="Reads out what Toki is pointing at."
-                // The stored flag is the mute, so the switch shows its opposite.
-                on={!pointerExplanationSpeechMuted}
-                onToggle={onPointerExplanationSpeechMuteToggle}
-              />
-            </div>
-          )}
-
-          {activeTab === "controls" && (
-            <div className="toki-top-utility__tab-panel" role="tabpanel">
-              <Toggle
-                label={getCameraControlLabel({
-                  enabled: cameraGesturesEnabled,
-                  status: cameraStatus,
-                })}
-                detail={cameraControlMessage}
-                on={cameraGesturesEnabled}
-                onToggle={onCameraGesturesToggle}
-              />
-              <div className="toki-top-utility__commands">
-                <button type="button" onClick={onRefreshCapture} disabled={isBusy}>
-                  {isBusy ? "Updating…" : "Update screen"}
-                </button>
-                <button type="button" onClick={onPauseToggle}>
-                  {isPaused ? "Resume" : "Pause"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "account" && account && (
-            <div className="toki-top-utility__tab-panel" role="tabpanel">
-              <div className="toki-row">
-                <span className="toki-row__text">
-                  <strong>{account.statusText}</strong>
-                  <small>{account.planText}</small>
-                </span>
-              </div>
-
-              {account.error && (
-                <p className="toki-note" data-tone="warn">
-                  {account.error}
-                </p>
-              )}
-
-              {account.signedIn ? (
-                <>
-                  {account.canUpgrade && (
-                    <Row
-                      label="Upgrade to Pro"
-                      detail="Opens Stripe in your browser."
-                      onClick={account.onUpgrade}
-                      disabled={account.busy}
-                    />
-                  )}
-                  {account.canManage && (
-                    <Row
-                      label="Manage plan"
-                      detail="Change your card, or cancel."
-                      onClick={account.onManage}
-                      disabled={account.busy}
-                    />
-                  )}
-                  <div className="toki-top-utility__commands">
-                    <button
-                      type="button"
-                      onClick={account.onRefresh}
-                      disabled={account.busy}
-                    >
-                      Refresh plan
-                    </button>
-                    <button
-                      type="button"
-                      onClick={account.onSignOut}
-                      disabled={account.busy}
-                    >
-                      Sign out
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <Row
-                  label="Sign in"
-                  detail="Opens your browser, then returns here."
-                  onClick={account.onSignIn}
-                  disabled={account.busy}
-                />
-              )}
-            </div>
-          )}
-
-          {activeTab === "setup" && (
-            <div className="toki-top-utility__tab-panel" role="tabpanel">
-              <p className="toki-section-label">Speech</p>
-              <p className="toki-note">{setup.keyStatusText}</p>
-              <label className="toki-field">
-                <span>OpenAI API key</span>
-                <input
-                  type="password"
-                  value={setup.keyDraft}
-                  placeholder={setup.keyStored ? "Replace saved key" : "sk-…"}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(event) => setup.onKeyDraftChange(event.target.value)}
-                />
-              </label>
-              {setup.keyError && (
-                <p className="toki-note" data-tone="warn">
-                  {setup.keyError}
-                </p>
-              )}
-              <div className="toki-top-utility__commands">
-                <button
-                  type="button"
-                  onClick={setup.onSaveKey}
-                  disabled={setup.keyBusy || setup.keyDraft.trim().length === 0}
-                >
-                  Save key
-                </button>
-                <button
-                  type="button"
-                  onClick={setup.onClearKey}
-                  disabled={setup.keyBusy || !setup.keyStored}
-                >
-                  Remove
-                </button>
-              </div>
-
-              <p className="toki-section-label">Local speech</p>
-              <p className="toki-note">{setup.whisperStatusText}</p>
-              <label className="toki-field">
-                <span>Whisper binary</span>
-                <input
-                  type="text"
-                  value={setup.whisperBinary}
-                  placeholder="/absolute/path/to/whisper-cli"
-                  spellCheck={false}
-                  onChange={(event) =>
-                    setup.onWhisperBinaryChange(event.target.value)
-                  }
-                />
-              </label>
-              <label className="toki-field">
-                <span>Whisper model</span>
-                <input
-                  type="text"
-                  value={setup.whisperModel}
-                  placeholder="/absolute/path/to/model.bin"
-                  spellCheck={false}
-                  onChange={(event) =>
-                    setup.onWhisperModelChange(event.target.value)
-                  }
-                />
-              </label>
-              {setup.whisperError && (
-                <p className="toki-note" data-tone="warn">
-                  {setup.whisperError}
-                </p>
-              )}
-              <div className="toki-top-utility__commands">
-                <button type="button" onClick={setup.onSaveWhisper}>
-                  Save paths
-                </button>
-              </div>
-
-              <p className="toki-section-label">Diagnostics</p>
-              <Toggle
-                label="Share diagnostics"
-                detail="Timings and errors. Never what is on your screen."
-                on={setup.diagnosticsEnabled}
-                onToggle={setup.onDiagnosticsToggle}
-              />
-              <Toggle
-                label="Include screenshots"
-                detail={
-                  setup.diagnosticsEnabled
-                    ? "Saves pictures of your screen with diagnostics."
-                    : "Needs diagnostics turned on first."
-                }
-                on={setup.screenCapturesEnabled}
-                onToggle={setup.onScreenCapturesToggle}
-                disabled={!setup.diagnosticsEnabled}
-              />
-
-              <p className="toki-section-label">Updates</p>
-              <p className="toki-note">{setup.updateText}</p>
-              <div className="toki-top-utility__commands">
-                <button
-                  type="button"
-                  onClick={setup.onCheckUpdates}
-                  disabled={setup.updateBusy}
-                >
-                  Check for updates
-                </button>
-                {setup.canInstallUpdate && (
-                  <button
-                    type="button"
-                    onClick={setup.onInstallUpdate}
-                    disabled={setup.updateBusy}
-                  >
-                    Install
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+          <div className="toki-actions">
+            <IconButton
+              label={cameraGesturesEnabled ? "Turn gestures off" : "Turn gestures on"}
+              detail={cameraControlMessage}
+              on={cameraGesturesEnabled}
+              onClick={onCameraGesturesToggle}
+            >
+              <CameraIcon />
+            </IconButton>
+            <IconButton
+              label={isPaused ? "Resume" : "Pause"}
+              on={!isPaused}
+              onClick={onPauseToggle}
+            >
+              {isPaused ? <PlayIcon /> : <PauseIcon />}
+            </IconButton>
+            <IconButton
+              label={isBusy ? "Updating the screen" : "Update screen"}
+              onClick={onRefreshCapture}
+              disabled={isBusy}
+            >
+              <RefreshIcon />
+            </IconButton>
+            <span className="toki-actions__spacer" />
+            <IconButton label="Settings" onClick={onOpenSettings}>
+              <GearIcon />
+            </IconButton>
+          </div>
         </div>
       ) : null}
     </section>
@@ -555,94 +343,46 @@ function useFittedHeight(
   }, [expanded, ...whenTheseChange]);
 }
 
-/** Toki's mark: the inked ring from the app icon, drawn small. */
-function TokiMark() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M17.5 5.6a9 9 0 1 0 3 5.2"
-        stroke="currentColor"
-        strokeWidth="2.1"
-        strokeLinecap="round"
-      />
-      <path
-        d="M17.6 5.4l1.5-2.1M19.4 6.2l2.4-1M18.4 8.2l2.5.4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function Row({
-  label,
-  detail,
-  onClick,
-  disabled,
-}: {
-  label: string;
-  detail: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      className="toki-row"
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-    >
-      <span className="toki-row__text">
-        <strong>{label}</strong>
-        <small>{detail}</small>
-      </span>
-      <span className="toki-row__value" aria-hidden="true">
-        ›
-      </span>
-    </button>
-  );
-}
-
-function Toggle({
+/**
+ * A round icon button.
+ *
+ * `on` inverts it rather than tinting it. With no colour available, filled
+ * versus hollow is the whole vocabulary for "this is currently doing
+ * something", so it has to be unmistakable.
+ *
+ * The label is the accessible name and the tooltip both: at this size there is
+ * no room for text, and an icon nobody can name is a guess.
+ */
+function IconButton({
   label,
   detail,
   on,
-  onToggle,
+  onClick,
   disabled,
+  children,
 }: {
   label: string;
-  detail: string;
-  on: boolean;
-  onToggle: () => void;
+  detail?: string;
+  on?: boolean;
+  onClick: () => void;
   disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      className="toki-row"
+      className="toki-icon-button"
       type="button"
+      aria-label={label}
       aria-pressed={on}
-      onClick={onToggle}
+      title={detail ? `${label} — ${detail}` : label}
+      onClick={onClick}
       disabled={disabled}
     >
-      <span className="toki-row__text">
-        <strong>{label}</strong>
-        <small>{detail}</small>
-      </span>
-      <span className="toki-switch" aria-hidden="true" />
+      {children}
     </button>
   );
 }
 
-/*
- * The camera's state in words.
- *
- * Recovered rather than rewritten: an earlier pass of this redesign replaced
- * these with a shorter pair that only knew about "on", "off" and "starting",
- * which silently dropped the cases that actually need saying -- permission
- * refused in System Settings, no camera attached, and the prompt still waiting
- * to be answered. Those are the states where a person needs telling what to do.
- */
 function getCameraControlMessage({
   enabled,
   status,
@@ -679,30 +419,4 @@ function getCameraControlMessage({
   }
 
   return "Preparing local hand tracking…";
-}
-
-function getCameraControlLabel({
-  enabled,
-  status,
-}: {
-  enabled: boolean;
-  status: CameraStreamStatus;
-}): string {
-  if (!enabled || status === "disabled") {
-    return "Turn camera + gestures on";
-  }
-
-  if (status === "idle" || status === "requesting_permission") {
-    return "Starting camera + gestures";
-  }
-
-  if (
-    status === "permission_denied" ||
-    status === "no_camera" ||
-    status === "error"
-  ) {
-    return "Camera + gestures need attention";
-  }
-
-  return "Camera + gestures on";
 }

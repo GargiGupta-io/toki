@@ -109,7 +109,7 @@ test("the Keychain is preferred over the environment", () => {
   );
 });
 
-test("key commands are registered and reachable from the panel", () => {
+test("key commands are registered and the settings window can reach them", () => {
   const source = readFileSync(libPath, "utf8");
   for (const command of [
     "openai_api_key_status",
@@ -120,30 +120,41 @@ test("key commands are registered and reachable from the panel", () => {
     assert.match(source, new RegExp(`${command},`, "u"), `${command} registered`);
   }
 
-  // The key field used to need its own window because the panel was a compact
-  // status bar. The panel now scrolls and holds it, so the second window is
-  // gone -- and it must stay gone, or there are two places to look for the
-  // same setting.
-  assert.doesNotMatch(source, /"open_preferences"/u);
-  assert.doesNotMatch(source, /get_webview_window\("preferences"\)/u);
+  // A key field and two absolute paths need width, which a strip hanging off
+  // the notch does not have. They live in a real window, and the panel keeps
+  // only what is touched every session.
+  assert.match(source, /fn open_settings_window/u);
+  assert.match(source, /get_webview_window\("preferences"\)/u);
 
-  // Reachable without the debug build: the tray opens the one panel.
-  assert.match(source, /"open_settings"/u);
+  // Two ways in, and both are needed: the gear on the panel, and the tray for
+  // when the panel is not on screen. A menu bar app has no Dock icon to fall
+  // back on.
+  assert.match(source, /"open_preferences"/u);
+
+  // A window absent from the capability list has every invoke() silently
+  // denied. That has already cost this project once, when the previous
+  // settings window shipped with buttons that did nothing.
+  const capability = JSON.parse(
+    readFileSync(
+      path.join(workspaceRoot, "apps", "desktop", "src-tauri", "capabilities", "default.json"),
+      "utf8",
+    ),
+  );
+  assert.ok(
+    capability.windows.includes("preferences"),
+    "the settings window has no capability, so its buttons would do nothing",
+  );
 });
 
 test("the pasted key is not left sitting in the DOM", () => {
   const app = readFileSync(appPath, "utf8");
-  const saveKey = app.slice(
-    app.indexOf("async function saveOpenAiKey()"),
-    app.indexOf("async function removeOpenAiKey()"),
-  );
-
-  assert.match(saveKey, /setKeyDraft\(""\)/u);
-
-  // The field lives in the panel now, not in App.tsx.
-  const surface = readFileSync(
-    path.join(workspaceRoot, "apps", "desktop", "src", "TokiTopUtilitySurface.tsx"),
+  // The field moved to the settings window, and the guarantee moved with it:
+  // the draft is cleared the moment the key is stored, so the secret does not
+  // sit in the DOM for the rest of the session.
+  const settings = readFileSync(
+    path.join(workspaceRoot, "apps", "desktop", "src", "TokiSettingsWindow.tsx"),
     "utf8",
   );
-  assert.match(surface, /type="password"/u, "the field must be masked");
+  assert.match(settings, /setKeyDraft\(""\)/u, "the draft is not cleared after saving");
+  assert.match(settings, /type="password"/u, "the field must be masked");
 });

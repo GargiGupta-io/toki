@@ -2396,6 +2396,22 @@ fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 ///
 /// Only the height moves. The panel hangs from the top edge, so its position
 /// and width are unaffected and it stays centred under the notch.
+/// Show the settings window, creating focus on it if it is already open.
+///
+/// Opened from the gear in the notch panel and from the tray. Both matter: the
+/// panel is not always on screen, and a menu bar app with no Dock icon has no
+/// other way in.
+#[tauri::command]
+fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("preferences")
+        .ok_or_else(|| "settings window is not available".to_string())?;
+
+    window.show().map_err(|error| error.to_string())?;
+    window.unminimize().ok();
+    window.set_focus().map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn set_top_utility_height(app: tauri::AppHandle, height: f64) -> Result<(), String> {
     let window = app
@@ -3717,6 +3733,9 @@ pub fn run() {
                     "open_settings" => {
                         show_settings_window(app);
                     }
+                    "open_preferences" => {
+                        let _ = open_settings_window(app.clone());
+                    }
                     "open_debug" => {
                         if let Some(window) = app.get_webview_window("debug") {
                             let _ = window.show();
@@ -3800,6 +3819,7 @@ pub fn run() {
             set_overlay_surface_mode,
             set_top_utility_mode,
             set_top_utility_height,
+            open_settings_window,
             toki_debug_export_status,
             clear_toki_debug_export,
             openai_api_key_status,

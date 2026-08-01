@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
@@ -153,7 +153,12 @@ import type {
   ViewportMetrics,
 } from "./overlayGeometry";
 import { createGuidanceProviderAdapter } from "./guidanceProvider";
-import { createTokiApiClient, type AccountState } from "./tokiApiClient";
+import { createTokiApiClient } from "./tokiApiClient";
+import {
+  loadDiagnosticsSettings,
+  normalizeDiagnosticsSettings,
+} from "./diagnosticsSettings";
+import { TokiSettingsWindow } from "./TokiSettingsWindow";
 import { verifyGuidanceTarget } from "./targetVerification";
 import { requireScreenCaptureAccess } from "./captureAccess";
 import {
@@ -181,42 +186,12 @@ import {
   type TokiDebugExportStatus,
 } from "./debugExport";
 import {
-  loadDiagnosticsSettings,
-  normalizeDiagnosticsSettings,
   saveDiagnosticsSettings,
   shouldClearDiagnosticsOnChange,
   type DiagnosticsSettings,
 } from "./diagnosticsSettings";
-import {
-  clearOpenAiKey,
-  describeOpenAiKeyStatus,
-  getOpenAiKeyStatus,
-  setOpenAiKey,
-  unknownOpenAiKeyStatus,
-  type OpenAiKeyStatus,
-} from "./openAiKey";
-import { createAuthSession, listenForAuthCallback } from "./authBindings";
-import {
-  describeAuthState,
-  describePlan,
-  signedOut,
-  type AuthSession,
-  type AuthState,
-} from "./authSession";
-import {
-  describeLocalTranscription,
-  getOperatorSetting,
-  setOperatorSetting,
-  whisperBinarySetting,
-  whisperModelSetting,
-} from "./operatorSettings";
-import {
-  checkForUpdate,
-  describeUpdateState,
-  downloadAndInstallUpdate,
-  initialUpdateCheckState,
-  type UpdateCheckState,
-} from "./appUpdates";
+import { createAuthSession } from "./authBindings";
+import type { AuthSession } from "./authSession";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
@@ -5572,221 +5547,9 @@ function SettingsWindowApp() {
     createDefaultGestureRuntimeState(),
   );
   const [topStatus, setTopStatus] = useState<TokiTopStatusModel | null>(null);
-  const [pointerExplanationSpeechMuted, setPointerExplanationSpeechMuted] =
-    useState(false);
   const isSpaceVoiceHeldRef = useRef(false);
   const utilityModeRef = useRef<TopUtilityMode>("hidden");
   const topStatusRef = useRef<TokiTopStatusModel | null>(null);
-
-  // Everything below used to live in a separate Preferences window. It is here
-  // now because a second window is a second place to look for the same thing.
-  const authRef = useRef<AuthSession | null>(null);
-  const [authState, setAuthState] = useState<AuthState>(signedOut);
-  const [account, setAccount] = useState<AccountState | null>(null);
-  const [planChecked, setPlanChecked] = useState(false);
-  const [accountBusy, setAccountBusy] = useState(false);
-  const [accountError, setAccountError] = useState<string | null>(null);
-
-  const [keyStatus, setKeyStatus] = useState<OpenAiKeyStatus>(
-    unknownOpenAiKeyStatus,
-  );
-  const [keyDraft, setKeyDraft] = useState("");
-  const [keyBusy, setKeyBusy] = useState(false);
-  const [keyError, setKeyError] = useState<string | null>(null);
-
-  const [diagnosticsSettings, setDiagnosticsSettings] =
-    useState<DiagnosticsSettings>(loadDiagnosticsSettings);
-
-  const [whisperBinary, setWhisperBinary] = useState("");
-  const [whisperModel, setWhisperModel] = useState("");
-  const [whisperError, setWhisperError] = useState<string | null>(null);
-
-  const [updateState, setUpdateState] = useState<UpdateCheckState>(
-    initialUpdateCheckState,
-  );
-  const pendingUpdateRef = useRef<Awaited<
-    ReturnType<typeof import("@tauri-apps/plugin-updater").check>
-  > | null>(null);
-
-  useEffect(() => {
-    const session = createAuthSession();
-    authRef.current = session;
-    if (session == null) {
-      setPlanChecked(true);
-      return;
-    }
-
-    void session.restore().then(setAuthState);
-
-    // Registered before anything else finishes, because macOS may have launched
-    // this window specifically to deliver the sign-in callback.
-    const stopping = listenForAuthCallback((url) => {
-      void session.completeSignIn(url).then(setAuthState);
-    });
-
-    getOpenAiKeyStatus()
-      .then(setKeyStatus)
-      .catch(() => setKeyStatus(unknownOpenAiKeyStatus));
-    void getOperatorSetting(whisperBinarySetting).then((value) =>
-      setWhisperBinary(value ?? ""),
-    );
-    void getOperatorSetting(whisperModelSetting).then((value) =>
-      setWhisperModel(value ?? ""),
-    );
-
-    return () => {
-      void stopping.then((stop) => stop()).catch(() => undefined);
-    };
-  }, []);
-
-  const refreshAccount = useCallback(async () => {
-    const session = authRef.current;
-    if (session == null) {
-      setAccount(null);
-      setPlanChecked(true);
-      return;
-    }
-    const client = createTokiApiClient({
-      endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
-      session,
-    });
-    setAccount(await client.account());
-    setPlanChecked(true);
-  }, []);
-
-  useEffect(() => {
-    if (authState.status === "signed_in") {
-      void refreshAccount();
-    } else {
-      setAccount(null);
-      setPlanChecked(authState.status !== "waiting_for_browser");
-    }
-  }, [authState.status, refreshAccount]);
-
-  // Payment finishes in the browser and is confirmed to the service, not to
-  // this app, so coming back to the panel is when it is worth asking again.
-  useEffect(() => {
-    if (authState.status !== "signed_in") {
-      return;
-    }
-    const onFocus = () => void refreshAccount();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [authState.status, refreshAccount]);
-
-  async function runAccountAction(
-    action: "signIn" | "signOut" | "checkout" | "portal",
-  ) {
-    const session = authRef.current;
-    if (session == null) {
-      return;
-    }
-
-    setAccountBusy(true);
-    setAccountError(null);
-    try {
-      if (action === "signIn") {
-        setAuthState(await session.signIn());
-        return;
-      }
-      if (action === "signOut") {
-        setAuthState(await session.signOut());
-        // The overlay holds its own copy of the session and its token stays
-        // valid until it expires, so it has to be told rather than left to
-        // notice.
-        emitTo("overlay", "toki://overlay-command", {
-          type: "auth-changed",
-        } satisfies OverlayCommand).catch(() => undefined);
-        return;
-      }
-
-      const client = createTokiApiClient({
-        endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
-        session,
-      });
-      const result =
-        action === "checkout"
-          ? await client.startCheckout()
-          : await client.manageSubscription();
-
-      if ("url" in result) {
-        const { openUrl } = await import("@tauri-apps/plugin-opener");
-        await openUrl(result.url);
-      } else {
-        setAccountError(result.error);
-      }
-    } catch (error) {
-      setAccountError(String(error));
-    } finally {
-      setAccountBusy(false);
-    }
-  }
-
-  async function saveOpenAiKey() {
-    setKeyBusy(true);
-    setKeyError(null);
-    try {
-      setKeyStatus(await setOpenAiKey(keyDraft));
-      // Cleared the moment it is stored, so the secret does not sit in the DOM
-      // for the rest of the session.
-      setKeyDraft("");
-    } catch (error) {
-      setKeyError(String(error));
-    } finally {
-      setKeyBusy(false);
-    }
-  }
-
-  async function removeOpenAiKey() {
-    setKeyBusy(true);
-    setKeyError(null);
-    try {
-      setKeyStatus(await clearOpenAiKey());
-    } catch (error) {
-      setKeyError(String(error));
-    } finally {
-      setKeyBusy(false);
-    }
-  }
-
-  function applyDiagnosticsSettings(next: DiagnosticsSettings) {
-    const normalized = normalizeDiagnosticsSettings(next);
-    setDiagnosticsSettings(normalized);
-    emitTo("overlay", "toki://overlay-command", {
-      type: "set-diagnostics-settings",
-      settings: normalized,
-    } satisfies OverlayCommand).catch(() => undefined);
-  }
-
-  async function saveWhisperPaths() {
-    setWhisperError(null);
-    try {
-      await setOperatorSetting(whisperBinarySetting, whisperBinary);
-      await setOperatorSetting(whisperModelSetting, whisperModel);
-    } catch (error) {
-      setWhisperError(String(error));
-    }
-  }
-
-  async function runUpdateCheck() {
-    setUpdateState({ status: "checking" });
-    const { check } = await import("@tauri-apps/plugin-updater");
-    setUpdateState(
-      await checkForUpdate(async () => {
-        const update = await check();
-        pendingUpdateRef.current = update;
-        return update;
-      }),
-    );
-  }
-
-  async function installPendingUpdate() {
-    const update = pendingUpdateRef.current;
-    if (update == null) {
-      return;
-    }
-    setUpdateState(await downloadAndInstallUpdate(update, setUpdateState));
-  }
 
   function collapseTopUtility() {
     void setTopUtilityWindowMode(
@@ -5810,9 +5573,6 @@ function SettingsWindowApp() {
       setIsRefreshingCapture(event.payload.isRefreshingCapture);
       setVoiceRuntime(event.payload.voiceRuntime);
       setGestureRuntime(event.payload.gestureRuntime);
-      setPointerExplanationSpeechMuted(
-        event.payload.pointerExplanationSpeechMuted,
-      );
       topStatusRef.current = event.payload.topStatus;
       setTopStatus(event.payload.topStatus);
     })
@@ -5948,76 +5708,24 @@ function SettingsWindowApp() {
               ? voiceStatusDetails.message
               : "Press and hold as a fallback."
           }
-          pointerExplanationSpeechMuted={pointerExplanationSpeechMuted}
           cameraGesturesEnabled={gestureRuntime.camera.enabled}
           cameraStatus={gestureRuntime.camera.status}
           cameraPermission={gestureRuntime.camera.permission}
           cameraError={gestureRuntime.camera.error ?? null}
           idleStatusText={idleStatusText}
-          account={
-            authRef.current == null
-              ? null
-              : {
-                  statusText: describeAuthState(authState),
-                  planText: planChecked
-                    ? describePlan(account)
-                    : "Checking your plan…",
-                  signedIn: authState.status === "signed_in",
-                  busy: accountBusy,
-                  // Offering an upgrade to somebody who already pays is the
-                  // clearest sign an app does not know its own customers, so
-                  // both offers follow what the service actually reports.
-                  canUpgrade:
-                    planChecked && account != null && !account.entitled,
-                  canManage: planChecked && account?.hasBillingAccount === true,
-                  error: accountError,
-                  onSignIn: () => void runAccountAction("signIn"),
-                  onSignOut: () => void runAccountAction("signOut"),
-                  onUpgrade: () => void runAccountAction("checkout"),
-                  onManage: () => void runAccountAction("portal"),
-                  onRefresh: () => void refreshAccount(),
-                }
-          }
-          setup={{
-            keyStatusText: describeOpenAiKeyStatus(keyStatus),
-            keyStored: keyStatus.stored,
-            keyDraft,
-            keyBusy,
-            keyError,
-            onKeyDraftChange: setKeyDraft,
-            onSaveKey: () => void saveOpenAiKey(),
-            onClearKey: () => void removeOpenAiKey(),
-            diagnosticsEnabled: diagnosticsSettings.diagnosticsEnabled,
-            screenCapturesEnabled: diagnosticsSettings.screenCapturesEnabled,
-            onDiagnosticsToggle: () =>
-              applyDiagnosticsSettings({
-                ...diagnosticsSettings,
-                diagnosticsEnabled: !diagnosticsSettings.diagnosticsEnabled,
-              }),
-            onScreenCapturesToggle: () =>
-              applyDiagnosticsSettings({
-                ...diagnosticsSettings,
-                screenCapturesEnabled: !diagnosticsSettings.screenCapturesEnabled,
-              }),
-            whisperBinary,
-            whisperModel,
-            whisperStatusText: describeLocalTranscription(
-              whisperBinary || null,
-              whisperModel || null,
-            ),
-            whisperError,
-            onWhisperBinaryChange: setWhisperBinary,
-            onWhisperModelChange: setWhisperModel,
-            onSaveWhisper: () => void saveWhisperPaths(),
-            updateText:
-              describeUpdateState(updateState) ||
-              "Toki checks for updates when you ask it to.",
-            updateBusy:
-              updateState.status === "checking" ||
-              updateState.status === "downloading",
-            canInstallUpdate: updateState.status === "available",
-            onCheckUpdates: () => void runUpdateCheck(),
-            onInstallUpdate: () => void installPendingUpdate(),
+          onOpenSettings={() => {
+            void invoke("open_settings_window").catch(() => undefined);
+          }}
+          onVoicePressStart={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "start-voice-listening",
+              source: "settings",
+            } satisfies OverlayCommand).catch(() => undefined);
+          }}
+          onVoicePressEnd={() => {
+            emitTo("overlay", "toki://overlay-command", {
+              type: "submit-voice-listening",
+            } satisfies OverlayCommand).catch(() => undefined);
           }}
           onRefreshCapture={() => {
             emitTo("overlay", "toki://overlay-command", {
@@ -6035,26 +5743,9 @@ function SettingsWindowApp() {
               enabled: !gestureRuntime.camera.enabled,
             } satisfies OverlayCommand).catch(() => undefined);
           }}
-          onPointerExplanationSpeechMuteToggle={() => {
-            emitTo("overlay", "toki://overlay-command", {
-              type: "set-pointer-explanation-speech-muted",
-              muted: !pointerExplanationSpeechMuted,
-            } satisfies OverlayCommand).catch(() => undefined);
-          }}
           onRevealTarget={() => {
             emitTo("overlay", "toki://overlay-command", {
               type: "reveal-risky-target",
-            } satisfies OverlayCommand).catch(() => undefined);
-          }}
-          onVoicePressStart={() => {
-            emitTo("overlay", "toki://overlay-command", {
-              type: "start-voice-listening",
-              source: "settings",
-            } satisfies OverlayCommand).catch(() => undefined);
-          }}
-          onVoicePressEnd={() => {
-            emitTo("overlay", "toki://overlay-command", {
-              type: "submit-voice-listening",
             } satisfies OverlayCommand).catch(() => undefined);
           }}
           onStartDrag={startSettingsDrag}
@@ -8271,6 +7962,10 @@ function DebugWindowApp() {
 function App() {
   if (currentWindowLabel === "settings") {
     return <SettingsWindowApp />;
+  }
+
+  if (currentWindowLabel === "preferences") {
+    return <TokiSettingsWindow />;
   }
 
   if (currentWindowLabel === "debug") {

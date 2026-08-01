@@ -1,0 +1,274 @@
+/*
+ * The settings window.
+ *
+ * A real window, unlike the panel: it has room, so fields are full width and
+ * explanations get to be sentences. Same palette and the same control shapes
+ * as the panel, because they are one application and should not look like two.
+ *
+ * Black and white throughout. With no hue available, "selected" and "on" are
+ * carried by inverting -- white on near-black -- which only works while nothing
+ * decorative is also white.
+ */
+
+.toki-settings {
+  --step: 8px;
+  --ink: rgba(246, 249, 252, 0.96);
+  --ink-dim: rgba(246, 249, 252, 0.56);
+  --ink-faint: rgba(246, 249, 252, 0.32);
+  --line: rgba(255, 255, 255, 0.08);
+  --raise: rgba(255, 255, 255, 0.04);
+  --raise-hover: rgba(255, 255, 255, 0.075);
+  --live: rgba(255, 255, 255, 0.95);
+
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #131417;
+  color: var(--ink);
+  font:
+    13px/1.45 -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif;
+}
+
+/* --- Icon tabs ----------------------------------------------------------- */
+
+.toki-settings__tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: calc(var(--step) * 1.25) var(--step) var(--step);
+  border-bottom: 1px solid var(--line);
+  /* The strip is the window's title area, so it drags the window. */
+  -webkit-app-region: drag;
+}
+
+.toki-settings__tabs button {
+  -webkit-app-region: no-drag;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-width: 74px;
+  padding: calc(var(--step) * 0.875) var(--step);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-faint);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.toki-settings__tabs button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.toki-settings__tabs button:hover {
+  color: var(--ink-dim);
+  background: var(--raise);
+}
+
+.toki-settings__tabs button[data-active="true"] {
+  color: var(--ink);
+  background: var(--raise-hover);
+}
+
+/* --- Body ---------------------------------------------------------------- */
+
+.toki-settings__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: calc(var(--step) * 2.5) calc(var(--step) * 3);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--step) * 1.25);
+  /* Text stops at a readable measure even when the window is dragged wide.
+     A setting explained across 900 pixels is harder to read, not easier. */
+  max-width: 620px;
+}
+
+.toki-settings__lead {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.toki-settings__heading {
+  margin: calc(var(--step) * 1.5) 0 0;
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.toki-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+}
+
+.toki-note[data-tone="warn"] {
+  color: #ffb4a2;
+}
+
+/* --- Fields -------------------------------------------------------------- */
+
+.toki-settings__field {
+  display: grid;
+  gap: 5px;
+}
+
+.toki-settings__field > span {
+  font-size: 11.5px;
+  font-weight: 560;
+  color: var(--ink-dim);
+}
+
+.toki-settings__field input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.toki-settings__field input::placeholder {
+  color: var(--ink-faint);
+}
+
+.toki-settings__field input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* --- Actions ------------------------------------------------------------- */
+
+.toki-settings__actions {
+  display: flex;
+  gap: calc(var(--step) * 0.75);
+}
+
+.toki-settings__actions button {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--raise);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 560;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.toki-settings__actions button:hover:not(:disabled) {
+  background: var(--raise-hover);
+}
+
+.toki-settings__actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* --- Shared control shapes ----------------------------------------------- */
+
+.toki-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--step);
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--raise);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.toki-row {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+button.toki-row:hover:not(:disabled) {
+  background: var(--raise-hover);
+}
+
+button.toki-row:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.toki-row__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toki-row__text strong {
+  font-size: 12.5px;
+  font-weight: 560;
+}
+
+.toki-row__text small {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+.toki-row__value {
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.toki-switch {
+  flex: none;
+  width: 32px;
+  height: 19px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+  transition: background 140ms ease;
+}
+
+.toki-switch::after {
+  content: "";
+  display: block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+[aria-pressed="true"] .toki-switch {
+  background: var(--live);
+}
+
+[aria-pressed="true"] .toki-switch::after {
+  transform: translateX(13px);
+  background: #131417;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toki-switch,
+  .toki-switch::after {
+    transition: none;
+  }
+}

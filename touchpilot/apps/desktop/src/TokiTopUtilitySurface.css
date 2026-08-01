@@ -39,14 +39,16 @@
    */
   --live: rgba(255, 255, 255, 0.95);
 
+  --shoulder: 14px;
+
   position: fixed;
-  inset: 0;
+  /* Room either side for the shoulders, which sit outside the panel proper. */
+  inset: 0 calc(var(--shoulder) * -1);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   border: 1px solid var(--line);
   border-top: 0;
-  /* Square where it meets the notch, rounded where it ends. */
+  /* Square where it meets the notch, generously rounded where it ends. */
   border-radius: 0 0 22px 22px;
   background: #08090b;
   box-shadow:
@@ -60,6 +62,65 @@
 
 .toki-top-utility[data-mode="peek"] {
   pointer-events: none;
+}
+
+/*
+ * The shoulders: a concave curve either side of the top edge.
+ *
+ * Where the panel meets the menu bar the shape has to flow *outward* rather
+ * than stop dead, or it reads as a rectangle parked under the notch instead of
+ * something grown from it. Border radius only ever curves inward, so each
+ * shoulder is a square of panel colour with a transparent circle bitten out of
+ * its inner corner -- the leftover is exactly the fillet needed.
+ *
+ * They sit outside the panel's own width, which is why the element is inset by
+ * a negative amount above: the curve belongs beside the panel, not within it.
+ */
+.toki-top-utility::before,
+.toki-top-utility::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: var(--shoulder);
+  height: var(--shoulder);
+  background: #08090b;
+  pointer-events: none;
+}
+
+.toki-top-utility::before {
+  left: 0;
+  /* Bite taken from the bottom-left, leaving a curve that meets the panel's
+     left edge. */
+  -webkit-mask: radial-gradient(
+    circle at 0 100%,
+    transparent var(--shoulder),
+    #000 calc(var(--shoulder) + 0.5px)
+  );
+  mask: radial-gradient(
+    circle at 0 100%,
+    transparent var(--shoulder),
+    #000 calc(var(--shoulder) + 0.5px)
+  );
+}
+
+.toki-top-utility::after {
+  right: 0;
+  -webkit-mask: radial-gradient(
+    circle at 100% 100%,
+    transparent var(--shoulder),
+    #000 calc(var(--shoulder) + 0.5px)
+  );
+  mask: radial-gradient(
+    circle at 100% 100%,
+    transparent var(--shoulder),
+    #000 calc(var(--shoulder) + 0.5px)
+  );
+}
+
+/* The panel's own body, inset from the shoulders so its edges land correctly. */
+.toki-top-utility > * {
+  margin-left: var(--shoulder);
+  margin-right: var(--shoulder);
 }
 
 @keyframes toki-top-utility-arrive {
