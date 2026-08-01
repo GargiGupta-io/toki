@@ -42,8 +42,16 @@
   --shoulder: 14px;
 
   position: fixed;
-  /* Room either side for the shoulders, which sit outside the panel proper. */
-  inset: 0 calc(var(--shoulder) * -1);
+  /*
+   * Inset from the window edges, not pushed past them.
+   *
+   * The shoulders curve outward from the panel, so they need somewhere to be.
+   * Anything outside the window is clipped by it, so the earlier version --
+   * which pushed this element past the edges -- drew them into nothing. The
+   * panel is narrower than its window instead, and the strip either side is
+   * where the curve lives.
+   */
+  inset: 0 var(--shoulder);
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
@@ -88,7 +96,8 @@
 }
 
 .toki-top-utility::before {
-  left: 0;
+  /* Just outside the panel, inside the window. */
+  left: calc(var(--shoulder) * -1);
   /* Bite taken from the bottom-left, leaving a curve that meets the panel's
      left edge. */
   -webkit-mask: radial-gradient(
@@ -101,10 +110,11 @@
     transparent var(--shoulder),
     #000 calc(var(--shoulder) + 0.5px)
   );
+  overflow: visible;
 }
 
 .toki-top-utility::after {
-  right: 0;
+  right: calc(var(--shoulder) * -1);
   -webkit-mask: radial-gradient(
     circle at 100% 100%,
     transparent var(--shoulder),
@@ -115,14 +125,6 @@
     transparent var(--shoulder),
     #000 calc(var(--shoulder) + 0.5px)
   );
-}
-
-/* The panel's own content is inset past the shoulders, which sit outside it.
-   Applied to the two real children rather than every descendant. */
-.toki-top-utility > .toki-top-utility__header,
-.toki-top-utility > .toki-top-utility__expanded {
-  margin-left: var(--shoulder);
-  margin-right: var(--shoulder);
 }
 
 @keyframes toki-top-utility-arrive {
