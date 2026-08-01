@@ -117,8 +117,10 @@
   );
 }
 
-/* The panel's own body, inset from the shoulders so its edges land correctly. */
-.toki-top-utility > * {
+/* The panel's own content is inset past the shoulders, which sit outside it.
+   Applied to the two real children rather than every descendant. */
+.toki-top-utility > .toki-top-utility__header,
+.toki-top-utility > .toki-top-utility__expanded {
   margin-left: var(--shoulder);
   margin-right: var(--shoulder);
 }
@@ -240,38 +242,13 @@
   flex: none;
   display: flex;
   flex-direction: column;
+  gap: calc(var(--step) * 0.875);
+  padding: var(--step) calc(var(--step) * 1.5) calc(var(--step) * 1.25);
   border-top: 1px solid var(--line);
 }
 
-.toki-top-utility__tabs {
-  flex: none;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 2px;
-  margin: calc(var(--step) * 0.75) calc(var(--step) * 1.5) 0;
-  padding: 3px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.5);
-}
 
-.toki-top-utility__tabs button {
-  padding: 6px 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink-faint);
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 560;
-  letter-spacing: -0.005em;
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
-}
 
-.toki-top-utility__tabs button:hover {
-  color: var(--ink-dim);
-}
 
 /*
  * A segmented control: one inset track with the selected tab lifted out of it.
@@ -280,35 +257,149 @@
  * is also the only strong "selected" available without a hue -- in monochrome
  * the contrast has to do the work the colour used to.
  */
-.toki-top-utility__tabs button[data-active="true"] {
-  color: #08090b;
-  background: var(--live);
+
+
+
+
+/* --- Push to talk ------------------------------------------------------- */
+
+.toki-talk {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: calc(var(--step) * 1.25);
+  width: 100%;
+  padding: calc(var(--step) * 1.125) calc(var(--step) * 1.25);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raise);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 
-.toki-top-utility__tab-panel {
-  /* Sized by its content, not stretched to fill.
+.toki-talk:hover {
+  background: var(--raise-hover);
+}
 
-     The window resizes to whatever this measures, so a panel that grew to fill
-     the window would measure the window and never shrink -- each would be
-     waiting on the other. It scrolls only if the content passes the ceiling
-     the window will agree to. */
-  flex: none;
-  max-height: 460px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: var(--step) calc(var(--step) * 1.5) calc(var(--step) * 1.5);
+.toki-talk[data-active="true"] {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* The two lines stack. Without this they run together on one line, which is
+   exactly what an unstyled grid child does. */
+.toki-talk > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toki-talk strong {
+  font-size: 12.5px;
+  font-weight: 590;
+}
+
+.toki-talk small {
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+/* Three bars that move only while listening. Motion is the signal; a meter
+   animating permanently says nothing about whether anything is heard. */
+.toki-talk__meter {
   display: flex;
-  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 15px;
+  color: var(--ink-faint);
+}
+
+.toki-talk[data-active="true"] .toki-talk__meter {
+  color: var(--live);
+}
+
+.toki-talk__meter i {
+  width: 2px;
+  height: 5px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.toki-talk[data-active="true"] .toki-talk__meter i {
+  animation: toki-listen 900ms ease-in-out infinite;
+}
+
+.toki-talk__meter i:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.toki-talk__meter i:nth-child(3) {
+  animation-delay: 280ms;
+}
+
+@keyframes toki-listen {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 13px;
+  }
+}
+
+/* --- Round icon buttons -------------------------------------------------- */
+
+.toki-actions {
+  display: flex;
+  align-items: center;
   gap: calc(var(--step) * 0.75);
 }
 
-.toki-top-utility__tab-panel::-webkit-scrollbar {
-  width: 6px;
+/* Pushes the gear to the far end, away from the controls it is not one of. */
+.toki-actions__spacer {
+  flex: 1;
 }
 
-.toki-top-utility__tab-panel::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
+.toki-icon-button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--raise);
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.toki-icon-button:hover:not(:disabled) {
+  background: var(--raise-hover);
+  color: var(--ink);
+}
+
+/* Inverted when on. With no colour available, filled against hollow is the
+   entire vocabulary for "this is currently doing something". */
+.toki-icon-button[aria-pressed="true"] {
+  background: var(--live);
+  border-color: transparent;
+  color: #08090b;
+}
+
+.toki-icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Without a size the icon collapses and the button renders as a blank circle. */
+.toki-icon-button svg {
+  width: 17px;
+  height: 17px;
 }
 
 /* --- Rows: the one control shape ---------------------------------------- */
@@ -396,46 +487,11 @@ button.toki-row:disabled {
 
 /* --- Push to talk ------------------------------------------------------- */
 
-.toki-top-utility__talk {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: center;
-  gap: calc(var(--step) * 1.25);
-  padding: calc(var(--step) * 1.25);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--raise);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
-}
 
-.toki-top-utility__talk:hover {
-  background: var(--raise-hover);
-}
 
-.toki-top-utility__talk[data-active="true"] {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.07);
-}
 
-.toki-top-utility__talk span:last-child {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
 
-.toki-top-utility__talk strong {
-  font-size: 12.5px;
-  font-weight: 590;
-}
 
-.toki-top-utility__talk small {
-  font-size: 11px;
-  color: var(--ink-dim);
-}
 
 /*
  * Three bars that move only while listening.
@@ -443,37 +499,11 @@ button.toki-row:disabled {
  * Motion is the signal. A meter that animates permanently says nothing about
  * whether anything is being heard, which is what the previous one did.
  */
-.toki-top-utility__mini-signal {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 2px;
-  height: 16px;
-  color: var(--ink-faint);
-}
 
-.toki-top-utility__talk[data-active="true"] .toki-top-utility__mini-signal {
-  color: var(--live);
-}
 
-.toki-top-utility__mini-signal i {
-  width: 2px;
-  height: 5px;
-  border-radius: 2px;
-  background: currentColor;
-}
 
-.toki-top-utility__talk[data-active="true"] .toki-top-utility__mini-signal i {
-  animation: toki-listen 900ms ease-in-out infinite;
-}
 
-.toki-top-utility__mini-signal i:nth-child(2) {
-  animation-delay: 140ms;
-}
 
-.toki-top-utility__mini-signal i:nth-child(3) {
-  animation-delay: 280ms;
-}
 
 @keyframes toki-listen {
   0%,
@@ -487,34 +517,9 @@ button.toki-row:disabled {
 
 /* --- Pairs of equal actions --------------------------------------------- */
 
-.toki-top-utility__commands {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: calc(var(--step) * 0.75);
-}
 
-.toki-top-utility__commands button {
-  padding: calc(var(--step) * 0.875) 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 560;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
 
-.toki-top-utility__commands button:hover:not(:disabled) {
-  background: var(--raise);
-}
 
-.toki-top-utility__commands button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
 
 /* --- Text entry --------------------------------------------------------- */
 
@@ -600,7 +605,4 @@ button.toki-row:disabled {
 
 @media (prefers-reduced-motion: reduce) {
   .toki-top-utility,
-  .toki-top-utility__mini-signal i {
-    animation: none !important;
-  }
 }
