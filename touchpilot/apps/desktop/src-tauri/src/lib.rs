@@ -1844,6 +1844,95 @@ fn show_overlay_window<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> R
     Ok(())
 }
 
+/// How far below the top of the display the usable area starts, in points.
+///
+/// On a MacBook with a camera housing this is the height of the notch; on any
+/// other display it is zero. The panel was pinned to the very top of the
+/// monitor, so on a notched Mac the housing physically covered its first row --
+/// the icon, the title, and the start of the message sat behind the camera.
+///
+/// Read from the system rather than assumed. The housing is not the same height
+/// on every model, an external monitor has none, and a hardcoded guess would be
+/// wrong in one direction on every machine that is not this one.
+#[cfg(target_os = "macos")]
+fn macos_top_inset<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> f64 {
+    use std::ffi::c_void;
+    use std::os::raw::{c_char, c_uchar};
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_getClass(name: *const c_char) -> *mut c_void;
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_msgSend();
+    }
+
+    // NSEdgeInsets is four CGFloats. On arm64 a homogeneous aggregate of four
+    // doubles comes back in the floating-point registers, which is what a plain
+    // objc_msgSend returns into -- so no _stret variant is involved.
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct NsEdgeInsets {
+        top: f64,
+        left: f64,
+        bottom: f64,
+        right: f64,
+    }
+
+    type SendObj = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
+    type SendInsets = unsafe extern "C" fn(*mut c_void, *mut c_void) -> NsEdgeInsets;
+    type SendRespondsTo =
+        unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> c_uchar;
+
+    let Ok(ns_window) = window.ns_window() else {
+        return 0.0;
+    };
+    if ns_window.is_null() {
+        return 0.0;
+    }
+
+    unsafe {
+        let send_obj: SendObj = std::mem::transmute(objc_msgSend as *const c_void);
+
+        // The window's own screen, so a Mac driving an external display gets
+        // that display's inset rather than the laptop's notch.
+        let mut screen = send_obj(ns_window.cast(), sel_registerName(c"screen".as_ptr()));
+        if screen.is_null() {
+            let class = objc_getClass(c"NSScreen".as_ptr());
+            if class.is_null() {
+                return 0.0;
+            }
+            screen = send_obj(class, sel_registerName(c"mainScreen".as_ptr()));
+        }
+        if screen.is_null() {
+            return 0.0;
+        }
+
+        // safeAreaInsets arrived in macOS 12. Probing first keeps an older
+        // system returning zero instead of trapping.
+        let selector = sel_registerName(c"safeAreaInsets".as_ptr());
+        let responds: SendRespondsTo = std::mem::transmute(objc_msgSend as *const c_void);
+        if responds(
+            screen,
+            sel_registerName(c"respondsToSelector:".as_ptr()),
+            selector,
+        ) == 0
+        {
+            return 0.0;
+        }
+
+        let send_insets: SendInsets = std::mem::transmute(objc_msgSend as *const c_void);
+        let insets = send_insets(screen, selector);
+
+        // A negative or absurd value means the read went wrong; a panel shoved
+        // hundreds of points down the screen is worse than one under the notch.
+        if insets.top.is_finite() && (0.0..=200.0).contains(&insets.top) {
+            insets.top
+        } else {
+            0.0
+        }
+    }
+}
+
 fn position_top_utility<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
     logical_width: f64,
@@ -1871,8 +1960,11 @@ fn position_top_utility<R: tauri::Runtime>(
     let scale_factor = monitor.scale_factor();
     let window_width = (logical_width * scale_factor).round() as i32;
 
+    // Start below the camera housing, not behind it. The panel is meant to hang
+    // from the notch, so its top edge belongs at the notch's bottom edge -- and
+    // on a display without one this is zero, which is the old behaviour.
     #[cfg(target_os = "macos")]
-    let top_gap = 0;
+    let top_gap = (macos_top_inset(window) * scale_factor).round() as i32;
     #[cfg(not(target_os = "macos"))]
     let top_gap = (8.0 * scale_factor).round() as i32;
 
@@ -3512,6 +3604,53 @@ fn local_whisper_model_path() -> Result<String, String> {
         .map(|path| path.to_string_lossy().to_string())
 }
 
+/// Which backend can actually transcribe, given what has been configured.
+///
+/// Local Whisper wins when it is available. It runs on this Mac, costs nothing,
+/// and sends no audio anywhere -- for an app whose case rests on not being
+/// spyware, the on-device option should not lose to the cloud one because the
+/// cloud one was checked first.
+///
+/// `None` means neither is set up. That is a different condition from "the
+/// configured backend failed", and the two must not share an error message.
+fn configured_transcription_provider() -> Option<&'static str> {
+    if read_stored_setting(WHISPER_BIN_ENV).is_some()
+        && read_stored_setting(WHISPER_MODEL_ENV).is_some()
+    {
+        return Some("local-whisper");
+    }
+
+    if read_stored_openai_api_key().is_some() {
+        return Some("openai");
+    }
+
+    None
+}
+
+/// What the panel is allowed to know before anyone presses anything.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptionAvailability {
+    provider: Option<&'static str>,
+    local_whisper_ready: bool,
+    openai_ready: bool,
+}
+
+/// Answer "can Toki hear me" without recording anything first.
+///
+/// Availability used to be discoverable only by holding the button and reading
+/// the failure, and the panel returned to its usual invitation afterwards -- so
+/// the same dead control invited the same press every time.
+#[tauri::command]
+fn transcription_availability() -> TranscriptionAvailability {
+    TranscriptionAvailability {
+        provider: configured_transcription_provider(),
+        local_whisper_ready: read_stored_setting(WHISPER_BIN_ENV).is_some()
+            && read_stored_setting(WHISPER_MODEL_ENV).is_some(),
+        openai_ready: read_stored_openai_api_key().is_some(),
+    }
+}
+
 fn validate_voice_transcript(text: &str) -> Result<(), String> {
     let normalized = text.trim().to_ascii_lowercase();
     let placeholder_transcripts = ["[blank_audio]", "[inaudible]", "[silence]", "(silence)"];
@@ -3592,8 +3731,36 @@ fn transcribe_voice_capture(
         return Err("native voice audio payload does not contain usable WAV samples".to_string());
     }
 
-    let provider = std::env::var("TOKI_TRANSCRIPTION_PROVIDER")
-        .unwrap_or_else(|_| "local-whisper".to_string());
+    // What is configured decides, not the environment.
+    //
+    // This read TOKI_TRANSCRIPTION_PROVIDER and fell back to local Whisper. A
+    // GUI application launched from Finder inherits no shell environment, so
+    // that variable is absent for every ordinary user -- which made the OpenAI
+    // branch below unreachable no matter what was saved in settings. The Speech
+    // tab offered a key field and described the two backends as alternatives,
+    // and one of the two could only ever be chosen from a terminal.
+    //
+    // Exactly the root cause the API key lookup was already fixed for, still
+    // alive one function away. The variable stays as a developer override; it
+    // is no longer how an ordinary launch decides.
+    let explicit = std::env::var("TOKI_TRANSCRIPTION_PROVIDER")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let provider = match explicit {
+        Some(value) => value,
+        None => configured_transcription_provider()
+            .ok_or_else(|| {
+                // Naming only Whisper here would push someone toward building a
+                // C++ project when saving a key would also have done.
+                "Voice has no way to transcribe yet. Open the gear on the Toki \
+                 panel, choose Speech, and either set the local Whisper paths \
+                 or save an OpenAI API key."
+                    .to_string()
+            })?
+            .to_string(),
+    };
 
     match provider.as_str() {
         "openai" => transcribe_voice_capture_with_openai(audio_bytes, &request),
@@ -3829,6 +3996,7 @@ pub fn run() {
             toki_debug_export_status,
             clear_toki_debug_export,
             openai_api_key_status,
+            transcription_availability,
             operator_setting_status,
             set_operator_setting,
             set_openai_api_key,

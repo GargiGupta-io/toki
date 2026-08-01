@@ -200,6 +200,10 @@ import { TokiTopUtilitySurface } from "./TokiTopUtilitySurface";
 import { TokiTaskProgress } from "./TokiTaskProgress";
 import { TokiPointerExplanationCard } from "./TokiPointerExplanationCard";
 import {
+  getTranscriptionAvailability,
+  type TranscriptionAvailability,
+} from "./operatorSettings";
+import {
   getPassiveTopUtilityMode,
   isTransientVoiceTopStatus,
   isInsideExpandedTopUtility,
@@ -2245,6 +2249,7 @@ function OverlayWindowApp() {
     authSessionRef.current = session;
     void session?.restore();
   }, []);
+
 
   useEffect(() => {
     const candidate = getGestureCalibrationCandidate(
@@ -5551,6 +5556,27 @@ function SettingsWindowApp() {
   const utilityModeRef = useRef<TopUtilityMode>("hidden");
   const topStatusRef = useRef<TokiTopStatusModel | null>(null);
 
+  // Whether anything can transcribe, re-read whenever this panel is looked at
+  // again. Settings live in a different window with its own JavaScript context,
+  // so saving a Whisper path there changes nothing here until it is asked
+  // again -- and coming back to the panel is exactly when someone has just
+  // finished setting it up.
+  const [transcription, setTranscription] =
+    useState<TranscriptionAvailability | null>(null);
+  useEffect(() => {
+    const refresh = () => {
+      void getTranscriptionAvailability()
+        .then(setTranscription)
+        // A failed probe must not claim voice is unavailable. Keeping the last
+        // known answer stops a transient error from disabling a working button.
+        .catch(() => undefined);
+    };
+
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+
   function collapseTopUtility() {
     void setTopUtilityWindowMode(
       getPassiveTopUtilityMode(topStatusRef.current),
@@ -5706,7 +5732,13 @@ function SettingsWindowApp() {
           voiceMessage={
             voiceStatusDetails.visible
               ? voiceStatusDetails.message
-              : "Press and hold as a fallback."
+              : // Said before the press, not after the failure. Until this was
+                // here the invitation was identical whether Toki could hear
+                // you or not, so the only way to find out was to hold it,
+                // speak, and watch nothing happen.
+                transcription != null && transcription.provider == null
+                ? "No transcription set up yet — open Settings, then Speech."
+                : "Press and hold as a fallback."
           }
           cameraGesturesEnabled={gestureRuntime.camera.enabled}
           cameraStatus={gestureRuntime.camera.status}

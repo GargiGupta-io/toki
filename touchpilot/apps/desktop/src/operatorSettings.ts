@@ -35,6 +35,24 @@ export function setOperatorSetting(
 }
 
 /**
+ * Whether anything can transcribe, asked before a recording is made.
+ *
+ * `provider` is null when neither backend is set up. The panel needs this to
+ * stop offering push to talk as though holding it would do something — that
+ * was only discoverable by holding it, reading the failure, and watching the
+ * panel go back to inviting the same press.
+ */
+export type TranscriptionAvailability = {
+  provider: "local-whisper" | "openai" | null;
+  localWhisperReady: boolean;
+  openaiReady: boolean;
+};
+
+export function getTranscriptionAvailability(): Promise<TranscriptionAvailability> {
+  return invoke<TranscriptionAvailability>("transcription_availability");
+}
+
+/**
  * Whether local transcription can run at all.
  *
  * Both halves are required: the binary does the work, and it cannot start

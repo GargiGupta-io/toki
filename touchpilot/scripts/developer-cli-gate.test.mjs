@@ -200,3 +200,49 @@ test("the CLI is given reading and nothing else", () => {
   assert.match(rust, /\.arg\("--allowedTools"\)\s*\n\s*\.arg\("Read"\)/);
   assert.match(rust, /\.arg\("--permission-mode"\)\s*\n\s*\.arg\("dontAsk"\)/);
 });
+
+// Choosing a transcription backend from the environment repeated the root
+// cause this codebase had already fixed for the API key: a GUI application
+// launched from Finder inherits no shell environment, so the variable is
+// absent for every ordinary user. It defaulted to local Whisper, which meant
+// the OpenAI branch was unreachable no matter what was saved in settings --
+// while the Speech tab offered a key field and described the two as
+// alternatives.
+const transcriptionSelection = sliceRustFunction(
+  source,
+  "transcribe_voice_capture",
+);
+
+test("an ordinary launch picks a transcription backend from what is configured", () => {
+  // The variable may remain as a developer override, but it must not be what
+  // an unset environment falls back on.
+  assert.match(
+    transcriptionSelection,
+    /configured_transcription_provider\(\)/u,
+    "provider selection must consult stored settings",
+  );
+  assert.doesNotMatch(
+    transcriptionSelection,
+    /TOKI_TRANSCRIPTION_PROVIDER[\s\S]*?unwrap_or_else\(\|_\|\s*"local-whisper"/u,
+    "an absent environment variable must not silently pin one backend",
+  );
+});
+
+test("a saved OpenAI key is reachable without a terminal", () => {
+  const resolver = sliceRustFunction(source, "configured_transcription_provider");
+
+  // Local first: it runs on this Mac and sends no audio anywhere, which is the
+  // whole argument the product rests on.
+  assert.ok(
+    resolver.indexOf("local-whisper") < resolver.indexOf("openai"),
+    "local Whisper must be preferred when both are configured",
+  );
+  assert.match(resolver, /read_stored_openai_api_key\(\)/u);
+});
+
+test("nothing configured is reported as its own condition", () => {
+  // Naming only Whisper here sends someone to build a C++ project when saving
+  // a key would also have worked.
+  assert.match(transcriptionSelection, /Voice has no way to transcribe yet/u);
+  assert.match(transcriptionSelection, /OpenAI API key/u);
+});

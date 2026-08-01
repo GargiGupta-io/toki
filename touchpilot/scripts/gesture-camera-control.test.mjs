@@ -247,7 +247,12 @@ test("the top Controls tab owns one combined switch and Debug is diagnostic-only
 });
 
 test("the top utility is a top-attached interactive fullscreen auxiliary panel", () => {
-  assert.match(nativeSource, /let top_gap = 0;/);
+  // "Top-attached" means attached to the top of the *usable* area. This line
+  // used to assert a zero gap, which pinned the panel to the monitor origin and
+  // put its first row behind the camera housing on every MacBook with a notch.
+  // The offset now comes from the measured safe area; see
+  // top-utility-placement.test.mjs for what that has to satisfy.
+  assert.match(nativeSource, /let top_gap = \(macos_top_inset\(window\)/);
   assert.match(nativeSource, /prepare_macos_top_utility_on_main_thread/);
   assert.match(nativeSource, /prepare_auxiliary\(&utility, ignores_mouse_events\)/);
   assert.match(macosOverlaySource, /FULLSCREEN_AUXILIARY/);
