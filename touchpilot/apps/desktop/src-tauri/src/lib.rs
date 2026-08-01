@@ -162,8 +162,11 @@ struct TopUtilityModePayload {
 
 const TOP_UTILITY_PEEK_WIDTH: f64 = 380.0;
 const TOP_UTILITY_PEEK_HEIGHT: f64 = 58.0;
-const TOP_UTILITY_EXPANDED_WIDTH: f64 = 400.0;
-const TOP_UTILITY_EXPANDED_HEIGHT: f64 = 218.0;
+// Sized for the tallest tab rather than the shortest. Setup holds a key field,
+// two switches and the update controls; sizing to Voice and letting the rest
+// scroll would hide most of Setup behind a scrollbar in a panel this narrow.
+const TOP_UTILITY_EXPANDED_WIDTH: f64 = 420.0;
+const TOP_UTILITY_EXPANDED_HEIGHT: f64 = 430.0;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3654,13 +3657,9 @@ pub fn run() {
                 let _ = debug.hide();
             }
 
-            if let Some(preferences) = app.get_webview_window("preferences") {
-                let _ = preferences.hide();
-            }
 
             let tray_menu = MenuBuilder::new(app)
                 .text("open_settings", "Open Toki")
-                .text("open_preferences", "Preferences…")
                 .text("open_debug", "Open Debug")
                 .separator()
                 .text("quit", "Quit Toki")
@@ -3685,12 +3684,6 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open_settings" => {
                         show_settings_window(app);
-                    }
-                    "open_preferences" => {
-                        if let Some(window) = app.get_webview_window("preferences") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
                     }
                     "open_debug" => {
                         if let Some(window) = app.get_webview_window("debug") {

@@ -45,20 +45,6 @@
         "visible": false
       },
       {
-        "label": "preferences",
-        "title": "Toki Preferences",
-        "width": 520,
-        "height": 460,
-        "center": true,
-        "decorations": true,
-        "transparent": false,
-        "alwaysOnTop": false,
-        "resizable": true,
-        "shadow": true,
-        "skipTaskbar": false,
-        "visible": false
-      },
-      {
         "label": "debug",
         "title": "Toki Debug",
         "width": 760,

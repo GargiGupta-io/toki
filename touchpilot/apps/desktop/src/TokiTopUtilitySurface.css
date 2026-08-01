@@ -1,458 +1,521 @@
+/*
+ * The one panel.
+ *
+ * Everything Toki can be told to do lives here, hanging below the notch. There
+ * used to be a second Preferences window; it is gone, because a settings window
+ * that opens somewhere else is a second place to look for the same thing.
+ *
+ * The rules the whole surface follows, so it reads as one object rather than a
+ * pile of controls:
+ *
+ *   - One spacing step (8px) with its halves and doubles. Nothing is nudged by
+ *     an odd number of pixels to make a particular case look right.
+ *   - Two type sizes: a label, and a line under it. Everywhere.
+ *   - One accent, used only to mean "this is live". Colour that decorates makes
+ *     colour that informs invisible.
+ *   - Rows, not cards. A control is a full-width row with a label, a value and
+ *     a hit area; boxes inside a 420px panel are mostly borders.
+ */
+
 .toki-top-utility {
+  --step: 8px;
+  --radius: 10px;
+  --ink: rgba(246, 249, 252, 0.96);
+  --ink-dim: rgba(246, 249, 252, 0.52);
+  --ink-faint: rgba(246, 249, 252, 0.3);
+  --line: rgba(255, 255, 255, 0.08);
+  --raise: rgba(255, 255, 255, 0.045);
+  --raise-hover: rgba(255, 255, 255, 0.08);
+
   position: fixed;
   inset: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
   border-top: 0;
-  border-radius: 0 0 14px 14px;
-  background: #000;
+  /* Square where it meets the notch, rounded where it ends. */
+  border-radius: 0 0 16px 16px;
+  background: #08090b;
   box-shadow:
-    0 16px 34px rgba(0, 0, 0, 0.54),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 12px 24px rgba(65, 205, 255, 0.045);
-  color: rgba(244, 250, 255, 0.96);
-  backdrop-filter: none;
+    0 20px 44px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  font-size: 12px;
   user-select: none;
-  animation: toki-top-utility-arrive 150ms ease-out both;
+  animation: toki-top-utility-arrive 160ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
 .toki-top-utility[data-mode="peek"] {
-  inset: 0;
   pointer-events: none;
 }
 
+@keyframes toki-top-utility-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* --- Header ------------------------------------------------------------- */
+
 .toki-top-utility__header {
-  min-height: 56px;
+  flex: none;
+  min-height: 54px;
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  padding: 5px 10px 6px 8px;
+  gap: var(--step);
+  padding: calc(var(--step) * 0.75) calc(var(--step) * 1.5);
 }
 
 .toki-top-utility[data-mode="expanded"] .toki-top-utility__header {
   cursor: move;
 }
 
+/*
+ * The mark, not a decorative signal meter.
+ *
+ * It is the same pointer ring the app icon uses, so the panel is identifiably
+ * Toki at a glance. The old header showed four animated bars that moved
+ * constantly and meant nothing.
+ */
 .toki-top-utility__identity {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.13), transparent 48%),
-    rgba(8, 11, 15, 0.72);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 8px 18px rgba(0, 0, 0, 0.3);
-}
-
-.toki-top-utility__signal,
-.toki-top-utility__mini-signal {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: var(--raise);
   color: var(--toki-cyan);
 }
 
-.toki-top-utility__signal {
-  width: 22px;
-  height: 20px;
-  gap: 2px;
+.toki-top-utility__identity svg {
+  width: 16px;
+  height: 16px;
 }
 
-.toki-top-utility__signal i,
-.toki-top-utility__mini-signal i {
-  width: 2px;
-  border-radius: 2px;
-  background: currentColor;
-  box-shadow: 0 0 5px color-mix(in srgb, currentColor 56%, transparent);
-  transform-origin: center;
-}
-
-.toki-top-utility__signal i {
-  height: 6px;
-}
-
-.toki-top-utility__signal i:nth-child(2) {
-  height: 13px;
-}
-
-.toki-top-utility__signal i:nth-child(3) {
-  height: 18px;
-}
-
-.toki-top-utility__signal i:nth-child(4) {
-  height: 10px;
-}
-
-.toki-top-utility[data-status="listening"] .toki-top-utility__signal i,
-.toki-top-utility[data-status="transcribing"] .toki-top-utility__signal i,
-.toki-top-utility[data-status="thinking"] .toki-top-utility__signal i,
-.toki-top-utility__talk[data-active="true"] .toki-top-utility__mini-signal i {
-  animation: toki-top-utility-level 700ms ease-in-out infinite alternate;
-}
-
-.toki-top-utility__status-copy,
-.toki-top-utility__talk > span:last-child {
-  min-width: 0;
+.toki-top-utility__status-copy {
   display: grid;
   gap: 1px;
-  line-height: 1.2;
-}
-
-.toki-top-utility__status-copy strong,
-.toki-top-utility__status-copy small,
-.toki-top-utility__talk strong,
-.toki-top-utility__talk small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
 }
 
 .toki-top-utility__status-copy strong {
-  font-size: 0.78rem;
-  font-weight: 760;
+  font-size: 12.5px;
+  font-weight: 590;
+  letter-spacing: -0.01em;
 }
 
 .toki-top-utility__status-copy small {
-  color: rgba(221, 233, 241, 0.66);
-  font-size: 0.62rem;
-  font-weight: 540;
-}
-
-.toki-top-utility__status-copy small span {
-  color: rgba(255, 255, 255, 0.88);
-  font-weight: 720;
+  font-size: 11px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toki-top-utility__window-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 0.62rem;
-  font-weight: 650;
+  gap: calc(var(--step) * 0.75);
 }
 
+/*
+ * A dot, not the word "Active".
+ *
+ * The state is binary and almost always the same. A word repeated forever
+ * stops being read and only costs room.
+ */
 .toki-top-utility__activity {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid rgba(107, 229, 181, 0.18);
-  border-radius: 999px;
-  padding: 3px 7px;
-  background: rgba(83, 210, 166, 0.06);
-  color: rgba(177, 241, 216, 0.78);
-}
-
-.toki-top-utility__activity::before {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #66d9ac;
-  box-shadow: 0 0 8px rgba(102, 217, 172, 0.66);
-  content: "";
+  background: var(--toki-cyan);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--toki-cyan) 60%, transparent);
+  font-size: 0;
+  color: transparent;
 }
 
 .toki-top-utility__activity[data-paused="true"] {
-  border-color: rgba(255, 197, 107, 0.16);
-  background: rgba(255, 197, 107, 0.05);
-  color: rgba(255, 219, 166, 0.72);
-}
-
-.toki-top-utility__activity[data-paused="true"]::before {
-  background: #e5b15e;
-  box-shadow: 0 0 8px rgba(229, 177, 94, 0.5);
+  background: var(--ink-faint);
+  box-shadow: none;
 }
 
 .toki-top-utility__window-actions button {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
   border: 0;
-  padding: 0;
+  border-radius: 6px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.48);
-  font: inherit;
-  font-size: 1.08rem;
+  color: var(--ink-dim);
+  font-size: 15px;
+  line-height: 1;
   cursor: pointer;
 }
 
+.toki-top-utility__window-actions button:hover {
+  background: var(--raise-hover);
+  color: var(--ink);
+}
+
+/* --- Tabs --------------------------------------------------------------- */
+
 .toki-top-utility__expanded {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0 12px 10px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
 }
 
 .toki-top-utility__tabs {
-  display: flex;
-  gap: 15px;
-  min-height: 30px;
-  align-items: end;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  flex: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: calc(var(--step) * 0.75) calc(var(--step) * 1.5) 0;
 }
 
 .toki-top-utility__tabs button {
-  min-height: 30px;
+  padding: 5px 0 9px;
   border: 0;
-  border-radius: 0;
-  padding: 0 1px;
+  border-bottom: 1.5px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.48);
+  color: var(--ink-faint);
   font: inherit;
-  font-size: 0.67rem;
-  font-weight: 680;
+  font-size: 11.5px;
+  font-weight: 560;
+  letter-spacing: -0.005em;
   cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
 }
 
+.toki-top-utility__tabs button:hover {
+  color: var(--ink-dim);
+}
+
+/*
+ * Underline rather than a filled pill. At this width a pill is a heavy block of
+ * colour competing with the content it is supposed to be labelling.
+ */
 .toki-top-utility__tabs button[data-active="true"] {
-  color: rgba(255, 255, 255, 0.94);
-  box-shadow: inset 0 -2px 0 var(--toki-cyan);
+  color: var(--ink);
+  border-bottom-color: var(--toki-cyan);
 }
 
 .toki-top-utility__tab-panel {
-  min-height: 111px;
-  padding-top: 7px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--step) calc(var(--step) * 1.5) calc(var(--step) * 1.5);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--step) * 0.75);
 }
 
-.toki-top-utility__hint {
-  margin: 0 0 4px;
-  color: rgba(255, 255, 255, 0.48);
-  font-size: 0.62rem;
+.toki-top-utility__tab-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.toki-top-utility__tab-panel::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* --- Rows: the one control shape ---------------------------------------- */
+
+.toki-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--step);
+  width: 100%;
+  padding: calc(var(--step) * 0.875) calc(var(--step) * 1.25);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--raise);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.toki-row {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+button.toki-row:hover:not(:disabled) {
+  background: var(--raise-hover);
+}
+
+button.toki-row:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.toki-row__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toki-row__text strong {
+  font-size: 12px;
   font-weight: 560;
 }
 
+.toki-row__text small {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+.toki-row__value {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+/* A switch, for anything that is simply on or off. */
+.toki-switch {
+  flex: none;
+  width: 30px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 140ms ease;
+}
+
+.toki-switch::after {
+  content: "";
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+[aria-pressed="true"] .toki-switch {
+  background: var(--toki-cyan);
+}
+
+[aria-pressed="true"] .toki-switch::after {
+  transform: translateX(12px);
+}
+
+/* --- Push to talk ------------------------------------------------------- */
+
 .toki-top-utility__talk {
-  width: 100%;
-  min-height: 43px;
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
-  border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  padding: 5px 0;
-  background: transparent;
+  gap: calc(var(--step) * 1.25);
+  padding: calc(var(--step) * 1.25);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raise);
   color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 
-.toki-top-utility__mini-signal {
-  width: 22px;
-  height: 20px;
+.toki-top-utility__talk:hover {
+  background: var(--raise-hover);
+}
+
+.toki-top-utility__talk[data-active="true"] {
+  border-color: color-mix(in srgb, var(--toki-cyan) 45%, transparent);
+  background: color-mix(in srgb, var(--toki-cyan) 10%, transparent);
+}
+
+.toki-top-utility__talk span:last-child {
+  display: grid;
   gap: 2px;
-  color: var(--toki-cyan-muted);
-}
-
-.toki-top-utility__mini-signal i {
-  height: 7px;
-}
-
-.toki-top-utility__mini-signal i:nth-child(2) {
-  height: 14px;
-}
-
-.toki-top-utility__mini-signal i:nth-child(3) {
-  height: 10px;
+  min-width: 0;
 }
 
 .toki-top-utility__talk strong {
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 0.73rem;
+  font-size: 12.5px;
+  font-weight: 590;
 }
 
 .toki-top-utility__talk small {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.61rem;
+  font-size: 11px;
+  color: var(--ink-dim);
 }
+
+/*
+ * Three bars that move only while listening.
+ *
+ * Motion is the signal. A meter that animates permanently says nothing about
+ * whether anything is being heard, which is what the previous one did.
+ */
+.toki-top-utility__mini-signal {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 16px;
+  color: var(--ink-faint);
+}
+
+.toki-top-utility__talk[data-active="true"] .toki-top-utility__mini-signal {
+  color: var(--toki-cyan);
+}
+
+.toki-top-utility__mini-signal i {
+  width: 2px;
+  height: 5px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.toki-top-utility__talk[data-active="true"] .toki-top-utility__mini-signal i {
+  animation: toki-listen 900ms ease-in-out infinite;
+}
+
+.toki-top-utility__mini-signal i:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.toki-top-utility__mini-signal i:nth-child(3) {
+  animation-delay: 280ms;
+}
+
+@keyframes toki-listen {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 14px;
+  }
+}
+
+/* --- Pairs of equal actions --------------------------------------------- */
 
 .toki-top-utility__commands {
-  min-height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-}
-
-.toki-top-utility__camera-toggle {
-  width: 100%;
-  min-height: 45px;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 9px;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.035);
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: calc(var(--step) * 0.75);
 }
-
-.toki-top-utility__camera-toggle > span:last-child {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.toki-top-utility__camera-toggle strong,
-.toki-top-utility__camera-toggle small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.toki-top-utility__camera-toggle strong {
-  font-size: 0.68rem;
-  font-weight: 720;
-}
-
-.toki-top-utility__camera-toggle small {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.6rem;
-}
-
-.toki-top-utility__camera-indicator {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.26);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
-}
-
-.toki-top-utility__camera-toggle[aria-pressed="true"] {
-  border-color: rgba(83, 210, 230, 0.3);
-  background: rgba(83, 210, 230, 0.065);
-}
-
-.toki-top-utility__camera-toggle[aria-pressed="true"]
-  .toki-top-utility__camera-indicator {
-  background: var(--toki-cyan);
-  box-shadow:
-    0 0 0 4px rgba(83, 210, 230, 0.08),
-    0 0 9px rgba(83, 210, 230, 0.56);
-}
-
-.toki-top-utility__camera-toggle[data-state="permission_denied"]
-  .toki-top-utility__camera-indicator,
-.toki-top-utility__camera-toggle[data-state="error"]
-  .toki-top-utility__camera-indicator {
-  background: var(--toki-danger);
-}
-
 
 .toki-top-utility__commands button {
-  border: 0;
-  padding: 0;
+  padding: calc(var(--step) * 0.875) 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   background: transparent;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--ink);
   font: inherit;
-  font-size: 0.74rem;
-  font-weight: 650;
+  font-size: 11.5px;
+  font-weight: 560;
   cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.toki-top-utility__commands button:hover:not(:disabled) {
+  background: var(--raise);
 }
 
 .toki-top-utility__commands button:disabled {
-  opacity: 0.5;
-  cursor: wait;
+  opacity: 0.45;
+  cursor: default;
 }
 
-.toki-top-utility__speech-toggle {
+/* --- Text entry --------------------------------------------------------- */
+
+.toki-field {
+  display: grid;
+  gap: calc(var(--step) * 0.5);
+}
+
+.toki-field > span {
+  font-size: 11px;
+  font-weight: 560;
+  color: var(--ink-dim);
+}
+
+.toki-field input {
   width: 100%;
-  min-height: 24px;
-  margin-top: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.045);
-  color: rgba(255, 255, 255, 0.66);
+  padding: calc(var(--step) * 0.875) calc(var(--step) * 1.25);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ink);
   font: inherit;
-  font-size: 0.62rem;
-  font-weight: 720;
-  cursor: pointer;
+  font-size: 11.5px;
 }
 
-.toki-top-utility__speech-toggle[aria-pressed="false"] {
-  border-color: rgba(83, 210, 230, 0.28);
-  color: rgba(188, 241, 249, 0.86);
+.toki-field input::placeholder {
+  color: var(--ink-faint);
 }
+
+.toki-field input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--toki-cyan) 50%, transparent);
+}
+
+/* --- Notes and grouping ------------------------------------------------- */
+
+.toki-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-dim);
+}
+
+.toki-note[data-tone="warn"] {
+  color: #ffb4a2;
+}
+
+.toki-section-label {
+  margin: calc(var(--step) * 0.5) 0 0;
+  font-size: 10px;
+  font-weight: 620;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* --- Confirmation ------------------------------------------------------- */
 
 .toki-top-utility__reveal-panel {
-  min-height: 110px;
+  padding: calc(var(--step) * 1.5);
   display: grid;
-  align-content: center;
-  gap: 9px;
+  gap: var(--step);
 }
 
 .toki-top-utility__reveal-panel p {
   margin: 0;
-  color: rgba(236, 240, 245, 0.7);
-  font-size: 0.66rem;
+  font-size: 11.5px;
   line-height: 1.45;
+  color: var(--ink-dim);
 }
 
 .toki-top-utility__reveal-panel button {
-  min-height: 31px;
-  border: 1px solid color-mix(in srgb, var(--toki-warning) 58%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--toki-warning) 16%, transparent);
-  color: rgba(255, 244, 224, 0.96);
+  padding: calc(var(--step) * 1.125) 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--toki-cyan);
+  color: #04121a;
   font: inherit;
-  font-size: 0.76rem;
-  font-weight: 720;
+  font-size: 12px;
+  font-weight: 620;
   cursor: pointer;
-}
-
-.toki-top-utility__reveal-panel button:focus-visible {
-  outline: 2px solid var(--toki-warning);
-  outline-offset: 2px;
-}
-
-.toki-top-utility[data-status="warning"] .toki-top-utility__signal,
-.toki-top-utility[data-status="confirming"] .toki-top-utility__signal {
-  color: var(--toki-warning);
-}
-
-.toki-top-utility[data-status="error"] .toki-top-utility__signal {
-  color: var(--toki-danger);
-}
-
-.toki-top-utility[data-status="paused"] .toki-top-utility__signal {
-  color: var(--toki-muted);
-}
-
-@keyframes toki-top-utility-arrive {
-  from {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes toki-top-utility-level {
-  from {
-    transform: scaleY(0.54);
-    opacity: 0.52;
-  }
-
-  to {
-    transform: scaleY(1.06);
-    opacity: 1;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .toki-top-utility,
-  .toki-top-utility__signal i,
   .toki-top-utility__mini-signal i {
     animation: none !important;
   }

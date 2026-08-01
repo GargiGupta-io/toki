@@ -215,7 +215,6 @@ import {
   describeUpdateState,
   downloadAndInstallUpdate,
   initialUpdateCheckState,
-  restartToFinishUpdate,
   type UpdateCheckState,
 } from "./appUpdates";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
@@ -5579,6 +5578,216 @@ function SettingsWindowApp() {
   const utilityModeRef = useRef<TopUtilityMode>("hidden");
   const topStatusRef = useRef<TokiTopStatusModel | null>(null);
 
+  // Everything below used to live in a separate Preferences window. It is here
+  // now because a second window is a second place to look for the same thing.
+  const authRef = useRef<AuthSession | null>(null);
+  const [authState, setAuthState] = useState<AuthState>(signedOut);
+  const [account, setAccount] = useState<AccountState | null>(null);
+  const [planChecked, setPlanChecked] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+
+  const [keyStatus, setKeyStatus] = useState<OpenAiKeyStatus>(
+    unknownOpenAiKeyStatus,
+  );
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+
+  const [diagnosticsSettings, setDiagnosticsSettings] =
+    useState<DiagnosticsSettings>(loadDiagnosticsSettings);
+
+  const [whisperBinary, setWhisperBinary] = useState("");
+  const [whisperModel, setWhisperModel] = useState("");
+  const [whisperError, setWhisperError] = useState<string | null>(null);
+
+  const [updateState, setUpdateState] = useState<UpdateCheckState>(
+    initialUpdateCheckState,
+  );
+  const pendingUpdateRef = useRef<Awaited<
+    ReturnType<typeof import("@tauri-apps/plugin-updater").check>
+  > | null>(null);
+
+  useEffect(() => {
+    const session = createAuthSession();
+    authRef.current = session;
+    if (session == null) {
+      setPlanChecked(true);
+      return;
+    }
+
+    void session.restore().then(setAuthState);
+
+    // Registered before anything else finishes, because macOS may have launched
+    // this window specifically to deliver the sign-in callback.
+    const stopping = listenForAuthCallback((url) => {
+      void session.completeSignIn(url).then(setAuthState);
+    });
+
+    getOpenAiKeyStatus()
+      .then(setKeyStatus)
+      .catch(() => setKeyStatus(unknownOpenAiKeyStatus));
+    void getOperatorSetting(whisperBinarySetting).then((value) =>
+      setWhisperBinary(value ?? ""),
+    );
+    void getOperatorSetting(whisperModelSetting).then((value) =>
+      setWhisperModel(value ?? ""),
+    );
+
+    return () => {
+      void stopping.then((stop) => stop()).catch(() => undefined);
+    };
+  }, []);
+
+  const refreshAccount = useCallback(async () => {
+    const session = authRef.current;
+    if (session == null) {
+      setAccount(null);
+      setPlanChecked(true);
+      return;
+    }
+    const client = createTokiApiClient({
+      endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
+      session,
+    });
+    setAccount(await client.account());
+    setPlanChecked(true);
+  }, []);
+
+  useEffect(() => {
+    if (authState.status === "signed_in") {
+      void refreshAccount();
+    } else {
+      setAccount(null);
+      setPlanChecked(authState.status !== "waiting_for_browser");
+    }
+  }, [authState.status, refreshAccount]);
+
+  // Payment finishes in the browser and is confirmed to the service, not to
+  // this app, so coming back to the panel is when it is worth asking again.
+  useEffect(() => {
+    if (authState.status !== "signed_in") {
+      return;
+    }
+    const onFocus = () => void refreshAccount();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [authState.status, refreshAccount]);
+
+  async function runAccountAction(
+    action: "signIn" | "signOut" | "checkout" | "portal",
+  ) {
+    const session = authRef.current;
+    if (session == null) {
+      return;
+    }
+
+    setAccountBusy(true);
+    setAccountError(null);
+    try {
+      if (action === "signIn") {
+        setAuthState(await session.signIn());
+        return;
+      }
+      if (action === "signOut") {
+        setAuthState(await session.signOut());
+        // The overlay holds its own copy of the session and its token stays
+        // valid until it expires, so it has to be told rather than left to
+        // notice.
+        emitTo("overlay", "toki://overlay-command", {
+          type: "auth-changed",
+        } satisfies OverlayCommand).catch(() => undefined);
+        return;
+      }
+
+      const client = createTokiApiClient({
+        endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
+        session,
+      });
+      const result =
+        action === "checkout"
+          ? await client.startCheckout()
+          : await client.manageSubscription();
+
+      if ("url" in result) {
+        const { openUrl } = await import("@tauri-apps/plugin-opener");
+        await openUrl(result.url);
+      } else {
+        setAccountError(result.error);
+      }
+    } catch (error) {
+      setAccountError(String(error));
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
+  async function saveOpenAiKey() {
+    setKeyBusy(true);
+    setKeyError(null);
+    try {
+      setKeyStatus(await setOpenAiKey(keyDraft));
+      // Cleared the moment it is stored, so the secret does not sit in the DOM
+      // for the rest of the session.
+      setKeyDraft("");
+    } catch (error) {
+      setKeyError(String(error));
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
+  async function removeOpenAiKey() {
+    setKeyBusy(true);
+    setKeyError(null);
+    try {
+      setKeyStatus(await clearOpenAiKey());
+    } catch (error) {
+      setKeyError(String(error));
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
+  function applyDiagnosticsSettings(next: DiagnosticsSettings) {
+    const normalized = normalizeDiagnosticsSettings(next);
+    setDiagnosticsSettings(normalized);
+    emitTo("overlay", "toki://overlay-command", {
+      type: "set-diagnostics-settings",
+      settings: normalized,
+    } satisfies OverlayCommand).catch(() => undefined);
+  }
+
+  async function saveWhisperPaths() {
+    setWhisperError(null);
+    try {
+      await setOperatorSetting(whisperBinarySetting, whisperBinary);
+      await setOperatorSetting(whisperModelSetting, whisperModel);
+    } catch (error) {
+      setWhisperError(String(error));
+    }
+  }
+
+  async function runUpdateCheck() {
+    setUpdateState({ status: "checking" });
+    const { check } = await import("@tauri-apps/plugin-updater");
+    setUpdateState(
+      await checkForUpdate(async () => {
+        const update = await check();
+        pendingUpdateRef.current = update;
+        return update;
+      }),
+    );
+  }
+
+  async function installPendingUpdate() {
+    const update = pendingUpdateRef.current;
+    if (update == null) {
+      return;
+    }
+    setUpdateState(await downloadAndInstallUpdate(update, setUpdateState));
+  }
+
   function collapseTopUtility() {
     void setTopUtilityWindowMode(
       getPassiveTopUtilityMode(topStatusRef.current),
@@ -5745,6 +5954,71 @@ function SettingsWindowApp() {
           cameraPermission={gestureRuntime.camera.permission}
           cameraError={gestureRuntime.camera.error ?? null}
           idleStatusText={idleStatusText}
+          account={
+            authRef.current == null
+              ? null
+              : {
+                  statusText: describeAuthState(authState),
+                  planText: planChecked
+                    ? describePlan(account)
+                    : "Checking your plan…",
+                  signedIn: authState.status === "signed_in",
+                  busy: accountBusy,
+                  // Offering an upgrade to somebody who already pays is the
+                  // clearest sign an app does not know its own customers, so
+                  // both offers follow what the service actually reports.
+                  canUpgrade:
+                    planChecked && account != null && !account.entitled,
+                  canManage: planChecked && account?.hasBillingAccount === true,
+                  error: accountError,
+                  onSignIn: () => void runAccountAction("signIn"),
+                  onSignOut: () => void runAccountAction("signOut"),
+                  onUpgrade: () => void runAccountAction("checkout"),
+                  onManage: () => void runAccountAction("portal"),
+                  onRefresh: () => void refreshAccount(),
+                }
+          }
+          setup={{
+            keyStatusText: describeOpenAiKeyStatus(keyStatus),
+            keyStored: keyStatus.stored,
+            keyDraft,
+            keyBusy,
+            keyError,
+            onKeyDraftChange: setKeyDraft,
+            onSaveKey: () => void saveOpenAiKey(),
+            onClearKey: () => void removeOpenAiKey(),
+            diagnosticsEnabled: diagnosticsSettings.diagnosticsEnabled,
+            screenCapturesEnabled: diagnosticsSettings.screenCapturesEnabled,
+            onDiagnosticsToggle: () =>
+              applyDiagnosticsSettings({
+                ...diagnosticsSettings,
+                diagnosticsEnabled: !diagnosticsSettings.diagnosticsEnabled,
+              }),
+            onScreenCapturesToggle: () =>
+              applyDiagnosticsSettings({
+                ...diagnosticsSettings,
+                screenCapturesEnabled: !diagnosticsSettings.screenCapturesEnabled,
+              }),
+            whisperBinary,
+            whisperModel,
+            whisperStatusText: describeLocalTranscription(
+              whisperBinary || null,
+              whisperModel || null,
+            ),
+            whisperError,
+            onWhisperBinaryChange: setWhisperBinary,
+            onWhisperModelChange: setWhisperModel,
+            onSaveWhisper: () => void saveWhisperPaths(),
+            updateText:
+              describeUpdateState(updateState) ||
+              "Toki checks for updates when you ask it to.",
+            updateBusy:
+              updateState.status === "checking" ||
+              updateState.status === "downloading",
+            canInstallUpdate: updateState.status === "available",
+            onCheckUpdates: () => void runUpdateCheck(),
+            onInstallUpdate: () => void installPendingUpdate(),
+          }}
           onRefreshCapture={() => {
             emitTo("overlay", "toki://overlay-command", {
               type: "refresh-capture",
@@ -7993,475 +8267,10 @@ function DebugWindowApp() {
   );
 }
 
-function PreferencesWindowApp() {
-  const [keyStatus, setKeyStatus] = useState<OpenAiKeyStatus>(
-    unknownOpenAiKeyStatus,
-  );
-  const [keyDraft, setKeyDraft] = useState("");
-  const [keyError, setKeyError] = useState<string | null>(null);
-  const [keyBusy, setKeyBusy] = useState(false);
-  const [diagnosticsSettings, setDiagnosticsSettings] =
-    useState<DiagnosticsSettings>(loadDiagnosticsSettings);
-  const [updateState, setUpdateState] = useState<UpdateCheckState>(
-    initialUpdateCheckState,
-  );
-  const pendingUpdateRef = useRef<Awaited<
-    ReturnType<typeof import("@tauri-apps/plugin-updater").check>
-  > | null>(null);
-
-  const [whisperBinary, setWhisperBinary] = useState("");
-  const [whisperModel, setWhisperModel] = useState("");
-  const [whisperError, setWhisperError] = useState<string | null>(null);
-
-  const [authState, setAuthState] = useState<AuthState>(signedOut);
-  const [authBusy, setAuthBusy] = useState(false);
-  const [planError, setPlanError] = useState<string | null>(null);
-  const [account, setAccount] = useState<AccountState | null>(null);
-  const [planChecked, setPlanChecked] = useState(false);
-  const authRef = useRef<AuthSession | null>(null);
-
-  useEffect(() => {
-    const session = createAuthSession();
-    authRef.current = session;
-
-    if (session == null) {
-      return;
-    }
-
-    void session.restore().then(setAuthState);
-
-    // Registered before anything else can finish, because macOS may have
-    // launched this window specifically to deliver the callback.
-    const stopping = listenForAuthCallback((url) => {
-      void session.completeSignIn(url).then((next) => {
-        setAuthState(next);
-        if (next.status === "signed_in") {
-          announceAuthChange();
-        }
-      });
-    });
-
-    return () => {
-      void stopping.then((stop) => stop()).catch(() => undefined);
-    };
-  }, []);
-
-  async function beginSignIn() {
-    const session = authRef.current;
-    if (session == null) {
-      return;
-    }
-    setAuthBusy(true);
-    try {
-      setAuthState(await session.signIn());
-    } catch (error) {
-      setAuthState({ status: "error", message: String(error) });
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  /**
-   * Read the plan from the service.
-   *
-   * Run whenever the sign-in changes, and again after returning from Stripe:
-   * the webhook that grants access arrives at the service, not at this app, so
-   * the only way to see the result of a payment is to ask.
-   */
-  const refreshAccount = useCallback(async () => {
-    const session = authRef.current;
-    if (session == null) {
-      setAccount(null);
-      setPlanChecked(true);
-      return;
-    }
-
-    const client = createTokiApiClient({
-      endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
-      session,
-    });
-    setAccount(await client.account());
-    setPlanChecked(true);
-  }, []);
-
-  useEffect(() => {
-    if (authState.status === "signed_in") {
-      void refreshAccount();
-    } else {
-      setAccount(null);
-      setPlanChecked(authState.status !== "waiting_for_browser");
-    }
-  }, [authState.status, refreshAccount]);
-
-  // Payment finishes in the browser and is confirmed to the service by Stripe,
-  // not to this app. Coming back to this window is the moment a person expects
-  // to see what they just bought, so that is when it is checked again.
-  useEffect(() => {
-    if (authState.status !== "signed_in") {
-      return;
-    }
-
-    const onFocus = () => void refreshAccount();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [authState.status, refreshAccount]);
-
-  /**
-   * Send someone to Stripe to start or change a subscription.
-   *
-   * Card details are entered on Stripe's own page in the browser, never inside
-   * Toki. That is not only good manners: an app that never sees a card number
-   * cannot leak one, and it keeps this project out of the scope of handling
-   * card data itself.
-   */
-  async function openBilling(kind: "checkout" | "manage") {
-    const session = authRef.current;
-    if (session == null) {
-      return;
-    }
-
-    setAuthBusy(true);
-    setPlanError(null);
-    try {
-      const client = createTokiApiClient({
-        endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
-        session,
-      });
-      const result =
-        kind === "checkout"
-          ? await client.startCheckout()
-          : await client.manageSubscription();
-
-      if ("url" in result) {
-        const { openUrl } = await import("@tauri-apps/plugin-opener");
-        await openUrl(result.url);
-      } else {
-        setPlanError(result.error);
-      }
-    } catch (error) {
-      setPlanError(String(error));
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  async function endSignIn() {
-    const session = authRef.current;
-    if (session == null) {
-      return;
-    }
-    setAuthBusy(true);
-    try {
-      setAuthState(await session.signOut());
-      announceAuthChange();
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  function announceAuthChange() {
-    emitTo("overlay", "toki://overlay-command", {
-      type: "auth-changed",
-    } satisfies OverlayCommand).catch(() => undefined);
-  }
-
-  useEffect(() => {
-    getOpenAiKeyStatus()
-      .then(setKeyStatus)
-      .catch(() => setKeyStatus(unknownOpenAiKeyStatus));
-    void getOperatorSetting(whisperBinarySetting).then((value) =>
-      setWhisperBinary(value ?? ""),
-    );
-    void getOperatorSetting(whisperModelSetting).then((value) =>
-      setWhisperModel(value ?? ""),
-    );
-  }, []);
-
-  async function saveWhisperPaths() {
-    setWhisperError(null);
-    try {
-      await setOperatorSetting(whisperBinarySetting, whisperBinary);
-      await setOperatorSetting(whisperModelSetting, whisperModel);
-    } catch (error) {
-      setWhisperError(String(error));
-    }
-  }
-
-  async function runUpdateCheck() {
-    setUpdateState({ status: "checking" });
-    const { check } = await import("@tauri-apps/plugin-updater");
-    const next = await checkForUpdate(async () => {
-      const update = await check();
-      pendingUpdateRef.current = update;
-      return update;
-    });
-    setUpdateState(next);
-  }
-
-  async function installPendingUpdate() {
-    const update = pendingUpdateRef.current;
-    if (update == null) {
-      return;
-    }
-    setUpdateState(await downloadAndInstallUpdate(update, setUpdateState));
-  }
-
-  async function saveKey() {
-    setKeyBusy(true);
-    setKeyError(null);
-    try {
-      setKeyStatus(await setOpenAiKey(keyDraft));
-      // Clearing the field the moment it is stored keeps the secret from
-      // sitting in the DOM for the rest of the session.
-      setKeyDraft("");
-    } catch (error) {
-      setKeyError(String(error));
-    } finally {
-      setKeyBusy(false);
-    }
-  }
-
-  async function removeKey() {
-    setKeyBusy(true);
-    setKeyError(null);
-    try {
-      setKeyStatus(await clearOpenAiKey());
-    } catch (error) {
-      setKeyError(String(error));
-    } finally {
-      setKeyBusy(false);
-    }
-  }
-
-  function applyDiagnosticsSettings(next: DiagnosticsSettings) {
-    const normalized = normalizeDiagnosticsSettings(next);
-    setDiagnosticsSettings(normalized);
-    emitTo("overlay", "toki://overlay-command", {
-      type: "set-diagnostics-settings",
-      settings: normalized,
-    } satisfies OverlayCommand).catch(() => undefined);
-  }
-
-  return (
-    <main className="debug-shell" aria-label="Toki preferences">
-      {authRef.current != null && (
-        <section className="debug-section">
-          <h2>Account</h2>
-          <p className="debug-muted">{describeAuthState(authState)}</p>
-          {authState.status === "signed_in" ? (
-            <>
-              <p className="debug-muted">
-                {planChecked ? describePlan(account) : "Checking your plan…"}
-              </p>
-              <button type="button" onClick={endSignIn} disabled={authBusy}>
-                Sign out
-              </button>
-              {/*
-                Offering "Upgrade" to somebody who already pays is the clearest
-                possible sign an app does not know who its customers are, so the
-                offer follows what the service actually says. While the plan is
-                unknown neither is shown -- guessing wrong in either direction
-                is worse than waiting a moment.
-              */}
-              {planChecked && account != null && !account.entitled ? (
-                <button
-                  type="button"
-                  onClick={() => void openBilling("checkout")}
-                  disabled={authBusy}
-                >
-                  Upgrade to Pro
-                </button>
-              ) : null}
-              {planChecked && account?.hasBillingAccount ? (
-                <button
-                  type="button"
-                  onClick={() => void openBilling("manage")}
-                  disabled={authBusy}
-                >
-                  Manage plan
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void refreshAccount()}
-                disabled={authBusy}
-              >
-                Refresh plan
-              </button>
-              {planError ? <p className="debug-muted">{planError}</p> : null}
-            </>
-          ) : (
-            <button type="button" onClick={beginSignIn} disabled={authBusy}>
-              {authState.status === "waiting_for_browser"
-                ? "Waiting for your browser…"
-                : "Sign in"}
-            </button>
-          )}
-        </section>
-      )}
-      <section className="debug-section">
-        <h2>Updates</h2>
-        <p className="debug-muted">
-          {describeUpdateState(updateState) ||
-            "Toki checks for updates when you ask it to."}
-        </p>
-        <div className="debug-section-header-row">
-          <button
-            type="button"
-            disabled={
-              updateState.status === "checking" ||
-              updateState.status === "downloading"
-            }
-            onClick={() => void runUpdateCheck()}
-          >
-            Check for updates
-          </button>
-          {updateState.status === "available" && (
-            <button type="button" onClick={() => void installPendingUpdate()}>
-              Install version {updateState.version}
-            </button>
-          )}
-          {updateState.status === "ready" && (
-            <button type="button" onClick={() => void restartToFinishUpdate()}>
-              Restart now
-            </button>
-          )}
-        </div>
-      </section>
-
-      <section className="debug-section">
-        <h2>Voice</h2>
-        <p className="debug-muted">{describeOpenAiKeyStatus(keyStatus)}</p>
-        <label>
-          OpenAI API key
-          <input
-            type="password"
-            value={keyDraft}
-            placeholder={keyStatus.stored ? "Replace saved key" : "sk-…"}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setKeyDraft(event.target.value)}
-          />
-        </label>
-        <div className="debug-section-header-row">
-          <button
-            type="button"
-            disabled={keyBusy || keyDraft.trim().length === 0}
-            onClick={() => void saveKey()}
-          >
-            {keyStatus.stored ? "Replace key" : "Save key"}
-          </button>
-          <button
-            type="button"
-            disabled={keyBusy || !keyStatus.stored}
-            onClick={() => void removeKey()}
-          >
-            Remove key
-          </button>
-        </div>
-        {keyError != null && <p className="debug-muted">{keyError}</p>}
-        <p className="debug-muted">
-          The key is stored in your macOS Keychain and sent only to OpenAI when
-          you use voice. Toki never writes it to diagnostics or logs.
-        </p>
-
-        <h2>Local transcription</h2>
-        <p className="debug-muted">
-          {describeLocalTranscription(
-            whisperBinary || null,
-            whisperModel || null,
-          )}
-        </p>
-        <label>
-          whisper.cpp binary
-          <input
-            type="text"
-            value={whisperBinary}
-            placeholder="/absolute/path/to/whisper-cli"
-            spellCheck={false}
-            onChange={(event) => setWhisperBinary(event.target.value)}
-          />
-        </label>
-        <label>
-          Model file
-          <input
-            type="text"
-            value={whisperModel}
-            placeholder="/absolute/path/to/ggml-base.en.bin"
-            spellCheck={false}
-            onChange={(event) => setWhisperModel(event.target.value)}
-          />
-        </label>
-        <div className="debug-section-header-row">
-          <button type="button" onClick={() => void saveWhisperPaths()}>
-            Save paths
-          </button>
-        </div>
-        {whisperError != null && <p className="debug-muted">{whisperError}</p>}
-        <p className="debug-muted">
-          Toki never searches for these — a path is used only because you
-          entered it. Leave them empty to use OpenAI instead.
-        </p>
-      </section>
-
-      <section className="debug-section">
-        <h2>Diagnostics</h2>
-        <p className="debug-muted">
-          Off by default. Toki writes nothing to disk unless you turn these on.
-        </p>
-        <label>
-          <input
-            type="checkbox"
-            checked={diagnosticsSettings.diagnosticsEnabled}
-            onChange={(event) =>
-              applyDiagnosticsSettings({
-                ...diagnosticsSettings,
-                diagnosticsEnabled: event.target.checked,
-              })
-            }
-          />{" "}
-          Share diagnostics — saves Toki&apos;s internal state locally to help
-          with support. Passwords and keys are removed.
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={diagnosticsSettings.screenCapturesEnabled}
-            disabled={!diagnosticsSettings.diagnosticsEnabled}
-            onChange={(event) =>
-              applyDiagnosticsSettings({
-                ...diagnosticsSettings,
-                screenCapturesEnabled: event.target.checked,
-              })
-            }
-          />{" "}
-          Include screen captures — also saves a picture of your screen. Only
-          turn this on if asked to.
-        </label>
-        <div className="debug-section-header-row">
-          <button
-            type="button"
-            onClick={() => {
-              emitTo("overlay", "toki://overlay-command", {
-                type: "clear-diagnostics",
-              } satisfies OverlayCommand).catch(() => undefined);
-            }}
-          >
-            Delete collected diagnostics
-          </button>
-        </div>
-      </section>
-    </main>
-  );
-}
 
 function App() {
   if (currentWindowLabel === "settings") {
     return <SettingsWindowApp />;
-  }
-
-  if (currentWindowLabel === "preferences") {
-    return <PreferencesWindowApp />;
   }
 
   if (currentWindowLabel === "debug") {

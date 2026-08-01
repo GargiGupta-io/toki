@@ -32,7 +32,7 @@ import type { RateLimiter } from "./rateLimit";
 import { handleStripeWebhook, type BillingWriter } from "./billing";
 import { createCheckoutSession, createPortalSession } from "./stripe";
 import type { VisionProvider } from "./vision";
-import { htmlResponse, pricingPage, thanksPage } from "./pages";
+import { htmlResponse, pricingPage, rootPage, thanksPage } from "./pages";
 
 /**
  * The service, as a plain function from request to response.
@@ -49,6 +49,8 @@ import { htmlResponse, pricingPage, thanksPage } from "./pages";
 export type ApiRequest = {
   method: string;
   path: string;
+  /** Raw query string, without the leading question mark. */
+  query?: string;
   headers: Record<string, string | undefined>;
   body: string;
 };
@@ -189,6 +191,16 @@ export async function handleApiRequest(
   // Serving them here is what lets payments work with no website and no domain.
   // Neither page grants anything: anyone can visit either by typing the
   // address, and entitlement comes from the signed webhook alone.
+  // Supabase falls back to this address when a sign-in fails, so a person can
+  // arrive here rather than a machine. Answering with API JSON told them
+  // nothing and looked broken.
+  if (request.path === "/" || request.path === "") {
+    const query = request.path.includes("?")
+      ? new URLSearchParams(request.path.split("?")[1])
+      : new URLSearchParams(request.query ?? "");
+    return htmlResponse(rootPage(query));
+  }
+
   if (request.path === "/thanks") {
     return htmlResponse(thanksPage);
   }

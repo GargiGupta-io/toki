@@ -85,6 +85,7 @@ const server = createServer(async (incoming, outgoing) => {
   const apiRequest: ApiRequest = {
     method: incoming.method ?? "GET",
     path: new URL(incoming.url ?? "/", "http://localhost").pathname,
+    query: new URL(incoming.url ?? "/", "http://localhost").search.replace(/^\?/, ""),
     headers: incoming.headers as Record<string, string | undefined>,
     body,
   };

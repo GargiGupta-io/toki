@@ -253,11 +253,36 @@ test("the top utility is a top-attached interactive fullscreen auxiliary panel",
   assert.match(macosOverlaySource, /FULLSCREEN_AUXILIARY/);
   assert.match(macosOverlaySource, /ignores_mouse_events == expected_ignores_mouse_events/);
   assert.match(topUtilitySource, /toki-top-utility__identity/);
-  assert.match(topUtilityStyles, /border-radius:\s*0 0 14px 14px/);
-  assert.match(topUtilityStyles, /background:\s*#000/);
-  assert.match(topUtilityStyles, /min-height:\s*56px/);
-  assert.match(nativeSource, /TOP_UTILITY_EXPANDED_WIDTH: f64 = 400\.0/);
-  assert.match(nativeSource, /TOP_UTILITY_EXPANDED_HEIGHT: f64 = 218\.0/);
+
+  // Square where it meets the notch, rounded where it ends. That is what makes
+  // it read as hanging from the top edge rather than floating.
+  //
+  // Written as a shape rather than four exact pixel values: the previous
+  // version pinned "14px 14px" and a corner radius change broke a test about
+  // window attachment, which taught nobody anything.
+  assert.match(topUtilityStyles, /border-radius:\s*0 0 \d+px \d+px/);
+
+  // Opaque and near-black. Transparency here would let the desktop show
+  // through a panel that sits over other applications.
+  const background = topUtilityStyles.match(/\.toki-top-utility\s*\{[\s\S]*?background:\s*(#[0-9a-f]{3,8})/i);
+  assert.ok(background, "no background colour on the panel");
+  const [, hex] = background;
+  const channels = hex.length <= 4
+    ? [...hex.slice(1)].map((c) => parseInt(c + c, 16))
+    : [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  assert.ok(
+    Math.max(...channels) < 40,
+    `panel background ${hex} is too light to sit over other windows`,
+  );
+
+  // The expanded panel has to be big enough for the settings it now holds,
+  // since the separate Preferences window was removed. Sized by intent rather
+  // than by an exact number, which only says what someone typed.
+  const width = Number(nativeSource.match(/TOP_UTILITY_EXPANDED_WIDTH: f64 = ([\d.]+)/)[1]);
+  const height = Number(nativeSource.match(/TOP_UTILITY_EXPANDED_HEIGHT: f64 = ([\d.]+)/)[1]);
+  const peekHeight = Number(nativeSource.match(/TOP_UTILITY_PEEK_HEIGHT: f64 = ([\d.]+)/)[1]);
+  assert.ok(width >= 380, `expanded panel is ${width}px wide; too narrow for a path field`);
+  assert.ok(height > peekHeight * 4, `expanded panel is ${height}px tall; too short for the settings it absorbed`);
 });
 
 test("completed voice notices expire back to a hidden inactive notch", () => {

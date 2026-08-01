@@ -68,6 +68,52 @@ export const pricingPage = page(
   <p class="quiet">You can start again any time from Preferences in Toki.</p>`,
 );
 
+/**
+ * What a person sees at the root of the service.
+ *
+ * Supabase sends someone here when a sign-in fails, because a failed sign-in
+ * cannot safely be sent to the app's own callback -- so the fallback is
+ * whatever Site URL is configured, which is this service. Before this existed
+ * they arrived at an API error saying "Only POST is supported", which tells
+ * them nothing and looks broken.
+ *
+ * The message names the one thing that actually recovers it: start again from
+ * inside Toki. Reloading the page cannot work -- the address holds a callback
+ * that has already been spent, so retrying it fails identically forever.
+ */
+export function rootPage(query: URLSearchParams): string {
+  const description =
+    query.get("error_description") ?? query.get("error") ?? null;
+
+  if (description == null) {
+    return page(
+      "Toki",
+      "Toki",
+      `<p>This is the service Toki talks to. There is nothing to see here.</p>`,
+    );
+  }
+
+  const expired = /expired|state/i.test(description);
+
+  return page(
+    "Toki — sign-in did not finish",
+    "Sign-in did not finish",
+    `<p>${expired
+      ? "The sign-in took too long and the link expired."
+      : escapeText(description)}</p>
+    <p class="quiet">Go back to Toki and choose Sign in again. Reloading this
+    page will not work: the address holds a link that has already been used.</p>`,
+  );
+}
+
+/** Provider text is shown to a person, so it must not carry markup through. */
+function escapeText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export function htmlResponse(body: string) {
   return {
     status: 200,

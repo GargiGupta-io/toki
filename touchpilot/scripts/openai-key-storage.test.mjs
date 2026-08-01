@@ -109,7 +109,7 @@ test("the Keychain is preferred over the environment", () => {
   );
 });
 
-test("key commands are registered and reachable from preferences", () => {
+test("key commands are registered and reachable from the panel", () => {
   const source = readFileSync(libPath, "utf8");
   for (const command of [
     "openai_api_key_status",
@@ -120,19 +120,30 @@ test("key commands are registered and reachable from preferences", () => {
     assert.match(source, new RegExp(`${command},`, "u"), `${command} registered`);
   }
 
-  // The settings HUD is a compact status bar; a key field needs a real window,
-  // reachable without the debug build.
-  assert.match(source, /"open_preferences"/u);
-  assert.match(source, /get_webview_window\("preferences"\)/u);
+  // The key field used to need its own window because the panel was a compact
+  // status bar. The panel now scrolls and holds it, so the second window is
+  // gone -- and it must stay gone, or there are two places to look for the
+  // same setting.
+  assert.doesNotMatch(source, /"open_preferences"/u);
+  assert.doesNotMatch(source, /get_webview_window\("preferences"\)/u);
+
+  // Reachable without the debug build: the tray opens the one panel.
+  assert.match(source, /"open_settings"/u);
 });
 
 test("the pasted key is not left sitting in the DOM", () => {
   const app = readFileSync(appPath, "utf8");
   const saveKey = app.slice(
-    app.indexOf("async function saveKey()"),
-    app.indexOf("async function removeKey()"),
+    app.indexOf("async function saveOpenAiKey()"),
+    app.indexOf("async function removeOpenAiKey()"),
   );
 
   assert.match(saveKey, /setKeyDraft\(""\)/u);
-  assert.match(app, /type="password"/u, "the field must be masked");
+
+  // The field lives in the panel now, not in App.tsx.
+  const surface = readFileSync(
+    path.join(workspaceRoot, "apps", "desktop", "src", "TokiTopUtilitySurface.tsx"),
+    "utf8",
+  );
+  assert.match(surface, /type="password"/u, "the field must be masked");
 });
