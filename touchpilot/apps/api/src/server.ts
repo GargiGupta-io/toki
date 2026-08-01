@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 
+import { createSupabaseJwks } from "./auth";
 import { describeServiceMode, loadServiceConfig } from "./config";
 import { handleApiRequest, type ApiRequest } from "./handler";
 import { createStubLicenceStore } from "./licences";
@@ -23,11 +24,18 @@ const config = loadServiceConfig();
 // accidentally fall back to it: the secret is always present there.
 const jwtSecret = process.env.SUPABASE_JWT_SECRET?.trim() || undefined;
 const supabaseUrl = process.env.SUPABASE_URL?.trim();
+
+// Projects created since Supabase moved to rotating signing keys issue ES256
+// tokens and publish the public half at the project's JWKS endpoint. Without
+// this every genuine sign-in is rejected as an unsupported algorithm, which
+// looks to the person holding it like being signed out while signed in.
+const jwks = supabaseUrl ? createSupabaseJwks({ supabaseUrl }) : undefined;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
 const dependencies = {
   config,
   jwtSecret,
+  jwks,
   subscriptions:
     supabaseUrl && serviceRoleKey
       ? createSupabaseSubscriptionStore({ supabaseUrl, serviceRoleKey })

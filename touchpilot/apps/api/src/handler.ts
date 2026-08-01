@@ -18,7 +18,8 @@ import {
 } from "./licences";
 import {
   tokenRejectionMessages,
-  verifyAccessToken,
+  verifyBearerToken,
+  type SupabaseJwks,
   type VerifiedUser,
 } from "./auth";
 import {
@@ -68,6 +69,8 @@ export type HandlerDependencies = {
    * local development mode where no Supabase project is configured.
    */
   jwtSecret?: string;
+  /** Present when the project signs with rotating keys rather than a secret. */
+  jwks?: SupabaseJwks;
   subscriptions?: SubscriptionStore;
   /** Development-only fallback while there is no auth project configured. */
   licences?: LicenceStore;
@@ -119,11 +122,11 @@ type CallerResult =
  */
 async function identifyCaller(
   request: ApiRequest,
-  { jwtSecret, subscriptions, licences }: HandlerDependencies,
+  { jwtSecret, jwks, subscriptions, licences }: HandlerDependencies,
 ): Promise<CallerResult> {
   const bearer = readLicenceKey(request.headers);
 
-  if (jwtSecret == null) {
+  if (jwtSecret == null && jwks == null) {
     if (licences == null) {
       return { ok: false, status: 503, error: "Authentication is not configured." };
     }
@@ -145,7 +148,7 @@ async function identifyCaller(
     };
   }
 
-  const verification = verifyAccessToken(bearer, jwtSecret);
+  const verification = await verifyBearerToken(bearer, { jwtSecret, jwks });
 
   if (!verification.valid) {
     // 401 for "who are you"; a token that is present but wrong is still an

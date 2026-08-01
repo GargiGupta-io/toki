@@ -153,3 +153,117 @@ test("a tier the client asks for is never honoured", async () => {
   assert.equal(response.status, 200);
   assert.equal(askedFor, "user-9", "the tier is looked up by verified user id");
 });
+
+// --- Rotating signing keys -------------------------------------------------
+//
+// Supabase projects created since the move to asymmetric JWTs sign with ES256
+// and publish the public half at the project's JWKS endpoint. A server that
+// only understands HS256 rejects every genuine token as using an unsupported
+// algorithm -- which presents as being signed out while demonstrably signed in,
+// and which signing in again cannot fix, because the next token is signed the
+// same way.
+
+import { generateKeyPairSync, createSign } from "node:crypto";
+import { createSupabaseJwks, verifyBearerToken } from "../apps/api/src/auth.ts";
+
+const { privateKey, publicKey } = generateKeyPairSync("ec", {
+  namedCurve: "P-256",
+});
+const publicJwk = { ...publicKey.export({ format: "jwk" }), kid: "test-key" };
+
+function signEs256(payload, { kid = "test-key", alg = "ES256" } = {}) {
+  const header = Buffer.from(JSON.stringify({ alg, typ: "JWT", kid })).toString(
+    "base64url",
+  );
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = createSign("sha256")
+    .update(`${header}.${body}`)
+    .sign({ key: privateKey, dsaEncoding: "ieee-p1363" })
+    .toString("base64url");
+  return `${header}.${body}.${signature}`;
+}
+
+function jwksServing(keys) {
+  let calls = 0;
+  return {
+    calls: () => calls,
+    jwks: createSupabaseJwks({
+      supabaseUrl: "https://project.supabase.co",
+      fetchImpl: async () => {
+        calls += 1;
+        return { ok: true, json: async () => ({ keys }) };
+      },
+      minRefetchMs: 0,
+    }),
+  };
+}
+
+test("a token signed with the project's rotating key is accepted", async () => {
+  const { jwks } = jwksServing([publicJwk]);
+  const result = await verifyBearerToken(
+    signEs256({ sub: "user-1", email: "a@b.test", exp: future() }),
+    { jwks },
+  );
+
+  assert.equal(result.valid, true);
+  assert.equal(result.user.id, "user-1");
+});
+
+test("a token signed by somebody else's key is refused", async () => {
+  const { privateKey: otherKey } = generateKeyPairSync("ec", {
+    namedCurve: "P-256",
+  });
+  const header = Buffer.from(
+    JSON.stringify({ alg: "ES256", typ: "JWT", kid: "test-key" }),
+  ).toString("base64url");
+  const body = Buffer.from(
+    JSON.stringify({ sub: "attacker", exp: future() }),
+  ).toString("base64url");
+  const forged = `${header}.${body}.${createSign("sha256")
+    .update(`${header}.${body}`)
+    .sign({ key: otherKey, dsaEncoding: "ieee-p1363" })
+    .toString("base64url")}`;
+
+  const { jwks } = jwksServing([publicJwk]);
+  const result = await verifyBearerToken(forged, { jwks });
+
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "bad_signature");
+});
+
+test("the algorithm is still pinned once rotating keys are available", async () => {
+  const { jwks } = jwksServing([publicJwk]);
+  // "none" and any other algorithm must not find a path through the new branch.
+  for (const alg of ["none", "RS256", "HS512"]) {
+    const result = await verifyBearerToken(signEs256({ sub: "x", exp: future() }, { alg }), {
+      jwks,
+    });
+    assert.equal(result.valid, false, `${alg} must not verify`);
+    assert.equal(result.reason, "wrong_algorithm");
+  }
+});
+
+test("an expired token is refused even when its signature holds", async () => {
+  const { jwks } = jwksServing([publicJwk]);
+  const result = await verifyBearerToken(
+    signEs256({ sub: "user-1", exp: Math.floor(Date.now() / 1000) - 10 }),
+    { jwks },
+  );
+
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "expired");
+});
+
+test("an unknown key id does not refetch on every request", async () => {
+  const probe = createSupabaseJwks({
+    supabaseUrl: "https://project.supabase.co",
+    fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [] }) }),
+    minRefetchMs: 60_000,
+    now: () => 1_000_000,
+  });
+
+  // A stream of tokens naming random key ids would otherwise be an outbound
+  // fetch each, from an endpoint that needs no authentication to reach.
+  assert.equal(await probe.keyFor("unknown-a"), null);
+  assert.equal(await probe.keyFor("unknown-b"), null);
+});
