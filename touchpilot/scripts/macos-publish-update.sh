@@ -17,6 +17,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="${TOKI_RELEASE_REPO:-GargiGupta-io/toki}"
 BUNDLE_DIR="$ROOT_DIR/target/release/bundle/macos"
+DMG_DIR="$ROOT_DIR/target/release/bundle/dmg"
 PUBLISH=0
 
 for argument in "$@"; do
@@ -41,6 +42,17 @@ if [[ ! -f "$archive" || ! -f "$signature_file" ]]; then
   echo "  export TAURI_SIGNING_PRIVATE_KEY=\"\$(cat ~/.toki/updater.key)\"" >&2
   echo "  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=\"\"" >&2
   echo "  npm run desktop:release:mac" >&2
+  exit 1
+fi
+
+# The disk image is what a person downloads; the tarball above is only what the
+# updater reads. Publishing without the image leaves the release page offering a
+# .tar.gz to anyone who followed a Download link, which is not something most
+# people can install, so a missing image is an error rather than a warning.
+dmg="$DMG_DIR/Toki-$version.dmg"
+if [[ ! -f "$dmg" ]]; then
+  echo "Disk image not found: $dmg" >&2
+  echo "Run npm run desktop:package:mac first." >&2
   exit 1
 fi
 
@@ -87,7 +99,7 @@ SIGNATURE="$signature" URL="$download_url" PLATFORM="$platform" VERSION="$versio
 if gh release view "v$version" --repo "$REPO" >/dev/null 2>&1; then
   echo "Release v$version already exists; uploading assets to it."
   gh release upload "v$version" \
-    "$work_dir/$asset_name" "$work_dir/latest.json" \
+    "$work_dir/$asset_name" "$work_dir/latest.json" "$dmg" \
     --repo "$REPO" --clobber
 else
   draft_flag="--draft"
@@ -97,7 +109,7 @@ else
 
   # shellcheck disable=SC2086
   gh release create "v$version" \
-    "$work_dir/$asset_name" "$work_dir/latest.json" \
+    "$work_dir/$asset_name" "$work_dir/latest.json" "$dmg" \
     --repo "$REPO" \
     --title "Toki $version" \
     --notes "Toki $version" \

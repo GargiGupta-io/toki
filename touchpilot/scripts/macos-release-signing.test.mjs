@@ -9,6 +9,7 @@ const workspaceRoot = path.resolve(scriptsDirectory, "..");
 const signingScriptPath = path.join(scriptsDirectory, "macos-sign-app.sh");
 const packageScriptPath = path.join(scriptsDirectory, "macos-package-dmg.sh");
 const notarizeScriptPath = path.join(scriptsDirectory, "macos-notarize-dmg.sh");
+const publishScriptPath = path.join(scriptsDirectory, "macos-publish-update.sh");
 const entitlementsPath = path.join(
   workspaceRoot,
   "apps",
@@ -190,6 +191,27 @@ test("notarization refuses a self-signed build and staples what it submits", () 
   assert.match(script, /stapler validate/u);
   // Stapling succeeding is not the same as Gatekeeper accepting the result.
   assert.match(script, /spctl --assess --type open/u);
+});
+
+// A release carrying only the updater's tarball looks complete from the command
+// line -- gh reports success, the manifest is valid, the updater works -- and is
+// useless to the one audience the release page exists for. Someone following a
+// Download link gets a .tar.gz they cannot install. Assert the disk image is
+// both required up front and attached to the release either way it is created.
+test("publishing attaches the disk image, not just the updater tarball", () => {
+  const script = stripComments(readFileSync(publishScriptPath, "utf8"));
+
+  assert.match(script, /dmg="\$DMG_DIR\/Toki-\$version\.dmg"/u);
+  assert.match(script, /if \[\[ ! -f "\$dmg" \]\]; then/u);
+
+  const uploads = script.match(/gh release (?:create|upload)[\s\S]*?--repo/gu);
+  assert.equal(uploads?.length, 2, "both release paths must be checked");
+  for (const upload of uploads) {
+    assert.ok(
+      upload.includes('"$dmg"'),
+      `release command omits the disk image: ${upload}`,
+    );
+  }
 });
 
 test("the script and the entitlements file agree on the claimed capabilities", () => {

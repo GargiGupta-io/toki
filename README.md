@@ -10,7 +10,7 @@ It points. **It never clicks, and it never moves your real cursor.** That
 distinction is the product, and most of the engineering below follows from it.
 
 Built by [Gargi Gupta](https://github.com/GargiGupta-io) · 700+ commits ·
-431 tests
+432 tests
 
 ---
 
