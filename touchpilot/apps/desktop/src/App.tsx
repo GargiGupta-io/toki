@@ -2365,7 +2365,7 @@ function OverlayWindowApp() {
   // floating over someone's work -- so it names where the control is instead.
   const visibleGuidanceFailure =
     upgradeRequired && baseGuidanceFailure != null
-      ? `${baseGuidanceFailure} Open Toki Preferences to upgrade.`
+      ? `${baseGuidanceFailure} Open Toki Settings, under Account, to upgrade.`
       : baseGuidanceFailure;
   const activeTarget: RenderedGuidanceTarget =
     acceptedTarget != null && acceptedStep != null

@@ -2771,13 +2771,19 @@ fn resolve_operator_binary(env_name: &str, purpose: &str) -> Result<PathBuf, Str
     // GUI application launched from Finder inherits no environment, so a value
     // that works from a terminal is simply absent the rest of the time. The
     // security property that matters is that nothing is *searched for* -- an
-    // operator naming a path in Preferences is as deliberate as exporting it.
+    // operator naming a path in Settings is as deliberate as exporting it.
+    //
+    // The message names the route, not the concept. It used to say "Toki's
+    // Preferences", which was the name of a window that no longer exists --
+    // sending the one person who reads this to look for something that is not
+    // there is worse than saying nothing.
     let configured = read_stored_setting(env_name)
         .or_else(|| std::env::var(env_name).ok())
         .ok_or_else(|| {
             format!(
-                "{purpose} is not configured. Set a path in Toki's Preferences, \
-                 or export {env_name} and launch Toki from a terminal."
+                "{purpose} is not configured. Open the gear on the Toki panel, \
+                 choose Speech, and enter a path -- or export {env_name} and \
+                 launch Toki from a terminal."
             )
         })?;
 

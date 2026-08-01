@@ -58,14 +58,16 @@ export const thanksPage = page(
   `<p>Your Toki Pro subscription is active. You can close this tab and go back
   to Toki.</p>
   <p class="quiet">Toki checks your plan when you return to it. If it still
-  shows the free plan, open Preferences and choose Refresh plan.</p>`,
+  shows the free plan, open Settings from the Toki panel and choose Refresh
+  plan under Account.</p>`,
 );
 
 export const pricingPage = page(
   "Toki — checkout cancelled",
   "Nothing was charged",
   `<p>You closed checkout before paying, so no payment was taken.</p>
-  <p class="quiet">You can start again any time from Preferences in Toki.</p>`,
+  <p class="quiet">You can start again any time from Settings in Toki, under
+  Account.</p>`,
 );
 
 /**
