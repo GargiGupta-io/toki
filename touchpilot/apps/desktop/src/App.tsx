@@ -198,6 +198,8 @@ import { BlobPuck } from "./BlobPuck";
 import { TokiCreatureLayer } from "./TokiCreatureLayer";
 import { TokiTopUtilitySurface } from "./TokiTopUtilitySurface";
 import { TokiTaskProgress } from "./TokiTaskProgress";
+import { TokiSelectionTrail } from "./TokiSelectionTrail";
+import { usePuckSpring } from "./puckSpring";
 import { TokiPointerExplanationCard } from "./TokiPointerExplanationCard";
 import {
   getTranscriptionAvailability,
@@ -2096,6 +2098,16 @@ function getGestureCalibrationCandidate(
   return null;
 }
 
+/**
+ * The smallest circle worth cropping to, in display pixels.
+ *
+ * A loop this small is more likely a nervous hand than a selection, and
+ * cropping to it would hand the model a few dozen pixels of nothing. Below it
+ * the region is discarded and the point lock's own guess is used, which is what
+ * would have happened had nobody circled at all.
+ */
+const MINIMUM_CIRCLED_REGION_PX = 48;
+
 function OverlayWindowApp() {
   /**
    * The signed-in session, used to authorise guidance requests.
@@ -2169,6 +2181,16 @@ function OverlayWindowApp() {
       updatedAt: new Date().toISOString(),
     });
   const [lockReleaseToken, setLockReleaseToken] = useState(0);
+  /**
+   * What was circled, when the lock came from a circle rather than a twist.
+   *
+   * Null for an ordinary point lock, where the focus region is still invented
+   * around the point -- that guess is fine for a button and is the only thing
+   * available when nobody drew anything.
+   */
+  const [gesturePointerRegion, setGesturePointerRegion] = useState<
+    { x: number; y: number; width: number; height: number } | null
+  >(null);
 
   /**
    * Give up a lock, on both sides.
@@ -2181,6 +2203,7 @@ function OverlayWindowApp() {
    */
   function releasePointerLock(reason: PointerLockInvalidationReason) {
     setGesturePointerLock(null);
+    setGesturePointerRegion(null);
     setGesturePointerLockFeedback({
       validation: "invalidated",
       reason,
@@ -2228,6 +2251,7 @@ function OverlayWindowApp() {
   const lastGestureClassificationRef = useRef<GestureClassification | null>(null);
   const handledGestureLockRequestRef = useRef<string | null>(null);
   const handledGestureUnlockRequestRef = useRef<string | null>(null);
+  const handledGestureRegionRequestRef = useRef<string | null>(null);
   const handledOrdinaryPinchEventRef = useRef<string | null>(null);
   const handledControlPinchEventRef = useRef<string | null>(null);
   const handledCameraShutdownEventRef = useRef<string | null>(null);
@@ -2300,8 +2324,18 @@ function OverlayWindowApp() {
     gestureCalibration.status,
   ]);
   const gesturePointerShadow = useMemo(() => {
-    const pointer =
-      gesturePointerLock?.pointer ?? alwaysOnGestureRuntime.pointer;
+    // While a circle is being drawn the blob is the drawing tip, so it follows
+    // the live hand. Otherwise it sits on the lock, marking it.
+    //
+    // Without this it stays pinned to the locked point for the whole gesture
+    // while the trail runs off across the screen -- the line appears to be
+    // drawn by nothing, and the blob looks broken rather than stationary.
+    const circling =
+      alwaysOnGestureRuntime.circleStroke != null &&
+      alwaysOnGestureRuntime.circleStroke.phase !== "abandoned";
+    const pointer = circling
+      ? (alwaysOnGestureRuntime.pointer ?? gesturePointerLock?.pointer)
+      : (gesturePointerLock?.pointer ?? alwaysOnGestureRuntime.pointer);
 
     if (
       pointer == null ||
@@ -2316,11 +2350,31 @@ function OverlayWindowApp() {
       viewport,
     );
   }, [
+    alwaysOnGestureRuntime.circleStroke,
     alwaysOnGestureRuntime.pointer,
     gesturePointerDisplay.id,
     gesturePointerLock,
     viewport,
   ]);
+  /**
+   * The blob's actual position, springing towards where it is wanted.
+   *
+   * Sprung here rather than inside the puck so the trail can be given the very
+   * same value. Two components each running their own spring would drift apart
+   * on fast movement, which is the failure this pair has already had once.
+   */
+  /**
+   * Whichever pointer is driving, not only the hand.
+   *
+   * This sprang `gesturePointerShadow` alone, so the moment no hand was
+   * tracked the blob fell back to the raw cursor position and moved exactly as
+   * it always had. Most of the time there is no hand -- which meant most of the
+   * time there was no spring, and the change was invisible.
+   */
+  const sprungPointerShadow = usePuckSpring(
+    gesturePointerShadow ?? pointerShadow,
+  );
+
   const gesturePuckPresentation = useMemo(
     () =>
       createGesturePuckPresentation({
@@ -2647,6 +2701,7 @@ function OverlayWindowApp() {
     window.speechSynthesis?.cancel();
     setPointerExplanation(null);
     setGesturePointerLock(lock);
+    setGesturePointerRegion(null);
     setGesturePointerLockFeedback({
       validation: "checking",
       reason: null,
@@ -2654,6 +2709,64 @@ function OverlayWindowApp() {
     });
     setGestureWindowValidationDiagnostics(null);
   }, [alwaysOnGestureRuntime.lockRequest, gesturePointerDisplay]);
+
+  /**
+   * A circle supersedes the point that armed it.
+   *
+   * The lock is replaced rather than annotated, because everything downstream
+   * validates a lock -- that the screen has not changed under it, that it is
+   * inside the active window -- and a lock left pointing at the old spot would
+   * pass those checks about the wrong place.
+   */
+  useEffect(() => {
+    const request = alwaysOnGestureRuntime.regionLockRequest;
+    if (
+      request == null ||
+      handledGestureRegionRequestRef.current === request.id ||
+      request.pointer.display.displayId !== gesturePointerDisplay.id
+    ) {
+      return;
+    }
+
+    handledGestureRegionRequestRef.current = request.id;
+    const evidence: PointerEvidenceFingerprint = {
+      snapshotId: `gesture-region-${request.id}`,
+      capturedAt: request.lockedAt,
+      regionHash: [
+        gesturePointerDisplay.id,
+        gesturePointerDisplay.width,
+        gesturePointerDisplay.height,
+        gesturePointerDisplay.scaleFactor,
+      ].join(":"),
+    };
+
+    window.speechSynthesis?.cancel();
+    setPointerExplanation(null);
+    setGesturePointerLock(
+      createPointerLockSnapshot({
+        id: request.id,
+        lockedAt: request.lockedAt,
+        pointer: request.pointer,
+        evidence,
+        display: gesturePointerDisplay,
+      }),
+    );
+    // A circle small enough to be a slip would crop to a few pixels and tell
+    // the model nothing. Below the size the point lock would have used, the
+    // guess around the centre is the better answer.
+    setGesturePointerRegion(
+      request.region.width >= MINIMUM_CIRCLED_REGION_PX &&
+        request.region.height >= MINIMUM_CIRCLED_REGION_PX
+        ? request.region
+        : null,
+    );
+    setGesturePointerLockFeedback({
+      validation: "checking",
+      reason: null,
+      updatedAt: request.lockedAt,
+    });
+    setGestureWindowValidationDiagnostics(null);
+  }, [alwaysOnGestureRuntime.regionLockRequest, gesturePointerDisplay]);
 
   useEffect(() => {
     const request = alwaysOnGestureRuntime.unlockRequest;
@@ -3459,10 +3572,16 @@ function OverlayWindowApp() {
         },
         crop: screenshotPayload.crop,
       };
-      const displayFocusRegion = createPointerExplanationDisplayRegion(
-        displayPoint,
-        snapshot.metadata.display,
-      );
+      // What was circled, if anything was. The invented box around the point is
+      // a guess about extent; a drawn one is not, and it is the whole reason
+      // the gesture exists -- on a diagram, "here" cannot distinguish a muscle
+      // from its neighbour but a loop round it can.
+      const displayFocusRegion =
+        gesturePointerRegion ??
+        createPointerExplanationDisplayRegion(
+          displayPoint,
+          snapshot.metadata.display,
+        );
       const focusRegion = mapDisplayRectToProviderImage(
         displayFocusRegion,
         coordinateContext,
@@ -5556,6 +5675,13 @@ function OverlayWindowApp() {
       aria-label="Toki overlay"
     >
       <TokiTaskProgress runtime={workflowRuntime} />
+      {/* Under everything Toki draws for itself: the trail annotates the
+          screen beneath, and must not sit on top of the pointer it follows. */}
+      <TokiSelectionTrail
+        stroke={alwaysOnGestureRuntime.circleStroke}
+        viewport={viewport}
+        head={sprungPointerShadow}
+      />
       <TokiCreatureLayer
         state={tokiCreatureState}
         target={hasAcceptedGuidance ? activeTarget : null}
@@ -5567,7 +5693,7 @@ function OverlayWindowApp() {
         <BlobPuck
           creatureState={tokiCreatureState}
           motion={puckMotion}
-          pointerShadow={gesturePointerShadow ?? pointerShadow}
+          pointerShadow={sprungPointerShadow ?? pointerShadow}
           pointerSource={
             gesturePointerShadow == null &&
             gesturePuckPresentation.splitVisual == null

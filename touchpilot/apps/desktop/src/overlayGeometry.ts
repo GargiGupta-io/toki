@@ -73,6 +73,23 @@ function toOverlayCoordinate(value: number, viewportSize: number, devicePixelRat
   return value;
 }
 
+/**
+ * A display point in overlay pixels.
+ *
+ * Exported because the selection trail draws a path of them and needs the same
+ * conversion the pointer already uses -- a trail measured differently from the
+ * cursor it follows would drift away from the fingertip as the hand moved.
+ */
+export function toOverlayPoint(
+  point: { x: number; y: number },
+  viewport: ViewportMetrics,
+): { x: number; y: number } {
+  return {
+    x: toOverlayCoordinate(point.x, viewport.width, viewport.devicePixelRatio),
+    y: toOverlayCoordinate(point.y, viewport.height, viewport.devicePixelRatio),
+  };
+}
+
 export function getPointerShadowPosition(
   pointerX: number,
   pointerY: number,

@@ -52,11 +52,18 @@ import {
   initialWristRollLockControllerState,
   resetWristRollLockController,
   type PointerLockRequest,
+  type PointerRegionLockRequest,
   type PointerUnlockRequest,
   type WristRollLockState,
   type WristRollLockControllerState,
   type WristRollPoseClassification,
 } from "./gestureTargetLock";
+import {
+  advanceCircleStroke,
+  createCircleStroke,
+  strokeBounds,
+  type CircleStrokeState,
+} from "./gestureCircleSelect";
 import {
   detectHandLandmarksForVideo,
   getHandLandmarker,
@@ -196,6 +203,8 @@ export type GestureRuntimeDiagnostics = {
   wristRollPose: WristRollPoseClassification;
   wristRollLock: WristRollLockState;
   lockRequest: PointerLockRequest | null;
+  circleStroke: CircleStrokeState | null;
+  regionLockRequest: PointerRegionLockRequest | null;
   unlockRequest: PointerUnlockRequest | null;
   pointerDisplay: DisplayContext;
   pointerCalibration: typeof defaultGesturePointerCalibration;
@@ -217,6 +226,8 @@ export type AlwaysOnGestureRuntime = {
   cameraReframing: CameraReframingState;
   wristRollLock: WristRollLockState;
   lockRequest: PointerLockRequest | null;
+  circleStroke: CircleStrokeState | null;
+  regionLockRequest: PointerRegionLockRequest | null;
   unlockRequest: PointerUnlockRequest | null;
   visualAnchor: GestureVisualAnchor | null;
   diagnostics: GestureRuntimeDiagnostics;
@@ -291,6 +302,8 @@ export function createEmptyGestureRuntimeDiagnostics(
     }),
     wristRollLock: { phase: "idle" },
     lockRequest: null,
+    circleStroke: null,
+    regionLockRequest: null,
     unlockRequest: null,
     pointerDisplay: {
       id: "overlay-unavailable",
@@ -391,6 +404,24 @@ export function useAlwaysOnGestureRuntime({
     phase: "idle",
   });
   const [lockRequest, setLockRequest] = useState<PointerLockRequest | null>(null);
+  /**
+   * Circling the thing that was just locked.
+   *
+   * The wrist roll names a point, which is enough for a button and not enough
+   * for a shape. Rather than replace it -- the twist is the whole gesture, and
+   * it fires 220ms in, leaving nowhere to put a circle -- the point is treated
+   * as a provisional answer that circling refines.
+   *
+   * So the arming signal is the lock itself. Twist to lock a point, then draw
+   * round what you meant and the region supersedes it. The wrist-roll machine
+   * is untouched; if nobody circles, nothing here ever fires.
+   */
+  const circleStrokeRef = useRef<CircleStrokeState | null>(null);
+  // Mirrored into state so the overlay can draw it. Only ever set while a
+  // stroke is live, so an idle Toki re-renders no more than it did before.
+  const [circleStroke, setCircleStroke] = useState<CircleStrokeState | null>(null);
+  const [regionLockRequest, setRegionLockRequest] =
+    useState<PointerRegionLockRequest | null>(null);
   const [unlockRequest, setUnlockRequest] =
     useState<PointerUnlockRequest | null>(null);
   const [cameraReframing, setCameraReframing] = useState<CameraReframingState>(
@@ -1069,11 +1100,15 @@ export function useAlwaysOnGestureRuntime({
       return;
     }
 
+    // One clock for the frame. Reading it twice lets the stroke and the lock
+    // disagree about when "now" was, which shows up as a stroke that times out
+    // a frame early.
+    const now = Date.now();
     const result = advanceWristRollLock({
       previousState: wristRollLockStateRef.current,
       pose: wristRollPoseClassification,
       pointer: pointerTrackingStateRef.current.pointer,
-      nowMs: Date.now(),
+      nowMs: now,
     });
     wristRollLockStateRef.current = result.state;
     setWristRollLock((current) =>
@@ -1081,9 +1116,77 @@ export function useAlwaysOnGestureRuntime({
     );
     if (result.lockRequest != null) {
       setLockRequest(result.lockRequest);
+      // A fresh point arms a fresh circle. Anything half-drawn round the
+      // previous target is not evidence about this one.
+      circleStrokeRef.current = createCircleStroke(now);
+      setCircleStroke(circleStrokeRef.current);
+      setRegionLockRequest(null);
     }
     if (result.unlockRequest != null) {
-      setUnlockRequest(result.unlockRequest);
+      // Relaxing the wrist is not asking for the lock back.
+      //
+      // The lock fires while the wrist is twisted, and the hand then returns to
+      // rest -- which drops the rotation past the reset threshold and produced
+      // an unlock about a second later, every single time. Diagnostics from a
+      // real session show it on every cycle: locked, then unlocking 0.9s to
+      // 1.3s afterwards, then the lock gone. The gesture has been destroying
+      // its own result since before circling existed.
+      //
+      // While a stroke is live the untwist is part of the same gesture, so it
+      // is ignored. The stroke gives up on its own if nobody circles, and an
+      // untwist after that unlocks as it always did.
+      if (circleStrokeRef.current == null) {
+        setUnlockRequest(result.unlockRequest);
+        setCircleStroke(null);
+      }
+    }
+
+    const stroke = circleStrokeRef.current;
+    if (stroke != null) {
+      const pointer = pointerTrackingStateRef.current.pointer;
+      const advanced = advanceCircleStroke({
+        previous: stroke,
+        // Null on a frame with no hand, which the stroke treats as a gap to
+        // bridge rather than as an ending.
+        point:
+          pointer?.phase === "active"
+            ? { x: pointer.display.x, y: pointer.display.y }
+            : null,
+        nowMs: now,
+      });
+      circleStrokeRef.current = advanced;
+      setCircleStroke(advanced);
+
+      if (advanced.phase === "abandoned") {
+        // The point lock stands. Not circling is the ordinary case, and it
+        // must cost nothing.
+        circleStrokeRef.current = null;
+        setCircleStroke(null);
+      } else if (advanced.phase === "complete") {
+        const region = strokeBounds(advanced);
+        const lock = result.lockRequest ?? lockRequest;
+        if (region != null && lock != null) {
+          setRegionLockRequest({
+            id: `gesture-region-${lock.id}`,
+            lockedAt: new Date(now).toISOString(),
+            // The centre of what was circled, so every check written against a
+            // point keeps working unchanged.
+            pointer: {
+              ...lock.pointer,
+              display: {
+                ...lock.pointer.display,
+                x: region.x + region.width / 2,
+                y: region.y + region.height / 2,
+              },
+            },
+            roll: lock.roll,
+            region,
+            turnedDegrees: advanced.turnedDegrees,
+          });
+        }
+        circleStrokeRef.current = null;
+        setCircleStroke(null);
+      }
     }
   }, [cameraStatus, gesturesEnabled, wristRollPoseClassification]);
 
@@ -1189,6 +1292,8 @@ export function useAlwaysOnGestureRuntime({
       wristRollPose: wristRollPoseClassification,
       wristRollLock,
       lockRequest,
+      circleStroke,
+      regionLockRequest,
       unlockRequest,
       pointerDisplay: display,
       pointerCalibration: adaptiveSettings.pointerCalibration,
@@ -1219,6 +1324,8 @@ export function useAlwaysOnGestureRuntime({
       gestureIntentArbiter,
       handRoles,
       lockRequest,
+      circleStroke,
+      regionLockRequest,
       unlockRequest,
       handLandmarkFrame,
       multiHandLandmarkFrame,
@@ -1244,6 +1351,8 @@ export function useAlwaysOnGestureRuntime({
     cameraReframing,
     wristRollLock,
     lockRequest,
+    circleStroke,
+    regionLockRequest,
     unlockRequest,
     visualAnchor: gestureVisualAnchor,
     diagnostics,

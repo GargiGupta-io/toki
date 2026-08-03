@@ -792,7 +792,11 @@ test("runtime clears pointing when camera access is unavailable", () => {
 });
 
 test("gesture pointer replaces only the blob position and never locks or clicks", () => {
-  assert.match(appSource, /gesturePointerShadow \?\? pointerShadow/);
+  // The gesture placement is sprung before it reaches the blob, so the value
+  // handed over is the sprung one. What this test is about is unchanged: the
+  // hand moves the blob and nothing else.
+  assert.match(appSource, /sprungPointerShadow \?\? pointerShadow/);
+  assert.match(appSource, /usePuckSpring\(/);
   assert.match(appSource, /getDetachedGesturePointerShadowPosition/);
   assert.match(blobSource, /data-pointer-source/);
   assert.match(blobSource, /gestureBlobFollowDurationSeconds = 0\.025/);

@@ -125,6 +125,24 @@ export type PointerLockRequest = {
   roll: WristRollCycle;
 };
 
+/**
+ * A region drawn round something, superseding the point that armed it.
+ *
+ * Carries the point as well: every existing check -- screen unchanged, inside
+ * the active window, not stale -- is written against a point, and a region
+ * that cannot answer those questions would need all of them rewritten. The
+ * centre of what was circled is the honest answer to "where".
+ */
+export type PointerRegionLockRequest = {
+  id: string;
+  lockedAt: string;
+  pointer: GesturePointerSample;
+  roll: WristRollCycle;
+  region: { x: number; y: number; width: number; height: number };
+  /** Signed, so the trail and the diagnostics can say which way it went. */
+  turnedDegrees: number;
+};
+
 export type PointerUnlockRequest = {
   id: string;
   lockId: string;

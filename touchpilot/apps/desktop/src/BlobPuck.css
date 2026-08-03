@@ -29,11 +29,17 @@
   overflow: hidden;
   pointer-events: none;
   transform-origin: left center;
+  /*
+   * Position is not transitioned. It is sprung, a frame at a time, in
+   * `puckSpring.ts`.
+   *
+   * The two cannot both animate the same property: a transition applied on top
+   * of a spring re-eases every frame the spring produces, which flattens the
+   * overshoot into exactly the linear slide the spring exists to replace. Size
+   * and opacity still transition -- nothing else is driving those.
+   */
   transition:
-    left 90ms linear,
-    top 90ms linear,
     width 90ms linear,
-    transform 90ms linear,
     height 180ms ease,
     opacity 180ms ease,
     filter 180ms ease;
