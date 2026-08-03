@@ -198,7 +198,11 @@ test("the panel can quit Toki, and quitting really exits", () => {
   // The one colour in a monochrome interface, spent on the one irreversible
   // action, and only while the pointer is on it.
   assert.match(corner, /:hover[\s\S]{0,200}#ff5f57/u);
-  assert.match(corner, /box-shadow:[\s\S]{0,120}rgba\(255, 95, 87/u);
+  // The glyph lights; nothing is drawn around it. A ring or a filled disc makes
+  // hovering read as a button appearing rather than a control responding.
+  assert.match(corner, /drop-shadow\(0 0 7px rgba\(255, 95, 87/u);
+  const hover = corner.slice(corner.indexOf(":hover"), corner.indexOf(":hover") + 500);
+  assert.doesNotMatch(hover, /0 0 0 1px|background: rgba\(255/u);
   assert.match(appSource, /invoke\("quit_toki"\)/u);
 
   // Exits rather than hides. Something with these permissions that keeps

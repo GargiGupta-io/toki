@@ -287,12 +287,16 @@
 .toki-top-utility__window-actions button:hover,
 .toki-top-utility__window-actions button:focus-visible {
   color: #ff5f57;
-  background: rgba(255, 95, 87, 0.14);
-  /* Two shadows: a tight ring that reads as the button lighting up, and a
-     softer one behind it so the glow has somewhere to fall on near-black. */
-  box-shadow:
-    0 0 0 1px rgba(255, 95, 87, 0.4),
-    0 0 12px rgba(255, 95, 87, 0.45);
+  /*
+   * The glyph itself lights, and nothing is drawn around it.
+   *
+   * A ring and a filled disc were doing the same job as the colour and adding a
+   * shape that was not there a moment earlier -- so hovering produced a button
+   * appearing rather than a control responding. The glow is cast by the mark,
+   * which is the thing being pointed at.
+   */
+  filter: drop-shadow(0 0 7px rgba(255, 95, 87, 0.75))
+    drop-shadow(0 0 14px rgba(255, 95, 87, 0.35));
   outline: none;
 }
 
