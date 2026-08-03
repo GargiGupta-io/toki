@@ -139,4 +139,14 @@ export function DownloadIcon() {
   );
 }
 
+/** Quit. The standard power glyph -- a broken ring with a stem through it. */
+export function PowerIcon() {
+  return (
+    <Svg>
+      <path d="M12 3.2v8.4" />
+      <path d="M17.2 6.4a7.2 7.2 0 1 1-10.4 0" />
+    </Svg>
+  );
+}
+
 export type { IconProps };

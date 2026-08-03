@@ -73,8 +73,17 @@
   animation: toki-top-utility-arrive 160ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
+/*
+ * The peek bar is the thing you click to open the panel.
+ *
+ * It used to refuse pointer events entirely, so the only way to open the panel
+ * was to hover at the top edge and wait. That reveal never made the window key,
+ * which is why the first click on any control inside was swallowed by macOS
+ * activating the window and the second one worked -- the familiar "everything
+ * needs a double click" complaint.
+ */
 .toki-top-utility[data-mode="peek"] {
-  pointer-events: none;
+  cursor: pointer;
 }
 
 /*
@@ -141,6 +150,20 @@
 
 /* --- Header ------------------------------------------------------------- */
 
+/*
+ * The header clears the camera housing without the panel leaving the top edge.
+ *
+ * The panel is flush with the top of the display on purpose: its background is
+ * the same near-black as the housing, so the two meet and read as one shape
+ * growing out of the notch. An earlier attempt moved the whole window down by
+ * the housing's height, which stopped it covering anything and turned the panel
+ * into a separate slab floating below the notch with a strip of desktop
+ * between -- exactly the seam it is supposed to not have.
+ *
+ * So the surface stays where it is and the content moves. `--notch-inset` is
+ * the measured housing height, set from the window; it is 0 on any display
+ * without one, where this rule then does nothing.
+ */
 .toki-top-utility__header {
   flex: none;
   min-height: 50px;
@@ -149,6 +172,7 @@
   align-items: center;
   gap: var(--step);
   padding: calc(var(--step) * 0.75) calc(var(--step) * 1.5);
+  padding-top: calc(var(--step) * 0.75 + var(--notch-inset, 0px));
 }
 
 .toki-top-utility[data-mode="expanded"] .toki-top-utility__header {
@@ -224,23 +248,58 @@
   box-shadow: none;
 }
 
+/*
+ * Quit: the glyph alone, until you are about to press it.
+ *
+ * No resting fill. Every other control in the panel sits in a faint circle, and
+ * giving this one the same treatment put a permanent button in the corner whose
+ * job is to end the application -- the most emphatic thing in the panel wearing
+ * the same clothes as the least.
+ *
+ * Red on hover is the one colour in this interface, and it is spent here on
+ * purpose. The panel's rule is that white means live; nothing else means
+ * anything. Quitting is the only irreversible thing a person can do from here,
+ * so it gets the only warning, and it appears only while the pointer is on it.
+ */
 .toki-top-utility__window-actions button {
   width: 22px;
   height: 22px;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: 50%;
   background: transparent;
-  color: var(--ink-dim);
+  color: var(--ink-faint);
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
+  transition:
+    color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
 }
 
-.toki-top-utility__window-actions button:hover {
-  background: var(--raise-hover);
-  color: var(--ink);
+.toki-top-utility__window-actions button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.toki-top-utility__window-actions button:hover,
+.toki-top-utility__window-actions button:focus-visible {
+  color: #ff5f57;
+  background: rgba(255, 95, 87, 0.14);
+  /* Two shadows: a tight ring that reads as the button lighting up, and a
+     softer one behind it so the glow has somewhere to fall on near-black. */
+  box-shadow:
+    0 0 0 1px rgba(255, 95, 87, 0.4),
+    0 0 12px rgba(255, 95, 87, 0.45);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toki-top-utility__window-actions button {
+    transition: none;
+  }
 }
 
 /* --- Tabs --------------------------------------------------------------- */

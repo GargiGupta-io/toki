@@ -60,6 +60,25 @@ import "./TokiSettingsWindow.css";
  * mean different things. The panel is for now. This is for setup.
  */
 
+/**
+ * Tell the panel that what it can transcribe with may have changed.
+ *
+ * The panel lives in another window with its own JavaScript context, so a value
+ * written here is invisible to it until it asks again. It used to ask on every
+ * focus, which meant a Keychain read -- and on a rebuilt binary, a password
+ * prompt -- each time the panel was touched.
+ *
+ * Failing to announce is not worth surfacing: the setting is saved either way,
+ * and the panel catches up next time it starts.
+ */
+async function announceSpeechSettingsChanged(): Promise<void> {
+  try {
+    await emitTo("settings", "toki://speech-settings-changed", {});
+  } catch {
+    // Nothing to tell the person; the write succeeded.
+  }
+}
+
 type Section = "general" | "account" | "speech" | "privacy" | "updates";
 
 const sections: Array<{
@@ -358,6 +377,7 @@ export function TokiSettingsWindow() {
                   setKeyError(null);
                   try {
                     setKeyStatus(await setOpenAiKey(keyDraft));
+                    await announceSpeechSettingsChanged();
                     // Cleared the moment it is stored, so the secret does not
                     // sit in the DOM for the rest of the session.
                     setKeyDraft("");
@@ -377,6 +397,7 @@ export function TokiSettingsWindow() {
                   setKeyBusy(true);
                   try {
                     setKeyStatus(await clearOpenAiKey());
+                    await announceSpeechSettingsChanged();
                   } catch (error) {
                     setKeyError(String(error));
                   } finally {
@@ -428,6 +449,12 @@ export function TokiSettingsWindow() {
                   try {
                     await setOperatorSetting(whisperBinarySetting, whisperBinary);
                     await setOperatorSetting(whisperModelSetting, whisperModel);
+                    // The panel shows whether anything can transcribe, and it
+                    // has its own JavaScript context, so it cannot see this.
+                    // It used to re-read on every focus, which asked the
+                    // Keychain -- and a password prompt -- each time the panel
+                    // was touched. This is the only moment the answer changes.
+                    await announceSpeechSettingsChanged();
                   } catch (error) {
                     setWhisperError(String(error));
                   }

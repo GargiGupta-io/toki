@@ -1933,6 +1933,42 @@ fn macos_top_inset<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> f64 {
     }
 }
 
+/// How much of the panel's own top edge the camera housing sits over.
+///
+/// The panel starts at the very top of the display so its black meets the
+/// housing's, which means the first rows of its content are physically behind
+/// the camera unless something moves them. That something is padding inside the
+/// panel rather than a shifted window, so the surface still reaches the edge.
+///
+/// Zero on a display without a housing, where no padding is wanted at all.
+/// Quit Toki from the panel.
+///
+/// The menu bar has had a Quit item all along, which is no help to someone
+/// looking at the panel: Toki has no Dock icon, so the only way out was to find
+/// an icon in the menu bar and open its menu.
+///
+/// Exits rather than hiding. An app holding camera, microphone, and screen
+/// recording permission that keeps running after being told to stop is exactly
+/// the behaviour that makes such an app hard to trust.
+#[tauri::command]
+fn quit_toki(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+fn top_utility_notch_inset(window: tauri::WebviewWindow) -> f64 {
+    #[cfg(target_os = "macos")]
+    {
+        macos_top_inset(&window)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window;
+        0.0
+    }
+}
+
 fn position_top_utility<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
     logical_width: f64,
@@ -1960,11 +1996,18 @@ fn position_top_utility<R: tauri::Runtime>(
     let scale_factor = monitor.scale_factor();
     let window_width = (logical_width * scale_factor).round() as i32;
 
-    // Start below the camera housing, not behind it. The panel is meant to hang
-    // from the notch, so its top edge belongs at the notch's bottom edge -- and
-    // on a display without one this is zero, which is the old behaviour.
+    // Flush with the top of the display, so the panel's own black meets the
+    // camera housing's black and the two read as one shape.
+    //
+    // An earlier repair pushed the whole window down by the safe-area inset.
+    // That did stop the housing covering anything, and it looked wrong: the
+    // panel became a separate slab floating below the notch with a strip of
+    // desktop between them, when the point of the thing is that it hangs *from*
+    // the notch. The content is inset instead -- see `--notch-inset` in the
+    // stylesheet -- so nothing is hidden while the surface still starts at the
+    // very top edge.
     #[cfg(target_os = "macos")]
-    let top_gap = (macos_top_inset(window) * scale_factor).round() as i32;
+    let top_gap = 0;
     #[cfg(not(target_os = "macos"))]
     let top_gap = (8.0 * scale_factor).round() as i32;
 
@@ -1986,6 +2029,15 @@ fn apply_top_utility_mode<R: tauri::Runtime>(
         focused: mode == "expanded" && focus,
     };
 
+    // The camera housing overlaps the top of this window, and the content is
+    // inset to clear it. A fixed height then loses exactly that much of the
+    // panel off the bottom -- which is what made the peek bar disappear: 58
+    // points of window holding 58 points of content plus a 32 point inset.
+    #[cfg(target_os = "macos")]
+    let notch = macos_top_inset(window);
+    #[cfg(not(target_os = "macos"))]
+    let notch = 0.0;
+
     match mode {
         "hidden" => {
             window
@@ -1997,19 +2049,25 @@ fn apply_top_utility_mode<R: tauri::Runtime>(
             return window.hide().map_err(|error| error.to_string());
         }
         "peek" => {
-            position_top_utility(window, TOP_UTILITY_PEEK_WIDTH, TOP_UTILITY_PEEK_HEIGHT)?;
+            position_top_utility(
+                window,
+                TOP_UTILITY_PEEK_WIDTH,
+                TOP_UTILITY_PEEK_HEIGHT + notch,
+            )?;
             window
                 .set_focusable(false)
                 .map_err(|error| error.to_string())?;
+            // The bar is meant to be clicked to open the panel, so it cannot
+            // pass clicks through to whatever is underneath.
             window
-                .set_ignore_cursor_events(true)
+                .set_ignore_cursor_events(false)
                 .map_err(|error| error.to_string())?;
         }
         "expanded" => {
             position_top_utility(
                 window,
                 TOP_UTILITY_EXPANDED_WIDTH,
-                TOP_UTILITY_EXPANDED_HEIGHT,
+                TOP_UTILITY_EXPANDED_HEIGHT + notch,
             )?;
             window
                 .set_focusable(true)
@@ -3116,11 +3174,7 @@ async fn request_codex_vision_guidance(
 /// because someone typed it, never because a directory was scanned.
 #[cfg(target_os = "macos")]
 fn read_stored_setting(name: &str) -> Option<String> {
-    security_framework::passwords::get_generic_password(OPENAI_KEYCHAIN_SERVICE, name)
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    cached_keychain_read(name)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -3140,11 +3194,7 @@ fn set_operator_setting(name: String, value: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         if trimmed.is_empty() {
-            let _ = security_framework::passwords::delete_generic_password(
-                OPENAI_KEYCHAIN_SERVICE,
-                &name,
-            );
-            return Ok(());
+            return cached_keychain_write(&name, None);
         }
 
         // Refuse a relative path here rather than at use time, so the mistake is
@@ -3153,12 +3203,8 @@ fn set_operator_setting(name: String, value: String) -> Result<(), String> {
             return Err("Enter an absolute path.".to_string());
         }
 
-        security_framework::passwords::set_generic_password(
-            OPENAI_KEYCHAIN_SERVICE,
-            &name,
-            trimmed.as_bytes(),
-        )
-        .map_err(|error| format!("Could not save the setting: {error}"))
+        cached_keychain_write(&name, Some(trimmed.to_string()))
+            .map_err(|error| format!("Could not save the setting: {error}"))
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -3173,14 +3219,7 @@ const OPENAI_KEYCHAIN_ACCOUNT: &str = "openai-api-key";
 
 #[cfg(target_os = "macos")]
 fn read_stored_openai_api_key() -> Option<String> {
-    security_framework::passwords::get_generic_password(
-        OPENAI_KEYCHAIN_SERVICE,
-        OPENAI_KEYCHAIN_ACCOUNT,
-    )
-    .ok()
-    .and_then(|bytes| String::from_utf8(bytes).ok())
-    .map(|key| key.trim().to_string())
-    .filter(|key| !key.is_empty())
+    cached_keychain_read(OPENAI_KEYCHAIN_ACCOUNT)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -3286,12 +3325,8 @@ fn set_openai_api_key(key: String) -> Result<OpenAiKeyStatus, String> {
 
     #[cfg(target_os = "macos")]
     {
-        security_framework::passwords::set_generic_password(
-            OPENAI_KEYCHAIN_SERVICE,
-            OPENAI_KEYCHAIN_ACCOUNT,
-            trimmed.as_bytes(),
-        )
-        .map_err(|error| format!("Could not save the API key to the Keychain: {error}"))?;
+        cached_keychain_write(OPENAI_KEYCHAIN_ACCOUNT, Some(trimmed.to_string()))
+            .map_err(|error| format!("Could not save the API key: {error}"))?;
         Ok(build_openai_key_status())
     }
 
@@ -3305,18 +3340,9 @@ fn set_openai_api_key(key: String) -> Result<OpenAiKeyStatus, String> {
 fn clear_openai_api_key() -> Result<OpenAiKeyStatus, String> {
     #[cfg(target_os = "macos")]
     {
-        // Deleting an entry that was never created is success, not an error,
-        // so clearing when nothing is stored stays silent.
-        match security_framework::passwords::delete_generic_password(
-            OPENAI_KEYCHAIN_SERVICE,
-            OPENAI_KEYCHAIN_ACCOUNT,
-        ) {
-            Ok(()) => Ok(build_openai_key_status()),
-            Err(_) if read_stored_openai_api_key().is_none() => {
-                Ok(build_openai_key_status())
-            }
-            Err(error) => Err(format!("Could not remove the API key: {error}")),
-        }
+        cached_keychain_write(OPENAI_KEYCHAIN_ACCOUNT, None)
+            .map_err(|error| format!("Could not remove the API key: {error}"))?;
+        Ok(build_openai_key_status())
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -3339,17 +3365,143 @@ fn clear_openai_api_key() -> Result<OpenAiKeyStatus, String> {
 #[cfg(target_os = "macos")]
 const AUTH_SESSION_ACCOUNT: &str = "auth-session";
 
+/// Everything Toki keeps in the Keychain, in one item.
+///
+/// macOS asks the person for permission **per item, per application**, and it
+/// identifies an application by its code signature -- so a rebuilt Toki is a
+/// new application and every item it holds is another dialog. Three items meant
+/// three dialogs, and "Always Allow" on one said nothing about the next.
+///
+/// The prompt-free alternative was measured and rejected. The data protection
+/// keychain raises no dialogs at all, because access is decided by the app's
+/// entitlement rather than by an access list; but `keychain-access-groups`
+/// requires a team identifier, and a self-signed certificate has none. Signed
+/// that way the process is killed on launch, and signed without the entitlement
+/// the write fails with `errSecMissingEntitlement`. It becomes available with a
+/// Developer ID and not before.
+///
+/// So the count is reduced instead: one item holding a small map. One item is
+/// one dialog per build, which is the floor without Apple's involvement.
+///
+/// The values are still secrets. The session's refresh token mints access
+/// tokens until revoked, and the helper paths decide which binary Toki executes
+/// inside its own screen-recording grant -- a file in Application Support is
+/// writable by any process running as the user, which is precisely the hole
+/// this project closed by refusing to search directories.
+#[cfg(target_os = "macos")]
+const VAULT_ACCOUNT: &str = "toki-secrets";
+
+/// Accounts the vault replaced, read once so nothing has to be entered again.
+#[cfg(target_os = "macos")]
+const MIGRATED_ACCOUNTS: [&str; 4] = [
+    "auth-session",
+    "openai-api-key",
+    "WHISPER_CPP_BIN",
+    "WHISPER_CPP_MODEL",
+];
+
+#[cfg(target_os = "macos")]
+static KEYCHAIN_VAULT: Mutex<Option<std::collections::BTreeMap<String, String>>> =
+    Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+fn load_vault() -> std::collections::BTreeMap<String, String> {
+    if let Some(raw) = security_framework::passwords::get_generic_password(
+        OPENAI_KEYCHAIN_SERVICE,
+        VAULT_ACCOUNT,
+    )
+    .ok()
+    .and_then(|bytes| String::from_utf8(bytes).ok())
+    {
+        if let Ok(map) =
+            serde_json::from_str::<std::collections::BTreeMap<String, String>>(&raw)
+        {
+            return map;
+        }
+    }
+
+    // Nothing here yet. Anything the old layout holds is collected once, saved
+    // together, and the originals removed -- so this costs the old number of
+    // dialogs exactly once, and one from then on.
+    let mut migrated = std::collections::BTreeMap::new();
+    for account in MIGRATED_ACCOUNTS {
+        if let Some(value) = security_framework::passwords::get_generic_password(
+            OPENAI_KEYCHAIN_SERVICE,
+            account,
+        )
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        {
+            migrated.insert(account.to_string(), value);
+        }
+    }
+
+    if !migrated.is_empty() && save_vault(&migrated).is_ok() {
+        // Only after the new item exists. Deleting first would lose the lot if
+        // the write failed.
+        for account in MIGRATED_ACCOUNTS {
+            let _ = security_framework::passwords::delete_generic_password(
+                OPENAI_KEYCHAIN_SERVICE,
+                account,
+            );
+        }
+    }
+
+    migrated
+}
+
+#[cfg(target_os = "macos")]
+fn save_vault(
+    map: &std::collections::BTreeMap<String, String>,
+) -> Result<(), security_framework::base::Error> {
+    security_framework::passwords::set_generic_password(
+        OPENAI_KEYCHAIN_SERVICE,
+        VAULT_ACCOUNT,
+        serde_json::to_string(map).unwrap_or_else(|_| "{}".to_string()).as_bytes(),
+    )
+}
+
+/// Read a value, loading the vault at most once per launch.
+#[cfg(target_os = "macos")]
+fn cached_keychain_read(account: &str) -> Option<String> {
+    let Ok(mut cache) = KEYCHAIN_VAULT.lock() else {
+        return None;
+    };
+
+    cache
+        .get_or_insert_with(load_vault)
+        .get(account)
+        .cloned()
+        .filter(|value| !value.trim().is_empty())
+}
+
+/// Write a value, or remove it when `value` is `None`.
+#[cfg(target_os = "macos")]
+fn cached_keychain_write(account: &str, value: Option<String>) -> Result<(), String> {
+    let Ok(mut cache) = KEYCHAIN_VAULT.lock() else {
+        return Err("Could not reach Toki's stored settings.".to_string());
+    };
+
+    let map = cache.get_or_insert_with(load_vault);
+    match value {
+        Some(value) => {
+            map.insert(account.to_string(), value);
+        }
+        None => {
+            map.remove(account);
+        }
+    }
+
+    save_vault(map).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn read_auth_session() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        security_framework::passwords::get_generic_password(
-            OPENAI_KEYCHAIN_SERVICE,
-            AUTH_SESSION_ACCOUNT,
-        )
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .filter(|value| !value.trim().is_empty())
+        cached_keychain_read(AUTH_SESSION_ACCOUNT)
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -3362,12 +3514,8 @@ fn read_auth_session() -> Option<String> {
 fn store_auth_session(session: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        security_framework::passwords::set_generic_password(
-            OPENAI_KEYCHAIN_SERVICE,
-            AUTH_SESSION_ACCOUNT,
-            session.as_bytes(),
-        )
-        .map_err(|error| format!("Could not save the sign-in to the Keychain: {error}"))
+        cached_keychain_write(AUTH_SESSION_ACCOUNT, Some(session))
+            .map_err(|error| format!("Could not save the sign-in: {error}"))
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -3383,14 +3531,8 @@ fn clear_auth_session() -> Result<(), String> {
     {
         // Signing out must succeed even when nothing was stored, otherwise a
         // half-finished sign-in leaves the user unable to get out of it.
-        match security_framework::passwords::delete_generic_password(
-            OPENAI_KEYCHAIN_SERVICE,
-            AUTH_SESSION_ACCOUNT,
-        ) {
-            Ok(()) => Ok(()),
-            Err(_) if read_auth_session().is_none() => Ok(()),
-            Err(error) => Err(format!("Could not remove the sign-in: {error}")),
-        }
+        cached_keychain_write(AUTH_SESSION_ACCOUNT, None)
+            .map_err(|error| format!("Could not remove the sign-in: {error}"))
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -3650,11 +3792,32 @@ struct TranscriptionAvailability {
 /// the same dead control invited the same press every time.
 #[tauri::command]
 fn transcription_availability() -> TranscriptionAvailability {
+    // Each item is read exactly once.
+    //
+    // This asked the Keychain seven times for three values -- once inside the
+    // provider check and again for each flag. macOS asks for permission per
+    // item per application, and an application whose signature has changed is a
+    // new application, so a rebuilt Toki turned one status check into a stack
+    // of password prompts. Reading once does not remove the prompt, but it
+    // stops one question being asked several times over.
+    let whisper_binary = read_stored_setting(WHISPER_BIN_ENV);
+    let whisper_model = read_stored_setting(WHISPER_MODEL_ENV);
+    let openai_key = read_stored_openai_api_key();
+
+    let local_whisper_ready = whisper_binary.is_some() && whisper_model.is_some();
+    let openai_ready = openai_key.is_some();
+
     TranscriptionAvailability {
-        provider: configured_transcription_provider(),
-        local_whisper_ready: read_stored_setting(WHISPER_BIN_ENV).is_some()
-            && read_stored_setting(WHISPER_MODEL_ENV).is_some(),
-        openai_ready: read_stored_openai_api_key().is_some(),
+        // Local first: it runs on this Mac and sends no audio anywhere.
+        provider: if local_whisper_ready {
+            Some("local-whisper")
+        } else if openai_ready {
+            Some("openai")
+        } else {
+            None
+        },
+        local_whisper_ready,
+        openai_ready,
     }
 }
 
@@ -3998,6 +4161,8 @@ pub fn run() {
             request_codex_vision_guidance,
             set_overlay_surface_mode,
             set_top_utility_mode,
+            top_utility_notch_inset,
+            quit_toki,
             set_top_utility_height,
             open_settings_window,
             toki_debug_export_status,

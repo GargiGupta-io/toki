@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import {
   CameraIcon,
   GearIcon,
+  PowerIcon,
   MarkIcon,
   PauseIcon,
   PlayIcon,
@@ -103,7 +104,8 @@ export function TokiTopUtilitySurface({
   onCameraGesturesToggle,
   onRevealTarget,
   onStartDrag,
-  onClose,
+  onExpand,
+  onQuit,
   onOpenSettings,
 }: {
   mode: Exclude<TopUtilityMode, "hidden">;
@@ -127,10 +129,32 @@ export function TokiTopUtilitySurface({
   /** Opens the settings window, where everything configured once now lives. */
   onOpenSettings: () => void;
   onStartDrag: () => void;
-  onClose: () => void;
+  /** Clicking the peek bar opens the panel, and makes its window key so the
+   *  next click lands on a control rather than on activating the window. */
+  onExpand: () => void;
+  /** Ends Toki. The menu bar has always had this; the panel had no way to it. */
+  onQuit: () => void;
 }) {
   const expanded = mode === "expanded";
   const shellRef = useRef<HTMLElement | null>(null);
+
+  // How far the camera housing reaches down over this panel.
+  //
+  // The panel deliberately starts at the very top of the display so its black
+  // meets the housing's and the two read as one shape. The cost is that its
+  // first rows would be behind the camera, so the content is inset by exactly
+  // the housing's height. Asked for rather than assumed: it differs by model,
+  // and an external display has none, where this is zero and nothing moves.
+  const [notchInset, setNotchInset] = useState(0);
+  useEffect(() => {
+    void invoke<number>("top_utility_notch_inset")
+      .then((value) => {
+        if (Number.isFinite(value) && value >= 0) {
+          setNotchInset(value);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   useFittedHeight(shellRef, expanded, status?.mode, isPaused, cameraGesturesEnabled);
 
@@ -153,9 +177,11 @@ export function TokiTopUtilitySurface({
     <section
       ref={shellRef}
       className="toki-top-utility"
+      style={{ "--notch-inset": `${notchInset}px` } as React.CSSProperties}
       data-mode={mode}
       data-status={visibleStatus.mode}
       aria-label="Toki controls"
+      onClick={expanded ? undefined : onExpand}
     >
       <header
         className="toki-top-utility__header"
@@ -186,8 +212,8 @@ export function TokiTopUtilitySurface({
             aria-label={isPaused ? "Paused" : "Active"}
           />
           {expanded && (
-            <button type="button" onClick={onClose} aria-label="Close Toki controls">
-              &times;
+            <button type="button" onClick={onQuit} aria-label="Quit Toki">
+              <PowerIcon />
             </button>
           )}
         </span>

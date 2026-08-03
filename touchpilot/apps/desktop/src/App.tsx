@@ -210,6 +210,7 @@ import {
   isTopUtilityRevealPoint,
   settleTransientVoiceTopStatus,
   TOP_UTILITY_RESULT_NOTICE_MS,
+  TOP_UTILITY_IDLE_COLLAPSE_MS,
   TOP_UTILITY_LEAVE_DELAY_MS,
   TOP_UTILITY_REVEAL_DWELL_MS,
   type TokiTopStatusModel,
@@ -4913,7 +4914,15 @@ function OverlayWindowApp() {
         ) {
           topUtilityRevealTimerRef.current = window.setTimeout(() => {
             topUtilityRevealTimerRef.current = null;
-            requestTopUtilityMode("expanded");
+            // Focused, like every other route into the expanded panel.
+            //
+            // This one opened it without making its window key, and it is the
+            // route that actually fires: the dwell is 160ms, so the panel is
+            // already open long before a click arrives, and the click-to-open
+            // handler never runs. macOS then spends that click activating the
+            // window instead of pressing what it landed on -- every control
+            // needing two presses, including the one that quits.
+            requestTopUtilityMode("expanded", { focus: true });
           }, TOP_UTILITY_REVEAL_DWELL_MS);
         }
 
@@ -5586,6 +5595,7 @@ function SettingsWindowApp() {
     createDefaultGestureRuntimeState(),
   );
   const [topStatus, setTopStatus] = useState<TokiTopStatusModel | null>(null);
+  const [pointerOverPanel, setPointerOverPanel] = useState(false);
   const isSpaceVoiceHeldRef = useRef(false);
   const utilityModeRef = useRef<TopUtilityMode>("hidden");
   const topStatusRef = useRef<TokiTopStatusModel | null>(null);
@@ -5607,8 +5617,26 @@ function SettingsWindowApp() {
     };
 
     refresh();
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
+
+    // Asked once, then only when the answer can actually have changed.
+    //
+    // This listened for window focus, which sounded like "whenever someone
+    // comes back from settings" and in practice meant every single time the
+    // panel was touched. Each call reads the Keychain, and macOS asks for
+    // permission per item for an application it does not recognise -- so
+    // touching Toki produced a password prompt, repeatedly, for a value that
+    // had not changed since launch.
+    //
+    // The settings window says when it has written something. That is the only
+    // moment this can differ.
+    let unlisten: (() => void) | undefined;
+    void listen("toki://speech-settings-changed", refresh)
+      .then((stop) => {
+        unlisten = stop;
+      })
+      .catch(() => undefined);
+
+    return () => unlisten?.();
   }, []);
 
   function collapseTopUtility() {
@@ -5749,11 +5777,75 @@ function SettingsWindowApp() {
           ? "Listening."
           : "Ready for a command.";
 
+  /*
+   * Get out of the way on its own.
+   *
+   * The panel hangs over whatever someone is working on, and until now it stayed
+   * open until it was dismissed -- so the cost of glancing at it was a manual
+   * dismissal afterwards, every time. It collapses to the same passive state
+   * Escape produces, which is a peek rather than nothing, so it can still be
+   * reached without going back to the menu bar.
+   *
+   * Four things hold it open, and each is a case where disappearing would
+   * destroy something: a recording in progress, a request already sent, a
+   * warning waiting to be acknowledged before Toki will reveal a target, and
+   * the pointer being over the panel at all. The last one matters most in
+   * practice -- reading a message is indistinguishable from inactivity, and a
+   * panel that vanishes mid-sentence is worse than one that lingers.
+   */
+  const idleHoldRef = useRef(false);
+  idleHoldRef.current =
+    voiceActive ||
+    isRefreshingCapture ||
+    topStatus?.mode === "confirming" ||
+    pointerOverPanel;
+
+  useEffect(() => {
+    if (utilityMode !== "expanded") {
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const arm = () => {
+      if (timer != null) {
+        clearTimeout(timer);
+      }
+
+      timer = setTimeout(() => {
+        // Re-checked when it fires rather than when it was set: a recording
+        // that started after the timer was armed must still stop it.
+        if (idleHoldRef.current) {
+          arm();
+          return;
+        }
+
+        collapseTopUtility();
+      }, TOP_UTILITY_IDLE_COLLAPSE_MS);
+    };
+
+    arm();
+    for (const event of ["pointermove", "pointerdown", "keydown", "wheel"]) {
+      window.addEventListener(event, arm, { passive: true });
+    }
+
+    return () => {
+      if (timer != null) {
+        clearTimeout(timer);
+      }
+      for (const event of ["pointermove", "pointerdown", "keydown", "wheel"]) {
+        window.removeEventListener(event, arm);
+      }
+    };
+  }, [utilityMode, pointerOverPanel]);
+
   return (
     <main
       className="settings-shell"
       data-mode={utilityMode}
       aria-label="Toki top utility"
+      onPointerEnter={() => setPointerOverPanel(true)}
+      onPointerLeave={() => setPointerOverPanel(false)}
     >
       {utilityMode !== "hidden" && (
         <TokiTopUtilitySurface
@@ -5815,7 +5907,17 @@ function SettingsWindowApp() {
             } satisfies OverlayCommand).catch(() => undefined);
           }}
           onStartDrag={startSettingsDrag}
-          onClose={collapseTopUtility}
+          onQuit={() => {
+            void invoke("quit_toki").catch(() => undefined);
+          }}
+          // Focused on purpose. A panel opened without its window becoming key
+          // loses the next click to macOS activating it instead, which is the
+          // whole "nothing works until the second tap" problem.
+          onExpand={() => {
+            void setTopUtilityWindowMode("expanded", { focus: true }).catch(
+              () => undefined,
+            );
+          }}
         />
       )}
     </main>

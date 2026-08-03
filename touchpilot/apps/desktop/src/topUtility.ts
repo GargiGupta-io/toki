@@ -35,6 +35,18 @@ export const TOP_UTILITY_REVEAL_DWELL_MS = 160;
 export const TOP_UTILITY_LEAVE_DELAY_MS = 360;
 export const TOP_UTILITY_RESULT_NOTICE_MS = 3_000;
 
+/**
+ * How long the open panel waits before collapsing itself.
+ *
+ * Long enough to read the two lines it shows and reach a control, short enough
+ * that glancing at it does not leave something hanging over the work. It never
+ * fires while a recording is running, a request is out, a warning is waiting to
+ * be acknowledged, or the pointer is over the panel -- reading is
+ * indistinguishable from inactivity, and vanishing mid-sentence is worse than
+ * lingering.
+ */
+export const TOP_UTILITY_IDLE_COLLAPSE_MS = 5_000;
+
 const TOP_EDGE_TRIGGER_HEIGHT = 20;
 const TOP_EDGE_TRIGGER_HALF_WIDTH = 220;
 export const TOP_UTILITY_EXPANDED_WIDTH = 400;

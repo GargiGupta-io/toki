@@ -149,3 +149,66 @@ test("a 401 keeps the reason the service gave", () => {
   assert.match(branch, /body\.error/u);
   assert.doesNotMatch(branch, /Your sign-in has expired\."/u);
 });
+
+/**
+ * How many Keychain dialogs a launch costs.
+ *
+ * macOS asks the person for permission **per item, per application**, and a
+ * rebuilt binary is a different application -- so the number of items is the
+ * number of dialogs, and "Always Allow" on one says nothing about the next.
+ *
+ * The prompt-free route was measured and rejected: the data protection keychain
+ * raises no dialogs, but its access-group entitlement needs a team identifier,
+ * and signed with a self-made certificate the process is killed on launch.
+ * Until there is a Developer ID, fewer items is the only lever.
+ */
+test("everything Toki stores lives in one Keychain item", () => {
+  // Each extra account is another dialog on every rebuild.
+  const accounts = libSource.match(/passwords::(get|set|delete)_generic_password\(\s*\n\s*OPENAI_KEYCHAIN_SERVICE,\s*\n\s*(\w+)/gu) ?? [];
+  for (const use of accounts) {
+    assert.ok(
+      /VAULT_ACCOUNT|\baccount\b/u.test(use),
+      `only the vault, and the one-time migration, may address the Keychain: ${use.replace(/\s+/gu, " ")}`,
+    );
+  }
+
+  // The migration reads the old accounts once so nothing has to be typed again,
+  // and only deletes them after the replacement exists.
+  const load = libSource.slice(
+    libSource.indexOf("fn load_vault"),
+    libSource.indexOf("fn save_vault"),
+  );
+  assert.match(load, /MIGRATED_ACCOUNTS/u);
+  assert.ok(
+    load.indexOf("save_vault(&migrated)") < load.indexOf("delete_generic_password"),
+    "deleting before the new item exists would lose everything",
+  );
+});
+
+test("readers and writers all go through the vault", () => {
+  for (const reader of [
+    "fn read_stored_setting",
+    "fn read_stored_openai_api_key",
+    "fn read_auth_session",
+  ]) {
+    const body = libSource.slice(
+      libSource.indexOf(reader),
+      libSource.indexOf("\n}", libSource.indexOf(reader)),
+    );
+    assert.match(body, /cached_keychain_read\(/u, `${reader} must use the vault`);
+  }
+
+  for (const writer of [
+    "fn set_operator_setting",
+    "fn set_openai_api_key",
+    "fn clear_openai_api_key",
+    "fn store_auth_session",
+    "fn clear_auth_session",
+  ]) {
+    const body = libSource.slice(
+      libSource.indexOf(writer),
+      libSource.indexOf("\n}", libSource.indexOf(writer)),
+    );
+    assert.match(body, /cached_keychain_write\(/u, `${writer} must use the vault`);
+  }
+});
