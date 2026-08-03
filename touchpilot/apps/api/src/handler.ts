@@ -32,6 +32,11 @@ import {
 import type { RateLimiter } from "./rateLimit";
 import { handleStripeWebhook, type BillingWriter } from "./billing";
 import { createCheckoutSession, createPortalSession } from "./stripe";
+import {
+  describeAllowance,
+  type UsageDecision,
+  type UsageStore,
+} from "./usage";
 import type { VisionProvider } from "./vision";
 import { htmlResponse, pricingPage, rootPage, thanksPage } from "./pages";
 
@@ -71,6 +76,8 @@ export type HandlerDependencies = {
   jwtSecret?: string;
   /** Present when the project signs with rotating keys rather than a secret. */
   jwks?: SupabaseJwks;
+  /** Counts the free tier's monthly allowance. Absent means it is not enforced. */
+  usage?: UsageStore;
   subscriptions?: SubscriptionStore;
   /** Development-only fallback while there is no auth project configured. */
   licences?: LicenceStore;
@@ -330,7 +337,7 @@ export async function handleApiRequest(
   }
 
   if (request.path === "/vision") {
-    return handleVision(payload, caller.subscription, dependencies);
+    return handleVision(payload, caller.user, caller.subscription, dependencies);
   }
 
   return handleTranscription(payload, dependencies);
@@ -399,8 +406,9 @@ async function handleBilling(
  */
 async function handleVision(
   payload: unknown,
+  user: VerifiedUser,
   subscription: Subscription,
-  { config, vision }: HandlerDependencies,
+  { config, vision, usage }: HandlerDependencies,
 ): Promise<ApiResponse> {
   const request = payload as {
     prompt?: string;
@@ -418,25 +426,50 @@ async function handleVision(
     return json(400, { error: "A prompt and a screenshot are required." });
   }
 
-  // The gate. Everything above this line is free; looking at a screenshot with
-  // a model costs real money per call, so it is what the paid tier buys.
-  if (requiresUpgrade(subscription)) {
-    return json(402, {
-      error: "Live guidance is part of Toki Pro.",
-      upgrade: true,
-    });
+  // The gate.
+  //
+  // Looking at a screenshot with a model costs real money per call, and the
+  // free tier used to be refused here outright. A free tier nobody can try is
+  // not a tier, so it now has a monthly allowance instead -- and the allowance
+  // is what Pro removes.
+  //
+  // Claimed *before* the model is called. Checking after would let several
+  // requests in flight together each find room and all proceed; claiming first
+  // means the overrun is impossible and the cost is only that a failed call has
+  // to be given back, which happens below.
+  const metered = requiresUpgrade(subscription);
+  let claim: UsageDecision | null = null;
+
+  if (metered) {
+    claim = usage
+      ? await usage.claim(user.id, config.limits.freeMonthlyGuidance)
+      : { allowed: false, used: 0, limit: config.limits.freeMonthlyGuidance };
+
+    if (!claim.allowed) {
+      return json(402, {
+        error: describeAllowance(claim.used, claim.limit),
+        upgrade: true,
+        used: claim.used,
+        limit: claim.limit,
+      });
+    }
   }
 
+  const giveBack = async () => {
+    if (metered && usage != null) {
+      await usage.release(user.id);
+    }
+  };
+
   if (config.provider.apiKey == null || vision == null) {
+    await giveBack();
     return unavailable(
       "This Toki service has no vision credentials configured, so it cannot look at screenshots yet.",
     );
   }
 
   try {
-    return json(
-      200,
-      await vision({
+    const answer = await vision({
         prompt: request.prompt,
         imageBase64: request.imageBase64,
         imageFormat: request.imageFormat === "png" ? "png" : "jpeg",
@@ -446,9 +479,19 @@ async function handleVision(
           typeof request.outputSchema === "object" && request.outputSchema != null
             ? (request.outputSchema as Record<string, unknown>)
             : undefined,
-      }),
+    });
+
+    // What is left, so the app can say so before the last one is spent rather
+    // than after. Absent for a paid subscription, which has nothing to count.
+    return json(
+      200,
+      claim == null
+        ? answer
+        : { ...answer, used: claim.used, limit: claim.limit },
     );
   } catch (error) {
+    // A request nobody got an answer for must not come out of the allowance.
+    await giveBack();
     // The provider's message can quote the request, and the request is a
     // picture of someone's screen. Only the error's class is recorded.
     console.error("vision provider call failed", {

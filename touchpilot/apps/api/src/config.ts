@@ -41,6 +41,16 @@ export type ServiceConfig = {
     /** Guidance requests carry a base64 screenshot, so bodies are large. */
     maxRequestBytes: number;
     requestsPerMinute: number;
+    /**
+     * Guidance requests a free account may make in a calendar month.
+     *
+     * A ceiling rather than a rate: the rate limiter beside this smooths
+     * bursts and forgets everything on deploy, which is the wrong shape for
+     * the thing a subscription removes. Each request puts a screenshot in
+     * front of a model and costs real money, so this is what bounds the bill
+     * for accounts that are not paying anything.
+     */
+    freeMonthlyGuidance: number;
   };
 };
 
@@ -77,6 +87,7 @@ export function loadServiceConfig(
       // allow at least this much or guidance will fail on large displays.
       maxRequestBytes: readNumber(env.TOKI_MAX_REQUEST_BYTES, 12 * 1024 * 1024),
       requestsPerMinute: readNumber(env.TOKI_REQUESTS_PER_MINUTE, 20),
+      freeMonthlyGuidance: readNumber(env.TOKI_FREE_MONTHLY_GUIDANCE, 15),
     },
   };
 }

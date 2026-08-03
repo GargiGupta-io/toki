@@ -6,6 +6,7 @@ import { handleApiRequest, type ApiRequest } from "./handler";
 import { createStubLicenceStore } from "./licences";
 import { createInMemoryRateLimiter } from "./rateLimit";
 import { createSupabaseSubscriptionStore } from "./subscriptions";
+import { createSupabaseUsageStore } from "./usage";
 import { createSupabaseBillingWriter } from "./billing";
 import { createOpenAiVisionProvider } from "./vision";
 
@@ -36,6 +37,10 @@ const dependencies = {
   config,
   jwtSecret,
   jwks,
+  usage:
+    supabaseUrl && serviceRoleKey
+      ? createSupabaseUsageStore({ supabaseUrl, serviceRoleKey })
+      : undefined,
   subscriptions:
     supabaseUrl && serviceRoleKey
       ? createSupabaseSubscriptionStore({ supabaseUrl, serviceRoleKey })
