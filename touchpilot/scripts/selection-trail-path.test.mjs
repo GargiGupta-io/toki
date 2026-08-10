@@ -141,12 +141,34 @@ test("colour is laid continuously between samples, not as dots", () => {
   assert.match(source, /pushSegment/u);
   assert.match(component, /trail\.pushSegment\(previous, at\)/u);
 
-  // Momentum is shared across the sub-pushes; colour is not. Dividing the dye
-  // as well made a long segment fainter than a short one -- a trail that dims
-  // exactly when it is moving fastest.
+  /*
+   * Both colour and momentum are spent per pixel of path.
+   *
+   * This used to assert that momentum was divided by the number of sub-pushes,
+   * which made the fluid's shove proportional to the frame's displacement --
+   * hard on a fast frame, almost nothing on a slow one. Since the shove is what
+   * stretches dye into a ribbon instead of letting it sit and spread, a stroke
+   * came out as two different effects: a clean ribbon where the hand moved
+   * quickly, a soft blob two or three times as wide wherever it slowed.
+   *
+   * Both quantities now follow the same rule, which is why the trail cannot
+   * come apart along its length again. The spacing arithmetic is checked
+   * properly in fluid-trail-spacing.test.mjs; these two only pin the shape at
+   * the call site.
+   */
   const segment = source.slice(source.indexOf("pushSegment(from, to"));
-  assert.match(segment.slice(0, 900), /count,\s*\n\s*-dy/u, "momentum is divided");
-  assert.match(segment.slice(0, 1400), /\n\s*strength,\s*\n/u, "colour is not");
+
+  assert.match(
+    segment.slice(0, 1800),
+    /unitX \* kick/u,
+    "momentum comes from the path direction, not the frame's displacement",
+  );
+  assert.match(segment.slice(0, 2400), /\n\s*strength,\s*\n/u, "colour is not divided");
+  assert.match(
+    segment.slice(0, 1200),
+    /planSplats\(distance, splatRemainder\)/u,
+    "splats are placed by distance travelled, not once per frame",
+  );
 });
 
 test("the trail is a defined ribbon, not a billowing cloud", () => {

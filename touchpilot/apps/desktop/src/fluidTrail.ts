@@ -2,6 +2,11 @@
 // Source-available for evaluation only; see LICENSE at the repository root.
 // Not open source: no redistribution, derivative works, or presenting as your own.
 
+import {
+  fluidTrailSpacingPolicy,
+  planSplats,
+} from "./fluidTrailSpacing";
+
 /**
  * The trail, as moving fluid rather than as a drawn line.
  *
@@ -800,6 +805,14 @@ export function createFluidTrail(
   let colour = hexToRgb(options.colour);
   let lastFrameMs = 0;
   let lastPushMs = 0;
+  /**
+   * Distance banked towards the next splat.
+   *
+   * Per trail rather than per module, because two of these can exist at once --
+   * a gesture stroke and a trackpad stroke share the code and must not share
+   * an accumulator, or one would steal the other's spacing.
+   */
+  let splatRemainder = 0;
 
   function step(dt: number) {
     gl!.disable(gl!.BLEND);
@@ -968,25 +981,44 @@ export function createFluidTrail(
       const dy = to.y - from.y;
       const distance = Math.hypot(dx, dy);
 
-      // One push per few pixels. Closer than this is spending fill rate on
-      // colour that lands on top of itself.
-      const stride = 7;
-      const count = Math.max(1, Math.min(48, Math.ceil(distance / stride)));
+      /*
+       * Splats are spaced along the path, not one per frame.
+       *
+       * `Math.max(1, ...)` used to guarantee a splat every frame however little
+       * the pointer had moved, so a slow hand dropped sixty doses of colour a
+       * second into one spot and the trail swelled into a blob exactly where
+       * the movement was gentlest. The stroke ended up a picture of how fast
+       * the hand was going rather than of where it went.
+       */
+      const plan = planSplats(distance, splatRemainder);
+      splatRemainder = plan.remainder;
 
-      for (let i = 1; i <= count; i += 1) {
-        const t = i / count;
+      if (plan.offsets.length === 0) {
+        return;
+      }
 
+      /*
+       * Momentum per splat, not per frame.
+       *
+       * This was the frame's whole displacement shared across its splats, so a
+       * fast frame shoved the fluid hard and a slow one barely at all -- and it
+       * is that shove which stretches dye into a ribbon instead of letting it
+       * sit and spread. Constant per splat means constant per pixel of path,
+       * which is the same rule the colour follows, so the two parts of a stroke
+       * cannot drift apart again.
+       */
+      const unitX = dx / distance;
+      const unitY = dy / distance;
+      const kick = fluidTrailSpacingPolicy.stridePx;
+
+      for (const t of plan.offsets) {
         this.push(
           from.x + dx * t,
           from.y + dy * t,
-          // Momentum is shared out, so the fluid is nudged the same amount
-          // however finely the segment is divided.
-          dx / Math.max(1, canvas.clientWidth) / count,
-          -dy / Math.max(1, canvas.clientHeight) / count,
-          // Colour is not. Dye is laid per unit of length, so a fast hand
-          // covering more ground leaves the same density of trail as a slow
-          // one -- dividing it made a long segment fainter than a short one,
-          // which is a trail that dims exactly when it is moving fastest.
+          (unitX * kick) / Math.max(1, canvas.clientWidth),
+          (-unitY * kick) / Math.max(1, canvas.clientHeight),
+          // Dye is laid per unit of length, so a fast hand covering more ground
+          // leaves the same density of trail as a slow one.
           strength,
         );
       }
