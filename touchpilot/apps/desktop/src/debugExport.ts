@@ -23,7 +23,72 @@ type DebugExportHistoryEntry = {
   sequence: number;
   recordedAt: string;
   state: unknown;
+  /**
+   * Everything the Guidance tab shows, kept only for the entries that failed.
+   *
+   * The history has always held a compact summary per transition, and the full
+   * picture -- the per-stage trace, the provider's raw answer, the ranked
+   * candidates, the payload gate -- lived only in `latest.json`, which is
+   * overwritten every half second. So the one moment worth reading was gone
+   * before anyone could read it, and the file that survived said `null` where
+   * the answer had been.
+   *
+   * That is not a small inconvenience. It is the difference between diagnosing
+   * a failure from the record and asking somebody to photograph a window.
+   *
+   * Attached only on failure, so an ordinary session does not carry a full
+   * snapshot per transition. Image and audio payloads are stripped by the same
+   * sanitiser as everything else.
+   */
+  detail?: unknown;
 };
+
+/**
+ * The parts of a snapshot that explain a guidance failure.
+ *
+ * Named explicitly rather than taking the whole snapshot: the rest is gesture
+ * and camera state that says nothing about why a request failed, and this is
+ * written to disk on somebody's machine.
+ */
+const GUIDANCE_DETAIL_KEYS = [
+  "guidanceTrace",
+  "guidanceProviderDebug",
+  "guidanceProviderError",
+  "guidanceProviderName",
+  "guidanceRequest",
+  "guidanceResult",
+  "guidanceIssues",
+  "guidanceSession",
+  "captureMetadata",
+  "captureError",
+  "calibration",
+  "safetyDecision",
+  "voiceRuntime",
+] as const;
+
+function readGuidanceFailureDetail(snapshot: unknown): unknown {
+  if (snapshot == null || typeof snapshot !== "object") {
+    return undefined;
+  }
+
+  const source = snapshot as Record<string, unknown>;
+  const failed =
+    source.guidanceProviderError != null || source.captureError != null;
+
+  if (!failed) {
+    return undefined;
+  }
+
+  const detail: Record<string, unknown> = {};
+
+  for (const key of GUIDANCE_DETAIL_KEYS) {
+    if (source[key] !== undefined) {
+      detail[key] = source[key];
+    }
+  }
+
+  return Object.keys(detail).length > 0 ? detail : undefined;
+}
 
 type DebugExportEnvelope = {
   schemaVersion: 1;
@@ -228,10 +293,15 @@ export function useTokiDebugExport({
 
     if (transitionSignature !== lastTransitionSignatureRef.current) {
       lastTransitionSignatureRef.current = transitionSignature;
+      const detail = readGuidanceFailureDetail(snapshot);
+
       pendingHistoryRef.current.push({
         sequence,
         recordedAt: exportedAt,
         state: sanitizeDebugExportValue(transitionState),
+        ...(detail === undefined
+          ? {}
+          : { detail: sanitizeDebugExportValue(detail) }),
       });
       pendingHistoryRef.current = pendingHistoryRef.current.slice(
         -MAX_PENDING_HISTORY_ENTRIES,
