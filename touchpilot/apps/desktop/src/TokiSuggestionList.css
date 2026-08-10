@@ -1,0 +1,142 @@
+/*
+ * The offers, drawn on the screen rather than squeezed into the notch.
+ *
+ * Every value here assumes it is sitting over somebody else's work -- a bright
+ * photograph, a white document, a dark editor -- so the panel carries its own
+ * ground rather than relying on what is behind it, the same way the selection
+ * trail carries a dark halo.
+ */
+
+.toki-suggestions {
+  position: fixed;
+  z-index: 40;
+  /*
+   * Never in the way. The overlay covers the whole display and Toki's claim is
+   * that it points without touching; a panel that swallowed a click would break
+   * the application underneath it.
+   */
+  pointer-events: none;
+
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 14, 22, 0.92);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset;
+
+  font-family:
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    system-ui,
+    sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+
+  animation: toki-suggestions-in 220ms ease-out both;
+}
+
+@keyframes toki-suggestions-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toki-suggestions {
+    animation-duration: 1ms;
+  }
+}
+
+.toki-suggestions__header {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/*
+ * What Toki heard, marked out.
+ *
+ * When speech is misheard this is the entire explanation, and it has to be
+ * separable from Toki's own words at a glance -- otherwise the sentence reads
+ * as Toki failing rather than as Toki having been given the wrong question.
+ */
+.toki-suggestions__heard {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+
+.toki-suggestions__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toki-suggestions__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.toki-suggestions__number {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  /* Colour arrives inline, from the creature. */
+}
+
+.toki-suggestions__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toki-suggestions__label {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+/*
+ * Why it might be the thing.
+ *
+ * Two lines at most. This is the part that makes a suggestion worth offering
+ * -- a bare list of names is the screen again -- but past two lines the list
+ * becomes something to read rather than something to choose from.
+ */
+.toki-suggestions__reason {
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.6);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.toki-suggestions__hint {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.5);
+}

@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  describeSuggestions,
-  matchSpokenChoice,
-} from "../apps/desktop/src/suggestionChoice.ts";
+import { matchSpokenChoice } from "../apps/desktop/src/suggestionChoice.ts";
 
 const offers = [
   { target: { label: "Appearance", x: 10, y: 10, width: 100, height: 30 } },
@@ -106,11 +103,4 @@ test("nothing on offer means nothing is ever chosen", () => {
     kind: "unrelated",
   });
   assert.deepEqual(matchSpokenChoice("", offers), { kind: "unrelated" });
-});
-
-test("the offers are numbered when written out", () => {
-  assert.equal(
-    describeSuggestions(offers),
-    "1. Appearance   2. Notifications   3. Account settings",
-  );
 });

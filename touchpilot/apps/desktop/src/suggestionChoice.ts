@@ -227,17 +227,3 @@ export function matchSpokenChoice(
 
   return bestIndex >= 0 ? { kind: "chose", index: bestIndex } : { kind: "unrelated" };
 }
-
-/**
- * The offers, written out for the notch.
- *
- * Numbered, because the numbers are half of how they get chosen, and a list
- * somebody is expected to answer has to show what the answers are.
- */
-export function describeSuggestions(
-  suggestions: readonly GuidanceSuggestion[],
-): string {
-  return suggestions
-    .map((suggestion, index) => `${index + 1}. ${suggestion.target.label}`)
-    .join("   ");
-}

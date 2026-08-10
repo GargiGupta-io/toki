@@ -214,7 +214,8 @@ import { TokiTaskProgress } from "./TokiTaskProgress";
 import { TokiSelectionTrail } from "./TokiSelectionTrail";
 import { TokiGuidanceSpotlight, spotlightPolicy } from "./TokiGuidanceSpotlight";
 import { placeGuidanceAnchor } from "./guidanceAnchorPlacement";
-import { describeSuggestions, matchSpokenChoice } from "./suggestionChoice";
+import { matchSpokenChoice } from "./suggestionChoice";
+import { TokiSuggestionList } from "./TokiSuggestionList";
 import { TokiTargetSpark } from "./TokiTargetSpark";
 import {
   advancePointerCircle,
@@ -439,6 +440,17 @@ const clickAwareHitPadding = 18;
  * already happened -- the message is worth a moment, not the rest of the day.
  */
 const GUIDANCE_FAILURE_VISIBLE_MS = 8_000;
+/*
+ * How long the offers stay up.
+ *
+ * Longer than the failure message, and deliberately: that line is a report and
+ * eight seconds is plenty to read one, but these are a question. Three entries
+ * have to be read, thought about, and answered out loud, and a list that
+ * vanishes while somebody is drawing breath to answer it is worse than not
+ * offering. Still bounded, because this is a panel over somebody else's work
+ * and nothing Toki draws should sit there indefinitely.
+ */
+const GUIDANCE_SUGGESTIONS_VISIBLE_MS = 30_000;
 const voiceCaptureStartupTimeoutMs = 5_000;
 
 type RenderedGuidanceTarget = TargetBox & {
@@ -945,10 +957,18 @@ function getTokiTopStatusModel({
      * nobody knows they can answer is just a longer error message.
      */
     if (guidanceSuggestions.length > 0) {
+      /*
+       * The offers themselves are drawn on the screen, beside the blob.
+       *
+       * They were listed here first, and the notch is one line that truncates:
+       * three suggestions came out as "1. Comment options menu button -- say
+       * which one, or s…" and the last two were never seen. The notch says what
+       * happened; the list says what the choices are.
+       */
       return {
         mode: "warning",
-        label: guidanceFailure ?? "I couldn't find that",
-        message: `${describeSuggestions(guidanceSuggestions)}   -- say which one, or say none.`,
+        label: "I couldn't find that",
+        message: `${guidanceSuggestions.length} things on screen might be it`,
       };
     }
 
@@ -2280,6 +2300,19 @@ function OverlayWindowApp() {
   const [pendingSuggestions, setPendingSuggestions] = useState<
     GuidanceSuggestion[]
   >([]);
+  /**
+   * Where the list was put, fixed at the moment it appeared.
+   *
+   * The blob follows the pointer whenever there is no target to sit on, and a
+   * failure is exactly that situation -- so a list anchored to the live blob
+   * would slide around the screen after the cursor while somebody was trying
+   * to read it. It is pinned where the blob was when the offers arrived.
+   */
+  const [suggestionAnchor, setSuggestionAnchor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const blobPositionRef = useRef<{ x: number; y: number } | null>(null);
   const [guidanceSession, setGuidanceSession] = useState<GuidanceSession | null>(null);
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
   const [guidanceProviderError, setGuidanceProviderError] = useState<string | null>(
@@ -2386,6 +2419,15 @@ function OverlayWindowApp() {
   const guidanceTraceRef = useRef<GuidanceTrace | null>(null);
   const activeGuidanceTraceStageRef = useRef<GuidanceTraceStage | null>(null);
   const guidanceRefreshInFlightRef = useRef(false);
+  /**
+   * Which request Toki is actually waiting on.
+   *
+   * Bumped every time a new one starts. A request already in the air cannot be
+   * recalled, so this is how an abandoned one is recognised when it returns:
+   * it compares the number it was given against this, finds it stale, and
+   * writes nothing.
+   */
+  const guidanceGenerationRef = useRef(0);
   const clickAwareAdvanceInFlightRef = useRef(false);
   const capturePermissionBlockRef = useRef<{
     message: string;
@@ -2673,6 +2715,23 @@ function OverlayWindowApp() {
         )
       : null;
 
+  useEffect(() => {
+    if (pendingSuggestions.length === 0) {
+      setSuggestionAnchor(null);
+      return;
+    }
+
+    // Pinned once, on the transition from none to some. Re-pinning on every
+    // change would put it back under a moving cursor.
+    setSuggestionAnchor((current) => current ?? blobPositionRef.current);
+
+    const timer = window.setTimeout(() => {
+      setPendingSuggestions([]);
+    }, GUIDANCE_SUGGESTIONS_VISIBLE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [pendingSuggestions]);
+
   const sprungPointerShadow = usePuckSpring(
     guidanceAnchor ?? gesturePointerShadow ?? pointerShadow,
     {
@@ -2680,6 +2739,11 @@ function OverlayWindowApp() {
       maxY: Math.max(0, viewport.height - pointerShadowGeometry.height),
     },
   );
+
+  blobPositionRef.current =
+    sprungPointerShadow == null
+      ? null
+      : { x: sprungPointerShadow.x, y: sprungPointerShadow.y };
 
   /*
    * The burst waits for the blob to get there.
@@ -4245,12 +4309,28 @@ function OverlayWindowApp() {
     const isLiveGuidanceProvider =
       providerMode === "real" || providerMode === "gemini";
 
-    if (guidanceRefreshInFlightRef.current) {
-      setGuidanceProviderError(
-        "Guidance is already analyzing the screen. Wait for the current request to finish.",
-      );
-      return;
-    }
+    /*
+     * The newest thing said wins.
+     *
+     * This used to refuse: "Guidance is already analyzing the screen. Wait for
+     * the current request to finish." Which is exactly backwards at the moment
+     * it fires. Speech is misheard -- "quote reply" arrives as "code reply" --
+     * and the person who notices immediately says it again, and Toki tells
+     * them to wait for the answer to the question they already know is wrong.
+     *
+     * A request in flight cannot be recalled; the screenshot has been sent.
+     * What can be done is to stop listening to it. The generation is bumped
+     * here, the older run checks it before writing anything, and its answer is
+     * dropped on arrival rather than landing on top of the newer one.
+     */
+    const generation = guidanceGenerationRef.current + 1;
+    guidanceGenerationRef.current = generation;
+    const isSuperseded = () => guidanceGenerationRef.current !== generation;
+
+    // Offers belong to the screen and the question that produced them. A new
+    // question means they are no longer answerable, and leaving them up means
+    // the next thing said could be read as choosing from a stale list.
+    setPendingSuggestions([]);
 
     const trace = startGuidanceTrace(goal, providerMode, traceOptions);
     guidanceRefreshInFlightRef.current = true;
@@ -4504,6 +4584,12 @@ function OverlayWindowApp() {
                 },
         });
 
+        // Something newer was asked while this was in the air. Its answer is
+        // about a question nobody is waiting on any more.
+        if (isSuperseded()) {
+          return;
+        }
+
         setGuidanceProviderMode(providerResponse.mode);
         setGuidanceProviderName(providerResponse.providerName ?? null);
         setGuidanceProviderDebug(providerResponse.debug ?? null);
@@ -4756,6 +4842,12 @@ function OverlayWindowApp() {
           });
         }
       });
+      // A superseded run's failure is not this session's failure. Reporting it
+      // would put an error over a request that is still running perfectly well.
+      if (isSuperseded()) {
+        return;
+      }
+
       setCaptureError(formattedError);
       if (isLiveGuidanceProvider) {
         setGuidanceProviderMode("unavailable");
@@ -4778,8 +4870,12 @@ function OverlayWindowApp() {
       setRiskTargetRevealed(false);
       setOverlayState("error");
     } finally {
-      setIsRefreshingCapture(false);
-      guidanceRefreshInFlightRef.current = false;
+      // The newer run owns these now. Clearing them here would tell the overlay
+      // that nothing is being analyzed while a screenshot is still in the air.
+      if (!isSuperseded()) {
+        setIsRefreshingCapture(false);
+        guidanceRefreshInFlightRef.current = false;
+      }
     }
   }
 
@@ -6452,6 +6548,22 @@ function OverlayWindowApp() {
         }
         // Set on arrival, not on acceptance, so the burst marks the landing.
         sparkKey={arrivedTargetKey}
+      />
+      <TokiSuggestionList
+        suggestions={pendingSuggestions}
+        blob={
+          suggestionAnchor == null
+            ? null
+            : {
+                x: suggestionAnchor.x,
+                y: suggestionAnchor.y,
+                width: pointerShadowGeometry.width,
+                height: pointerShadowGeometry.height,
+              }
+        }
+        viewport={viewport}
+        colour={rotateHue(idleCreatureColour, creatureHueShift)}
+        heard={guidanceRequest?.goal ?? null}
       />
       <TokiGuidanceSpotlight
         target={hasAcceptedGuidance ? activeTarget : null}
