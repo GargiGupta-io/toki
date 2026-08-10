@@ -1,27 +1,20 @@
-import type { WorkflowRuntimeState, WorkflowStep } from "@toki/shared";
+import type { WorkflowRuntimeState } from "@toki/shared";
 import "./TokiTaskProgress.css";
 
-const statusLabels: Record<WorkflowRuntimeState["status"], string> = {
-  idle: "Idle",
-  planning: "Planning",
-  active: "Running",
-  paused: "Paused",
-  blocked: "Needs attention",
-  completed: "Complete",
-  cancelled: "Stopped",
-  error: "Error",
-};
-
-function getCompletedSteps(runtime: WorkflowRuntimeState): WorkflowStep[] {
-  if (runtime.plan == null) {
-    return [];
-  }
-
-  return runtime.plan.steps.filter(
-    (step) => step.status === "completed" || step.index < runtime.currentStepIndex,
-  );
-}
-
+/**
+ * What to do next, in one sentence.
+ *
+ * This used to be a panel: the goal, a status word, a progress bar, "step 1 of
+ * 3", the step's title, its instruction, and a list of what had already been
+ * done. All of it true, and all of it in the way -- a card that size sits over
+ * the very application somebody is being guided through, and the one line that
+ * tells them what to do had six other lines competing with it.
+ *
+ * Everything removed here is already answerable elsewhere. The panel under the
+ * notch carries the goal and the run state; the spotlight names and rings the
+ * control. What is left is the instruction, which is the only part that is an
+ * instruction.
+ */
 export function TokiTaskProgress({ runtime }: { runtime: WorkflowRuntimeState }) {
   const plan = runtime.plan;
   if (plan == null || plan.steps.length <= 1 || runtime.status === "idle") {
@@ -30,53 +23,25 @@ export function TokiTaskProgress({ runtime }: { runtime: WorkflowRuntimeState })
 
   const currentStep =
     plan.steps[runtime.currentStepIndex] ?? plan.steps[plan.steps.length - 1] ?? null;
-  const completedSteps = getCompletedSteps(runtime);
-  const completedCount =
-    runtime.status === "completed"
-      ? plan.steps.length
-      : Math.min(completedSteps.length, plan.steps.length);
-  const progress = Math.max(
-    0,
-    Math.min(100, Math.round((completedCount / plan.steps.length) * 100)),
-  );
-  const recentHistory = completedSteps.slice(-2);
+
+  // Nothing to say. A chip reading "Running" is a chip that could be absent.
+  if (currentStep == null) {
+    return null;
+  }
 
   return (
     <aside
       className="toki-task-progress"
       data-status={runtime.status}
       aria-live="polite"
-      aria-label={`${plan.title}: ${statusLabels[runtime.status]}`}
+      // The step number stays here, where a screen reader can reach it, and off
+      // the screen where it was only ever taking room.
+      aria-label={`Step ${Math.min(
+        runtime.currentStepIndex + 1,
+        plan.steps.length,
+      )} of ${plan.steps.length}: ${currentStep.instruction}`}
     >
-      <header className="toki-task-progress__header">
-        <span className="toki-task-progress__title">{plan.title}</span>
-        <span className="toki-task-progress__status">{statusLabels[runtime.status]}</span>
-      </header>
-
-      <div className="toki-task-progress__bar" aria-hidden="true">
-        <span style={{ width: `${progress}%` }} />
-      </div>
-
-      {currentStep != null ? (
-        <div className="toki-task-progress__current">
-          <span>
-            Step {Math.min(runtime.currentStepIndex + 1, plan.steps.length)} of {plan.steps.length}
-          </span>
-          <strong>{currentStep.title}</strong>
-          <small>{currentStep.instruction}</small>
-        </div>
-      ) : null}
-
-      {recentHistory.length > 0 ? (
-        <div className="toki-task-progress__history" aria-label="Completed steps">
-          {recentHistory.map((step) => (
-            <span key={step.id}>
-              <i aria-hidden="true" />
-              {step.title}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      {currentStep.instruction}
     </aside>
   );
 }

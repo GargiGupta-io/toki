@@ -274,3 +274,26 @@ button.toki-row:disabled {
     transition: none;
   }
 }
+
+/*
+ * Replay the introduction.
+ *
+ * Quiet, and at the top of General rather than hidden in a developer pane: it
+ * is the only way to see a flow that otherwise happens once per machine, and it
+ * is what you press to show somebody the app.
+ */
+.toki-settings__replay {
+  align-self: flex-start;
+  margin-bottom: 14px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(238, 245, 255, 0.85);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.toki-settings__replay:hover {
+  background: rgba(255, 255, 255, 0.1);
+}

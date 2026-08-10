@@ -4,8 +4,35 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Toki.app"
 BUNDLE_ID="app.toki.desktop"
-SIGNING_IDENTITY="${TOKI_MACOS_SIGNING_IDENTITY:-Toki Local Development}"
 SIGNING_KEYCHAIN="${TOKI_MACOS_SIGNING_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
+
+# Prefer the Developer ID when the machine has one, because otherwise macOS
+# forgets every permission on every rebuild.
+#
+# A self-signed certificate has no anchor the system trusts, so TCC cannot rely
+# on the app's designated requirement to recognise it later. It pins the grant
+# to the exact binary instead. Rebuilding changes the binary, so Screen
+# Recording, Camera, Microphone and the rest silently revert to denied -- and
+# the app reports them as not granted while System Settings still shows the
+# switch turned on, which reads as the app being broken.
+#
+# Anchored to Apple's root and a team, the requirement is identical across
+# rebuilds, so one grant holds. Falling back to local development keeps a
+# machine without the certificate working.
+default_signing_identity() {
+  local found
+  found="$(security find-identity -v -p codesigning "$SIGNING_KEYCHAIN" 2>/dev/null \
+    | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' \
+    | head -1)"
+
+  if [[ -n "$found" ]]; then
+    echo "$found"
+  else
+    echo "Toki Local Development"
+  fi
+}
+
+SIGNING_IDENTITY="${TOKI_MACOS_SIGNING_IDENTITY:-$(default_signing_identity)}"
 BUILT_APP="$ROOT_DIR/target/release/bundle/macos/$APP_NAME"
 INSTALLED_APP="/Applications/$APP_NAME"
 ENTITLEMENTS_PATH="$ROOT_DIR/apps/desktop/src-tauri/Toki.entitlements"

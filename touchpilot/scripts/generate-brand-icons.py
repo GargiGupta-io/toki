@@ -35,7 +35,7 @@ import random
 import subprocess
 import sys
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageFilter, ImageDraw
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import trace_drawing  # noqa: E402  (path has to be set before this import)
@@ -492,6 +492,24 @@ def app_icon(size):
     return canvas.resize((size, size), Image.LANCZOS)
 
 
+def bolden(mask, size):
+    """Thicken a mask so it survives the menu bar.
+
+    The drawing is a brush line, and a brush line has thin passages where the
+    stroke lifted. At 22 points those passages fall below one device pixel and
+    the shape breaks into disconnected specks -- macOS then renders a faint,
+    patchy smudge whichever appearance it is recolouring for.
+
+    Dilation rather than a heavier trace: the source is a scan of one drawing
+    and there is no stroke weight to turn up. Growing the mask outward keeps the
+    line the drawing actually has and just makes it wide enough to survive.
+    Scaled to the render size, so the app icon at 512 is untouched by the value
+    that rescues it at 22.
+    """
+    radius = max(1, round(size / 44))
+    return mask.filter(ImageFilter.MaxFilter(radius * 2 + 1))
+
+
 def tray_icon(size):
     """The menu bar icon: the mark alone, on transparency.
 
@@ -504,7 +522,7 @@ def tray_icon(size):
     image = Image.new("RGBA", (s, s), (0, 0, 0, 0))
 
     if MARK == "drawing":
-        image.paste(BLACK, mask=drawing_mask(s, 0.96))
+        image.paste(BLACK, mask=bolden(drawing_mask(s, 0.96), s))
     elif MARK == "ring":
         image.paste(BLACK, mask=ring_mask(s, splatter=False, fill_fraction=0.94))
     else:

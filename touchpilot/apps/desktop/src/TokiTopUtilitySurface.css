@@ -51,7 +51,16 @@
    * panel is narrower than its window instead, and the strip either side is
    * where the curve lives.
    */
-  inset: 0 var(--shoulder);
+  /*
+   * Top and sides, but not bottom.
+   *
+   * With `inset: 0` the panel filled its window vertically, so any millisecond
+   * where the window was taller than the content -- a stale measurement, a tab
+   * that shrank, a value counted twice -- appeared as a slab of black hanging
+   * below the buttons. Sized to its content instead, the window being too tall
+   * costs nothing visible.
+   */
+  inset: 0 var(--shoulder) auto;
   display: flex;
   flex-direction: column;
   /*

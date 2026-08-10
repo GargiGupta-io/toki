@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emitTo } from "@tauri-apps/api/event";
 
@@ -9,6 +10,7 @@ import {
   type UpdateCheckState,
 } from "./appUpdates";
 import { createAuthSession, listenForAuthCallback } from "./authBindings";
+import { resetFirstRun } from "./firstRun";
 import {
   describeAuthState,
   describePlan,
@@ -270,6 +272,24 @@ export function TokiSettingsWindow() {
       <div className="toki-settings__body" role="tabpanel">
         {section === "general" && (
           <>
+            {/*
+              Replayable, because otherwise it is unverifiable.
+              
+              A first run that can only happen once cannot be checked without
+              wiping the install, which means the flow most likely to be broken
+              is the one nobody ever looks at again. It is also how you show
+              somebody the app without handing them your laptop.
+            */}
+            <button
+              type="button"
+              className="toki-settings__replay"
+              onClick={() => {
+                resetFirstRun();
+                void invoke("open_first_run_window").catch(() => undefined);
+              }}
+            >
+              Replay the introduction
+            </button>
             <p className="toki-settings__lead">
               Toki lives in the menu bar. Click its icon for the panel under the
               notch, where everything you use while working already is.
