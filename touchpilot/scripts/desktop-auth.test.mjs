@@ -236,6 +236,88 @@ test("a refresh token that no longer works ends the session", async () => {
   assert.equal(session.state().status, "signed_out");
 });
 
+test("a refresh that cannot be written down still signs the request", async () => {
+  // The one that bit. Exchanging the credential and saving the result shared a
+  // try, so a keychain that refused every write was read as a rejected refresh
+  // token: signed out on each refresh, while signed in, with a keychain message
+  // over whatever the person was actually doing.
+  let cleared = 0;
+  const { deps } = makeDeps({
+    load: async () =>
+      JSON.stringify({
+        accessToken: "old",
+        refreshToken: "still-good",
+        expiresAt: 0,
+        email: "a@b.com",
+      }),
+    save: async () => {
+      throw new Error("The specified item could not be found in the keychain.");
+    },
+    clear: async () => {
+      cleared += 1;
+    },
+    transport: async () => tokenResponse({ access_token: "access-2" }),
+  });
+
+  const session = new AuthSession(deps);
+  await session.restore();
+
+  assert.equal(
+    await session.accessToken(),
+    "access-2",
+    "the refreshed token works whether or not it could be stored",
+  );
+  assert.equal(session.state().status, "signed_in");
+  assert.equal(cleared, 0, "a working session is not thrown away");
+});
+
+test("an expired sign-in ends quietly when the store will not forget it", async () => {
+  // A keychain bug made every write fail, so clearing the dead credential threw
+  // and the throw escaped into whatever the person was doing -- "Guidance
+  // unavailable: the specified item could not be found", which names neither
+  // what went wrong nor what to do. The sign-in had simply expired.
+  const { deps } = makeDeps({
+    load: async () =>
+      JSON.stringify({
+        accessToken: "old",
+        refreshToken: "revoked",
+        expiresAt: 0,
+        email: null,
+      }),
+    clear: async () => {
+      throw new Error("The specified item could not be found in the keychain.");
+    },
+    transport: async () => ({ error_description: "Invalid refresh token" }),
+  });
+
+  const session = new AuthSession(deps);
+  await session.restore();
+
+  assert.equal(
+    await session.accessToken(),
+    null,
+    "asking for a token reports no token, not a storage error",
+  );
+  assert.equal(
+    session.state().status,
+    "signed_out",
+    "the session is over even though storage kept the credential",
+  );
+});
+
+test("signing out reports a store that refuses to forget", async () => {
+  // The opposite of the case above. Pressing Sign out and being told nothing
+  // while the credential survives is worse than an error, so this path keeps
+  // throwing; only the automatic one stays quiet.
+  const { deps } = makeDeps({
+    clear: async () => {
+      throw new Error("The specified item could not be found in the keychain.");
+    },
+  });
+
+  await assert.rejects(() => new AuthSession(deps).signOut());
+});
+
 test("signing out clears the store even with nothing signed in", async () => {
   let cleared = 0;
   const { deps } = makeDeps({

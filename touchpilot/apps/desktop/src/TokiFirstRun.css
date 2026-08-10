@@ -1,0 +1,137 @@
+/*
+ * The introduction, in the notch.
+ *
+ * Not a card in a window. The panel under the notch is already a surface with
+ * its own background and shadow, so this contributes only its contents --
+ * anything else stacks a card inside a card, which is what made the first
+ * attempt a black box with a smaller box floating in it.
+ *
+ * Compact for the same reason the permission asks are: this hangs over whatever
+ * somebody is working in, and it is a greeting, not a page.
+ */
+
+.toki-first-run {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  /* Below the housing, not behind it. Zero on a display with no notch. */
+  padding: calc(16px + var(--notch-inset, 0px)) 24px 18px;
+  text-align: center;
+  color: rgba(238, 245, 255, 0.96);
+  font:
+    13px/1.45 -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif;
+}
+
+.toki-first-run h1 {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.toki-first-run p {
+  margin: 0;
+  max-width: 300px;
+  color: rgba(220, 232, 246, 0.6);
+  font-size: 12.5px;
+}
+
+/*
+ * The creature at rest.
+ *
+ * The live blob follows a pointer and springs; dropped in here it would chase
+ * the cursor around the panel it is meant to be sitting in. Same shape, still,
+ * in whichever colour was chosen.
+ */
+.toki-first-run__mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--mark-colour, #2a9bff);
+  box-shadow:
+    0 5px 14px rgba(2, 12, 26, 0.45),
+    inset -5px -7px 12px rgba(2, 18, 44, 0.28),
+    inset 5px 7px 12px rgba(255, 255, 255, 0.34);
+}
+
+/* Lit, for the one screen where it is being introduced rather than shown. */
+.toki-first-run__mark[data-glow="true"] {
+  width: 52px;
+  height: 52px;
+  filter: drop-shadow(0 0 22px var(--mark-colour, #2a9bff));
+}
+
+/*
+ * A pill, with some glass in it.
+ *
+ * The lit top edge and the darker body are what make a flat fill read as a
+ * physical control rather than a coloured rectangle -- the same trick the blob
+ * uses to look round.
+ */
+.toki-first-run__primary {
+  margin-top: 8px;
+  padding: 7px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0) 55%
+    ),
+    rgba(42, 127, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 4px 14px rgba(10, 60, 140, 0.35);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 140ms ease;
+}
+
+.toki-first-run__primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.toki-first-run__primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.toki-first-run__colours {
+  display: flex;
+  gap: 14px;
+  margin: 10px 0 2px;
+}
+
+.toki-first-run__colour {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+/* A ring rather than a tick, so the colour stays the thing being read. */
+.toki-first-run__colour[data-selected="true"] {
+  transform: scale(1.16);
+  box-shadow:
+    0 0 0 3px rgba(16, 20, 28, 0.9),
+    0 0 0 5px currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toki-first-run__colour {
+    transition: none;
+  }
+}

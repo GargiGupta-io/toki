@@ -137,8 +137,25 @@ test("the window grows by the inset instead of losing content to it", () => {
   );
   assert.notEqual(modes.length, 0);
 
+  // The peek is a fixed height and never measures itself, so the housing has
+  // to be added to its window or the bar loses that much off the bottom.
   assert.match(modes, /TOP_UTILITY_PEEK_HEIGHT \+ notch/u);
-  assert.match(modes, /TOP_UTILITY_EXPANDED_HEIGHT \+ notch/u);
+
+  // The expanded panel is the opposite case: it measures its own children and
+  // asks for a height, and that measurement runs over a header whose top
+  // padding already carries the inset. Adding it again made the window taller
+  // than its contents by exactly the notch, which showed as dead black space
+  // under the buttons.
+  assert.doesNotMatch(modes, /TOP_UTILITY_EXPANDED_HEIGHT \+ notch/u);
+
+  // And the panel is sized to its content rather than to its window, so a
+  // window that is briefly too tall cannot paint black below the buttons at
+  // all.
+  const css = readFileSync(
+    path.join(scriptsDirectory, "..", "apps", "desktop", "src", "TokiTopUtilitySurface.css"),
+    "utf8",
+  );
+  assert.match(css, /inset: 0 var\(--shoulder\) auto/u);
 });
 
 test("the peek bar can be clicked, and opening focuses the window", () => {

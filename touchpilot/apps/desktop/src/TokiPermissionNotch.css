@@ -1,0 +1,116 @@
+/*
+ * The permission ask, in the notch.
+ *
+ * Compact on purpose. macOS puts its own dialog or its own Settings pane on
+ * screen at the same moment, and that is the thing somebody should be reading.
+ * This is the label on it -- what Toki needs and why -- not a rival for the
+ * attention. A full card in its own window covered the work and gave a
+ * Dock-less application a window for the one job it should be least intrusive
+ * doing.
+ */
+
+.toki-permission-notch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  /* Below the housing, not behind it. Zero on a display with no notch. */
+  padding: calc(14px + var(--notch-inset, 0px)) 22px 16px;
+  text-align: center;
+  color: rgba(238, 245, 255, 0.96);
+  font:
+    13px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif;
+}
+
+.toki-permission-notch__dots {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 2px;
+}
+
+.toki-permission-notch__dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: width 200ms ease;
+}
+
+.toki-permission-notch__dots span[data-state="done"] {
+  background: var(--toki-accent, #2a9bff);
+}
+
+/* Stretched rather than recoloured, so position reads without relying on hue. */
+.toki-permission-notch__dots span[data-state="current"] {
+  width: 14px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* What Toki needs, in its own voice: "I need to hear you", not "Microphone
+   access required" -- the second is what an installer says. */
+.toki-permission-notch__need {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* What to do about it, or the limit on what is being asked for. */
+.toki-permission-notch__todo {
+  margin: 0;
+  max-width: 300px;
+  color: rgba(220, 232, 246, 0.6);
+  font-size: 12px;
+}
+
+.toki-permission-notch__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.toki-permission-notch__primary {
+  padding: 6px 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--toki-accent, #2a9bff);
+  color: #04121f;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toki-permission-notch__primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.toki-permission-notch__skip {
+  border: 0;
+  background: none;
+  padding: 6px 4px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toki-permission-notch__skip:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.toki-permission-notch__count {
+  margin: 2px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toki-permission-notch__dots span {
+    transition: none;
+  }
+}

@@ -293,20 +293,52 @@ export class AuthSession {
       return null;
     }
 
+    /*
+     * Exchanging the credential and writing the result down are separate
+     * failures, and only the first one ends a session.
+     *
+     * They used to share a try, so a storage error was read as a rejected
+     * credential. A keychain bug then made every write fail, and the two
+     * together signed people out on each refresh while they were signed in —
+     * with a keychain message on screen, over whatever they had been doing,
+     * naming neither the cause nor the remedy.
+     */
+    let tokens: SessionTokens;
     try {
-      const tokens = await refreshSession({
+      tokens = await refreshSession({
         refreshToken,
         transport: this.deps.transport,
       });
-      await this.persist(tokens);
-      return tokens;
     } catch {
       // A refresh token that no longer works means the session is over —
       // revoked, expired, or signed out elsewhere. Clear it rather than
       // retrying against a credential that will never be accepted again.
-      await this.signOut();
+      try {
+        await this.signOut();
+      } catch {
+        // Storage refused to forget it.
+        //
+        // This runs underneath whatever the person was actually doing, so
+        // letting it throw reports a storage fault in place of the thing they
+        // asked for. signOut drops the in-memory tokens before it touches
+        // storage, so the session is over here regardless; what is left is a
+        // dead credential on disk, which is refused the next time it is read.
+        // The explicit Sign out button still reports its failures — being told
+        // nothing while the credential survives is worse than an error.
+      }
       return null;
     }
+
+    // The exchange succeeded, so this session is live no matter what happens
+    // next. Saving it only decides whether the *next* launch has to sign in.
+    this.tokens = tokens;
+    try {
+      await this.deps.save(JSON.stringify(tokens));
+    } catch {
+      // Nowhere to put it. Discarding a working token over that would be
+      // throwing away the thing that succeeded because the receipt failed.
+    }
+    return tokens;
   }
 
   async signOut(): Promise<AuthState> {
