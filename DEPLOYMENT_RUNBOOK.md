@@ -47,8 +47,12 @@ It is a machine address; two things use it and no human visits it:
 | `…/billing/webhook` | Stripe's servers | To say "this person paid". Nothing else may grant access |
 | `…/vision` | The Toki app on a Mac | To ask a model where to click |
 
-**Toki needs no landing page.** After checkout Stripe returns the customer's
-browser to `…/thanks`, a small page this service serves itself.
+**The service needs no landing page of its own.** After checkout Stripe returns
+the customer's browser to `…/thanks`, a small page this service serves itself.
+
+The public landing page is a separate, static thing — `docs/` in this repository,
+served by GitHub Pages, deployed by nothing. It never talks to this service.
+See Phase L in [`LAUNCH_AND_CLOUD_PLAN.md`](LAUNCH_AND_CLOUD_PLAN.md).
 
 ---
 

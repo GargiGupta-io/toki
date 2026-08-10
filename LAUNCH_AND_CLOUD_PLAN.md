@@ -449,7 +449,46 @@ portfolio projects skip.
 - **The privacy model is a selling point, not a disclaimer.** An app that can see
   the screen, writes nothing by default, and permits no remote origin in its
   webview — say that plainly and explain why each decision was made
-- Landing page on Cloudflare Pages, linking to GitHub Releases
+### The landing page — built, not yet published
+
+Lives in `docs/` at the repository root. Static: one HTML file, one stylesheet,
+one script, three images. No build step, no framework, no dependencies, and no
+request to any third party at runtime — the type is the system stack and the
+motion is hand-written, because a site advertising an app whose window permits
+zero remote origins should not itself load code off someone else's CDN.
+
+**Hosted on GitHub Pages, not Cloudflare Pages.** The repository is already
+public, so Pages costs nothing, needs no account anywhere else, and needs no
+card. It serves from `main` at `/docs`, which is the only branch-folder pair
+Pages accepts besides the repository root.
+
+Publishing takes one setting nobody can set from here: **Settings → Pages →
+Source: Deploy from a branch → `main` / `docs`**. It then serves at
+`https://gargigupta-io.github.io/toki/`.
+
+What the page deliberately does not do:
+
+- **It does not sell.** Pricing is described; there is no checkout. A
+  subscription attaches to a Supabase account and is granted only by Stripe's
+  signed webhook, so a button on a website has no account to attach to.
+  Checkout starts inside the app, after sign-in.
+- **The Gatekeeper section has been removed**, because the app is now signed
+  and notarized and Apple's ticket is stapled to it, so macOS opens it without
+  a block. Until that was true the page carried the full first-open routine.
+
+  If a future build ever ships signed but **not** notarized, that section has
+  to come back: Developer ID signing alone does not satisfy Gatekeeper for a
+  downloaded app. The check is
+  `xcrun stapler validate /Applications/Toki.app && spctl -a -vvv /Applications/Toki.app`,
+  which must report `source=Notarized Developer ID`. Note also that Apple
+  removed the Control-click → Open bypass in macOS 15, so any restored
+  instructions must lead with System Settings → Privacy & Security → **Open
+  Anyway**.
+- **It claims nothing the README does not.** Guidance running on fixtures, the
+  pending notarization, and the pinch bug are all on the page.
+
+Open: the Download button points at `releases/latest`, which needs a published
+release to resolve.
 
 ---
 

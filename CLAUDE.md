@@ -3,11 +3,29 @@
 ## Where things live
 
 **Everything belongs in this folder.** Plans, notes, and any document produced
-while working on Toki go under `/Users/pumba/Documents/Projects/clicky` — not in
+while working on Toki go under `/Users/pumba/Documents/Projects/toki` — not in
 a tool's own directory elsewhere on the machine.
 
 This project moved from `Documents/ Codex Projects/clicky` (note the leading
-space) on 2026-07-29. Any reference to the old path is stale.
+space) on 2026-07-29, and was renamed from `Projects/clicky` to `Projects/toki`
+on 2026-08-06. Any reference to either old path is stale.
+
+A symlink at the old `Projects/clicky` path keeps a session that was already
+running from breaking mid-task. It is temporary — delete it once nothing is
+working from the old path.
+
+Still to do: the inner `touchpilot/` folder becomes `app/`. Left until the
+session working inside it finishes, because renaming it under a live session
+invalidates its open files.
+
+What must NOT be renamed:
+
+- **Clicky**, where it means the menu-bar app by farzaa that Toki used as a
+  macOS behaviour reference. `macos_overlay.rs` and its tests name it
+  deliberately; rewriting them would claim compatibility with the wrong thing.
+- **`@touchpilot/*`** inside `COMMAND_AND_TEST_LEDGER.md` and `learnings/`.
+  Those record commands as they were actually run, under the names the
+  packages had at the time. The live package names are already `@toki/*`.
 
 Root-level documents use `SHOUTY_SNAKE_CASE.md` and each owns one concern:
 
