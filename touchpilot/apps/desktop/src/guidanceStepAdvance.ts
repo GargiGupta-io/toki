@@ -38,8 +38,33 @@ export const stepAdvancePolicy = Object.freeze({
    * over somebody's screen. Each check is a screenshot Toki already knows how
    * to take, so the cost is real but bounded, and it only runs while a step is
    * actually on screen waiting to be done.
+   *
+   * This used to be 900ms, and the arithmetic behind the wait was worse than
+   * the number suggests. The first look only records what the region looked
+   * like, so nothing could be noticed before the second -- two intervals, plus
+   * two screenshots, plus the round trip for the next step. A click was taking
+   * the better part of ten seconds to be acknowledged, on a two-step task where
+   * both steps were already known.
+   *
+   * A screenshot takes longer than this interval on a large display, which
+   * would once have meant captures piling up behind each other. The caller
+   * holds one in flight at a time now, so this is a floor rather than a
+   * promise: looks happen as fast as capture allows, and no faster.
    */
-  pollIntervalMs: 900,
+  pollIntervalMs: 260,
+
+  /**
+   * How long to let the overlay settle before recording the baseline.
+   *
+   * The blob travels to the target and the dimming comes up behind it, and
+   * both of those are changes to the very region being watched. Photographing
+   * during the animation and comparing against it a moment later reads as a
+   * completed step every time.
+   *
+   * Long enough to cover the spotlight's own delay and fade, and no longer:
+   * every millisecond here is a millisecond before anything can be noticed.
+   */
+  settleBeforeBaselineMs: 620,
 
   /**
    * How much of the region has to differ.

@@ -56,40 +56,42 @@
  * The lit edge.
  *
  * The hole alone reads as a gap; a bright outline makes it read as the thing
- * being singled out. Cyan rather than white, matching the blob -- so the marker
- * and the region it points at are visibly the same voice.
- */
-/*
- * Dotted, not solid.
+ * being singled out.
  *
- * A solid rounded rectangle around a control reads as part of that control --
- * a focus ring, or a border the application drew itself. Dots read as an
- * annotation over the top of something, which is what this is: Toki marking
- * somebody else's interface without pretending to be part of it.
+ * Dotted, not solid. A solid rounded rectangle around a control reads as part
+ * of that control -- a focus ring, or a border the application drew itself.
+ * Dots read as an annotation over the top of something, which is what this is:
+ * Toki marking somebody else's interface without pretending to be part of it.
  *
  * Round caps on a short dash give circles rather than dashes.
+ *
+ * The colour is not here. It is the creature's, which is chosen at first run
+ * and can be changed afterwards, so it arrives as an inline style from the
+ * component -- a rule in this file would beat the attribute and pin the box to
+ * one colour for good.
  */
 .toki-spotlight__ring {
   fill: none;
-  stroke: var(--toki-cyan-strong, rgba(105, 239, 255, 0.98));
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-dasharray: 0.1 7;
-  filter: drop-shadow(0 0 8px var(--toki-cyan-muted, rgba(151, 239, 255, 0.42)));
+}
+
+/*
+ * The wash sequences with the ring rather than the scrim, because the two
+ * together are one gesture: the region lights up as its edge is drawn.
+ */
+.toki-spotlight__wash {
+  animation: toki-spotlight-settle 320ms ease-out 260ms both;
 }
 
 .toki-spotlight__arrow line {
-  stroke: var(--toki-cyan, rgba(151, 239, 255, 0.9));
   stroke-width: 2.5;
   stroke-linecap: round;
   /* Dashed, and moving. A solid line between two points reads as a connection
      that already exists; a travelling dash reads as a direction to follow. */
   stroke-dasharray: 9 7;
   animation: toki-spotlight-flow 700ms linear infinite;
-}
-
-.toki-spotlight__arrow polygon {
-  fill: var(--toki-cyan, rgba(151, 239, 255, 0.9));
 }
 
 .toki-spotlight__arrow {

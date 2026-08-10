@@ -180,7 +180,43 @@ test("watching stops rather than screenshotting indefinitely", () => {
   // display on the chance they come back is not something to do quietly.
   assert.ok(stepAdvancePolicy.timeoutMs >= 30_000);
   assert.ok(stepAdvancePolicy.timeoutMs <= 300_000);
-  assert.ok(stepAdvancePolicy.pollIntervalMs >= 500, "not a busy loop");
+});
+
+test("looking often is bounded by one capture at a time, not by the clock", () => {
+  /*
+   * This asserted `pollIntervalMs >= 500` and called it "not a busy loop".
+   *
+   * The interval was the only thing standing between Toki and a queue of
+   * overlapping screenshots, so it had to be slow -- and being slow was the
+   * whole complaint: two intervals had to pass before a completed step could
+   * be noticed, because the first look only records what the region looked
+   * like. A click took seconds to acknowledge on a task whose steps were
+   * already known.
+   *
+   * The guard is structural now. One capture is in flight at a time, so ticks
+   * that arrive during a capture are dropped and the real rate is however fast
+   * the display can be photographed. That holds at any interval, which is why
+   * the interval itself may be short.
+   */
+  assert.ok(stepAdvancePolicy.pollIntervalMs >= 200, "still not a busy loop");
+  assert.ok(stepAdvancePolicy.pollIntervalMs <= 400, "and no longer a stall");
+
+  // Long enough for the blob to arrive and the dimming to come up -- both are
+  // changes to the very region being watched, and photographing mid-animation
+  // reads as a completed step every time.
+  assert.ok(stepAdvancePolicy.settleBeforeBaselineMs >= 500);
+  assert.ok(stepAdvancePolicy.settleBeforeBaselineMs <= 900);
+
+  const app = readFileSync(
+    new URL("../apps/desktop/src/App.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    app,
+    /if \(cancelled \|\| inFlight\)/u,
+    "the watcher must refuse to start a capture while one is running",
+  );
 });
 
 test("the watcher only looks while the step's own application is in front", () => {

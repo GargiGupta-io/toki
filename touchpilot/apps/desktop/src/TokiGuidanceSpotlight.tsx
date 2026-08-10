@@ -3,6 +3,7 @@
 // Not open source: no redistribution, derivative works, or presenting as your own.
 
 import type { TargetBox } from "@toki/shared";
+import { parseColour } from "./creatureColour";
 import type { ViewportMetrics } from "./overlayGeometry";
 import "./TokiGuidanceSpotlight.css";
 
@@ -53,7 +54,37 @@ export const spotlightPolicy = Object.freeze({
    * over.
    */
   minimumArrowPx: 70,
+
+  /**
+   * How strongly the region is tinted.
+   *
+   * A wash, not a highlight. The point of the box is to say which region, and
+   * the region has to stay readable through it -- a person is about to read
+   * what is written there and click it. Anything heavier turns guidance into a
+   * coloured pane laid over somebody's work.
+   */
+  fillAlpha: 0.12,
+
+  /** The glow around the outline, which is the same colour again, weaker. */
+  glowAlpha: 0.42,
 });
+
+/**
+ * The creature's colour with an alpha, for the parts that are a wash.
+ *
+ * Falls back to the string untouched when it is not a hex the parser knows, so
+ * a colour that arrives in some other notation still paints something rather
+ * than disappearing.
+ */
+export function withAlpha(colour: string, alpha: number): string {
+  const rgb = parseColour(colour);
+
+  if (rgb == null) {
+    return colour;
+  }
+
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
 
 function clamp(value: number, low: number, high: number): number {
   return Math.min(Math.max(value, low), high);
@@ -96,17 +127,28 @@ export function TokiGuidanceSpotlight({
   target,
   pointer,
   viewport,
+  colour,
 }: {
   target: GuidanceSpotlightTarget | null;
   /** Where the person's attention currently is, or null if unknown. */
   pointer: { x: number; y: number } | null;
   viewport: ViewportMetrics;
+  /**
+   * The creature's current colour.
+   *
+   * The same one the blob is painted in, including whatever was chosen when
+   * Toki was first met. The marker and the region it marks have to be one
+   * voice: a cyan box beside a green blob is two annotations on the screen and
+   * leaves it open which of them is Toki talking.
+   */
+  colour: string;
 }) {
   if (target == null || target.width <= 0 || target.height <= 0) {
     return null;
   }
 
-  const { paddingPx, cornerRadiusPx, minimumArrowPx } = spotlightPolicy;
+  const { paddingPx, cornerRadiusPx, minimumArrowPx, fillAlpha, glowAlpha } =
+    spotlightPolicy;
 
   const hole = {
     x: clamp(target.x - paddingPx, 0, viewport.width),
@@ -171,6 +213,23 @@ export function TokiGuidanceSpotlight({
         mask="url(#toki-spotlight-hole)"
       />
 
+      {/*
+       * A wash over the region, in the creature's colour.
+       *
+       * Drawn after the scrim so it tints the lit area rather than the dark
+       * one, and kept very faint: this has to say "this region" without
+       * standing between somebody's eyes and the words they are about to read.
+       */}
+      <rect
+        className="toki-spotlight__wash"
+        x={hole.x}
+        y={hole.y}
+        width={hole.width}
+        height={hole.height}
+        rx={cornerRadiusPx}
+        fill={withAlpha(colour, fillAlpha)}
+      />
+
       <rect
         className="toki-spotlight__ring"
         x={hole.x}
@@ -178,13 +237,30 @@ export function TokiGuidanceSpotlight({
         width={hole.width}
         height={hole.height}
         rx={cornerRadiusPx}
+        /*
+         * Inline rather than as an attribute. A stylesheet rule beats a
+         * presentation attribute in SVG, so `stroke={colour}` would be silently
+         * overridden by the class's own stroke and the box would stay cyan
+         * whatever colour the creature is.
+         */
+        style={{
+          stroke: colour,
+          filter: `drop-shadow(0 0 8px ${withAlpha(colour, glowAlpha)})`,
+        }}
       />
 
       {arrowTo != null && pointer != null ? (
         <g className="toki-spotlight__arrow">
-          <line x1={pointer.x} y1={pointer.y} x2={arrowTo.x} y2={arrowTo.y} />
+          <line
+            x1={pointer.x}
+            y1={pointer.y}
+            x2={arrowTo.x}
+            y2={arrowTo.y}
+            style={{ stroke: colour }}
+          />
           <polygon
             points="0,-6 12,0 0,6"
+            style={{ fill: colour }}
             transform={`translate(${arrowTo.x} ${arrowTo.y}) rotate(${
               (Math.atan2(arrowTo.y - pointer.y, arrowTo.x - pointer.x) * 180) /
               Math.PI

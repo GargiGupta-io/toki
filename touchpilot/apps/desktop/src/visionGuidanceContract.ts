@@ -8,6 +8,7 @@ import type {
   GuidanceRequest,
   GuidanceResult,
   GuidanceStep,
+  GuidanceSuggestion,
   RiskClass,
   ScreenCandidate,
   TargetBox,
@@ -17,6 +18,7 @@ import {
   mapProviderTargetToDisplay,
 } from "./coordinateTransforms";
 import { getGuidanceLocalizationObjective } from "./guidanceTaskPlanning";
+import { snapTargetToEnclosingControl } from "./targetEnclosure";
 
 export type VisionTarget = {
   candidateId?: string;
@@ -29,8 +31,24 @@ export type VisionTarget = {
   label?: string;
 };
 
+/**
+ * Something else on screen that might be what was meant.
+ *
+ * Only ever offered when the answer is "not here". Somebody arriving in an
+ * application for the first time does not know its vocabulary -- they ask for
+ * "dark mode" in an app that calls it Appearance, or for "sign out" where the
+ * only thing on screen is the account menu that contains it. Toki knew both
+ * facts at that moment (it had the screen, and it had just decided the asked-for
+ * thing was not on it) and said only that it could not help.
+ */
+export type VisionAlternative = VisionTarget & {
+  /** Why this might be the thing, in the model's words, shown to the person. */
+  reason?: string;
+};
+
 export type VisionTargetResponse = {
   target?: VisionTarget | null;
+  alternatives?: VisionAlternative[] | null;
   confidence?: number;
   reason?: string;
   risk?: RiskClass;
@@ -44,7 +62,7 @@ const VISION_TARGET_ID = "vision-model-target";
 export const VISION_TARGET_OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["target", "confidence", "reason", "risk"],
+  required: ["target", "alternatives", "confidence", "reason", "risk"],
   properties: {
     target: {
       anyOf: [
@@ -70,6 +88,38 @@ export const VISION_TARGET_OUTPUT_SCHEMA = {
           },
         },
       ],
+    },
+    /**
+     * Filled only when target is null, and empty otherwise.
+     *
+     * Required rather than optional, because a field a model may omit is a
+     * field it will omit. An empty array is a real answer -- "nothing on this
+     * screen is close" -- and is different from having not been asked.
+     */
+    alternatives: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "candidateId",
+          "centerX",
+          "centerY",
+          "width",
+          "height",
+          "label",
+          "reason",
+        ],
+        properties: {
+          candidateId: { type: "string" },
+          centerX: { type: "number" },
+          centerY: { type: "number" },
+          width: { type: "number" },
+          height: { type: "number" },
+          label: { type: "string" },
+          reason: { type: "string" },
+        },
+      },
     },
     confidence: { type: "number", minimum: 0, maximum: 1 },
     reason: { type: "string" },
@@ -253,7 +303,11 @@ export function resolveVisionTargetToDisplay(
     };
 
     return {
-      target: mappedBeforeTighten,
+      target: snapTargetToEnclosingControl(
+        mappedBeforeTighten,
+        request.screen.candidates,
+        request.screen.display,
+      ).target,
       debug: {
         coordinateMode: "candidate",
         rawTarget: {
@@ -315,7 +369,11 @@ export function resolveVisionTargetToDisplay(
   };
 
   return {
-    target: mappedBeforeTighten,
+    target: snapTargetToEnclosingControl(
+      mappedBeforeTighten,
+      request.screen.candidates,
+      request.screen.display,
+    ).target,
     debug: {
       coordinateMode: mapping.coordinateMode,
       rawTarget: {
@@ -403,6 +461,27 @@ export function createVisionLocalizationPrompt(request: GuidanceRequest) {
     "Use the attached current screenshot as primary evidence. OCR/accessibility/browser candidates are optional supporting evidence, not a requirement.",
     "If the requested control is not visibly present or its location is ambiguous, return target as null and confidence below 0.45.",
     "Do not lower confidence merely because a visible control has no matching candidate id.",
+    /*
+     * The part of the answer that is useful when the answer is no.
+     *
+     * Somebody new to an application asks for it in their own words, and the
+     * application has its own: "dark mode" where the control says Appearance,
+     * "sign out" where the screen shows only the account menu that contains
+     * it. At the moment the model decides the asked-for thing is absent it is
+     * looking at the screen that would answer the question, and throwing that
+     * away to return a bare refusal wastes the one call that was made.
+     *
+     * Capped at three. A list of everything on screen is not a suggestion, it
+     * is the screen again, and choosing from it is more work than looking.
+     *
+     * Bounded to what is really there and really related, because a wrong
+     * suggestion is worse than none: it sends somebody to click something they
+     * did not ask for, in an application they do not yet know.
+     */
+    "When target is null, fill alternatives with up to 3 controls that ARE visible and are the closest in purpose to what was asked -- including a menu or section that would plausibly contain it.",
+    "Each alternative needs a reason written to the user in one short sentence, saying what it does and why it might be what they meant.",
+    "Offer nothing rather than something unrelated. Return alternatives as an empty array when nothing on screen is close.",
+    "When target is not null, alternatives must be an empty array.",
     "",
     `Original task: ${originalGoal}`,
     `Current step objective: ${localizationObjective}`,
@@ -431,6 +510,65 @@ export function createVisionLocalizationPrompt(request: GuidanceRequest) {
   ].join("\n");
 }
 
+/**
+ * Turn the model's "you might have meant these" into things Toki can point at.
+ *
+ * Each one goes through exactly the same mapping as a real target, so an
+ * accepted suggestion needs no second call: the box is already in display
+ * coordinates and already grown to whatever is clickable around it.
+ *
+ * One that will not map is dropped rather than repaired. These are optional
+ * extras on a failure -- a suggestion nobody can be pointed at is worse than
+ * one fewer suggestion, and this is not a path to raise a new error on.
+ */
+export function resolveVisionAlternatives(
+  alternatives: VisionAlternative[] | null | undefined,
+  request: GuidanceRequest,
+  limit = 3,
+): GuidanceSuggestion[] {
+  if (!Array.isArray(alternatives) || alternatives.length === 0) {
+    return [];
+  }
+
+  const resolved: GuidanceSuggestion[] = [];
+  const seen = new Set<string>();
+
+  for (const alternative of alternatives) {
+    if (resolved.length >= limit) {
+      break;
+    }
+
+    const label = alternative?.label?.trim();
+
+    if (!label) {
+      continue;
+    }
+
+    // The same control offered twice reads as Toki not knowing what it is
+    // looking at, and models do repeat themselves when a thing has both an
+    // accessibility name and visible text.
+    const key = label.toLowerCase();
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    try {
+      const { target } = resolveVisionTargetToDisplay(alternative, request);
+
+      seen.add(key);
+      resolved.push({
+        target,
+        reason: alternative.reason?.trim() || undefined,
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return resolved;
+}
+
 export function createVisionGuidanceResponse(
   rawAnswer: string,
   request: GuidanceRequest,
@@ -453,6 +591,7 @@ export function createVisionGuidanceResponse(
         ? undefined
         : resolveVisionTargetToDisplay(parsed.target, request);
     const target = mapped?.target;
+    const suggestions = resolveVisionAlternatives(parsed.alternatives, request);
     const debug = {
       providerOutput,
       vision: mapped?.debug,
@@ -528,19 +667,31 @@ export function createVisionGuidanceResponse(
        */
       const message =
         step == null
-          ? `I can't see ${asked} on screen. It may be inside a menu or section that isn't open.`
+          ? suggestions.length > 0
+            ? // The dead end becomes a question. Nothing about the sentence
+              // above is wrong, but "it may be inside a menu that isn't open"
+              // is only useful to somebody who knows the application -- and the
+              // person most likely to be asking is the one who does not.
+              `I can't see ${asked} on this screen. Did you mean one of these?`
+            : `I can't see ${asked} on screen. It may be inside a menu or section that isn't open.`
           : `I'm not sure enough about ${asked} to point at it.`;
 
       return {
         mode: "unavailable",
         error:
           confidence < 0.45
-            ? [message, result.summary]
+            ? [message, suggestions.length > 0 ? "" : result.summary]
                 .filter((part) => part && part.trim().length > 0)
                 .join(" ")
             : "Vision provider returned an invalid target.",
         validation,
         providerName,
+        // Only where they help. A target that was found does not need
+        // alternatives, and an invalid answer is a fault rather than a miss.
+        suggestions:
+          suggestions.length > 0 && step == null && confidence < 0.45
+            ? suggestions
+            : undefined,
         debug,
       };
     }

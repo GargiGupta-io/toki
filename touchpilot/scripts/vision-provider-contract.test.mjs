@@ -6,6 +6,7 @@ import {
   createVisionLocalizationPrompt,
   parseVisionTargetResponse,
   resolveVisionTargetToDisplay,
+  VISION_TARGET_OUTPUT_SCHEMA,
 } from "../apps/desktop/src/visionGuidanceContract.ts";
 
 function createRequest() {
@@ -524,4 +525,157 @@ test("an unsure answer reads differently from an absent one", () => {
 
   assert.match(unsure.error, /not sure enough/u);
   assert.doesNotMatch(unsure.error, /can't see/u);
+});
+
+/**
+ * When the answer is no, what else is there.
+ *
+ * Somebody who has just opened an application does not know its words. They ask
+ * for "dark mode" where the control is called Appearance, or for "sign out"
+ * where the screen shows only the account menu that contains it. At the moment
+ * Toki decides the asked-for thing is absent it is holding the screen that
+ * would answer the question, and a bare refusal throws that away.
+ */
+
+function offeringAnswer({ alternatives, reason = "Not present." }) {
+  return JSON.stringify({
+    target: null,
+    alternatives,
+    confidence: 0.2,
+    reason,
+    risk: "safe_navigation",
+  });
+}
+
+test("offers are turned into targets Toki can already point at", () => {
+  const response = createVisionGuidanceResponse(
+    offeringAnswer({
+      alternatives: [
+        {
+          candidateId: "",
+          label: "Appearance",
+          centerX: 200,
+          centerY: 300,
+          width: 120,
+          height: 30,
+          reason: "Controls light and dark themes.",
+        },
+      ],
+    }),
+    requestFor("turn on dark mode"),
+    "gemini:test",
+    "gemini",
+  );
+
+  assert.equal(response.suggestions?.length, 1);
+  assert.equal(response.suggestions[0].target.label, "Appearance");
+  assert.equal(
+    response.suggestions[0].reason,
+    "Controls light and dark themes.",
+  );
+
+  // Located, not merely named -- accepting one must not cost another round trip.
+  assert.ok(response.suggestions[0].target.width > 0);
+  assert.ok(response.suggestions[0].target.height > 0);
+});
+
+test("the failure becomes a question when there is something to offer", () => {
+  const response = createVisionGuidanceResponse(
+    offeringAnswer({
+      alternatives: [
+        {
+          candidateId: "",
+          label: "Appearance",
+          centerX: 200,
+          centerY: 300,
+          width: 120,
+          height: 30,
+          reason: "Controls light and dark themes.",
+        },
+      ],
+    }),
+    requestFor("turn on dark mode"),
+    "gemini:test",
+    "gemini",
+  );
+
+  assert.match(response.error, /Did you mean one of these\?/u);
+  // The "it may be inside a closed menu" advice is for the case where there is
+  // nothing else to say. Here there is.
+  assert.doesNotMatch(response.error, /menu or section that isn't open/u);
+});
+
+test("no offers leaves the plain not-on-screen answer alone", () => {
+  const response = createVisionGuidanceResponse(
+    offeringAnswer({ alternatives: [] }),
+    requestFor("turn on dark mode"),
+    "gemini:test",
+    "gemini",
+  );
+
+  assert.equal(response.suggestions, undefined);
+  assert.match(response.error, /menu or section that isn't open/u);
+});
+
+test("at most three offers, and never the same one twice", () => {
+  const many = Array.from({ length: 6 }, (_, index) => ({
+    candidateId: "",
+    label: index % 2 === 0 ? "Appearance" : `Option ${index}`,
+    centerX: 200,
+    centerY: 100 + index * 40,
+    width: 120,
+    height: 30,
+    reason: "Might be it.",
+  }));
+
+  const response = createVisionGuidanceResponse(
+    offeringAnswer({ alternatives: many }),
+    requestFor("turn on dark mode"),
+    "gemini:test",
+    "gemini",
+  );
+
+  assert.ok(response.suggestions.length <= 3);
+
+  const labels = response.suggestions.map((entry) => entry.target.label);
+  assert.equal(new Set(labels).size, labels.length, "no repeats");
+});
+
+test("a found target is not given alternatives", () => {
+  const response = createVisionGuidanceResponse(
+    JSON.stringify({
+      target: {
+        candidateId: "",
+        label: "Appearance",
+        centerX: 200,
+        centerY: 300,
+        width: 120,
+        height: 30,
+      },
+      alternatives: [
+        {
+          candidateId: "",
+          label: "Notifications",
+          centerX: 200,
+          centerY: 400,
+          width: 120,
+          height: 30,
+          reason: "Nearby.",
+        },
+      ],
+      confidence: 0.93,
+      reason: "Visible in the sidebar.",
+      risk: "safe_navigation",
+    }),
+    requestFor("open appearance"),
+    "gemini:test",
+    "gemini",
+  );
+
+  assert.equal(response.suggestions, undefined);
+});
+
+test("the schema asks for alternatives, so a model cannot quietly skip them", () => {
+  assert.ok(VISION_TARGET_OUTPUT_SCHEMA.required.includes("alternatives"));
+  assert.equal(VISION_TARGET_OUTPUT_SCHEMA.properties.alternatives.type, "array");
 });

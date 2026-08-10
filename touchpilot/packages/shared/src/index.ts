@@ -380,6 +380,19 @@ export type GuidanceProviderMode =
 
 export type GuidanceProviderRequest = GuidanceRequest;
 
+/**
+ * One offer, when Toki could not find what was asked for.
+ *
+ * Carries a real target rather than a name, so accepting one costs nothing:
+ * the box is already located and can be pointed at immediately, without asking
+ * the model a second question about a screen it has already read.
+ */
+export type GuidanceSuggestion = {
+  target: TargetBox;
+  /** One short sentence, written to the person, on why this might be it. */
+  reason?: string;
+};
+
 export type GuidanceProviderResponse = {
   mode: GuidanceProviderMode;
   traceId?: string;
@@ -398,6 +411,15 @@ export type GuidanceProviderResponse = {
    * sits unused is simply wrong.
    */
   canFallBack?: boolean;
+  /**
+   * What else is on screen, when the asked-for thing is not.
+   *
+   * Present only on a failure that knows why it failed. Somebody who has just
+   * opened an application does not know its words for things, so "that is not
+   * here" is a dead end where "that is not here, but these three are and one of
+   * them is probably what you meant" is an answer.
+   */
+  suggestions?: GuidanceSuggestion[];
   debug?: {
     providerOutput?: RawProviderOutputTrace;
     targetVerification?: TargetVerificationTrace;

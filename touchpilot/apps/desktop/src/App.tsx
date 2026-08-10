@@ -28,6 +28,7 @@ import type {
   GuidanceScreenContext,
   GuidanceSession,
   GuidanceStep,
+  GuidanceSuggestion,
   GuidanceTrace,
   GuidanceTraceDetail,
   GuidanceTraceSource,
@@ -211,7 +212,9 @@ import {
 } from "./permissionOnboarding";
 import { TokiTaskProgress } from "./TokiTaskProgress";
 import { TokiSelectionTrail } from "./TokiSelectionTrail";
-import { TokiGuidanceSpotlight } from "./TokiGuidanceSpotlight";
+import { TokiGuidanceSpotlight, spotlightPolicy } from "./TokiGuidanceSpotlight";
+import { placeGuidanceAnchor } from "./guidanceAnchorPlacement";
+import { describeSuggestions, matchSpokenChoice } from "./suggestionChoice";
 import { TokiTargetSpark } from "./TokiTargetSpark";
 import {
   advancePointerCircle,
@@ -708,6 +711,7 @@ function getTokiTopStatusModel({
   isRefreshingCapture,
   pointerExplanation,
   guidanceFailure,
+  guidanceSuggestions,
   hasAcceptedGuidance,
   targetLabel,
   instruction,
@@ -726,6 +730,8 @@ function getTokiTopStatusModel({
   isRefreshingCapture: boolean;
   pointerExplanation: PointerExplanationState | null;
   guidanceFailure: string | null;
+  /** What Toki offered instead, when it could not find what was asked for. */
+  guidanceSuggestions: GuidanceSuggestion[];
   hasAcceptedGuidance: boolean;
   targetLabel: string;
   instruction: string;
@@ -930,6 +936,22 @@ function getTokiTopStatusModel({
   }
 
   if (guidanceFailure != null || overlayState === "error") {
+    /*
+     * A dead end, or a question.
+     *
+     * With offers on screen this stops being a report of a failure and becomes
+     * something to answer, so it is labelled as one. The numbers are shown
+     * because saying "the second one" is how they get chosen, and a list
+     * nobody knows they can answer is just a longer error message.
+     */
+    if (guidanceSuggestions.length > 0) {
+      return {
+        mode: "warning",
+        label: guidanceFailure ?? "I couldn't find that",
+        message: `${describeSuggestions(guidanceSuggestions)}   -- say which one, or say none.`,
+      };
+    }
+
     return {
       mode: "error",
       label: "Guidance unavailable",
@@ -2247,6 +2269,17 @@ function OverlayWindowApp() {
   const [guidanceTrace, setGuidanceTrace] = useState<GuidanceTrace | null>(null);
   const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequest | null>(null);
   const [guidanceResult, setGuidanceResult] = useState<GuidanceResult | null>(null);
+  /**
+   * What Toki offered instead, and is waiting to hear about.
+   *
+   * Held rather than derived, because it outlives the response it came from:
+   * the failure message expires after a few seconds so the overlay does not
+   * pin a stale error across somebody's screen, and the offers have to still
+   * be answerable when the reply arrives.
+   */
+  const [pendingSuggestions, setPendingSuggestions] = useState<
+    GuidanceSuggestion[]
+  >([]);
   const [guidanceSession, setGuidanceSession] = useState<GuidanceSession | null>(null);
   const [guidanceIssues, setGuidanceIssues] = useState<GuidanceValidationIssue[]>([]);
   const [guidanceProviderError, setGuidanceProviderError] = useState<string | null>(
@@ -2618,13 +2651,26 @@ function OverlayWindowApp() {
    * travels to the target instead and stays there: during that moment its job
    * is to indicate a thing, not to follow a hand, and a marker that keeps
    * chasing the cursor cannot also be pointing at something else.
+   *
+   * Beside the box, never in it. Sitting at the centre meant that on any
+   * control smaller than the blob, Toki covered the thing it had just been
+   * asked to find.
    */
   const guidanceAnchor =
     hasAcceptedGuidance && activeTarget != null
-      ? {
-          x: activeTarget.x + activeTarget.width / 2 - pointerShadowGeometry.width / 2,
-          y: activeTarget.y + activeTarget.height / 2 - pointerShadowGeometry.height / 2,
-        }
+      ? placeGuidanceAnchor(
+          {
+            // The drawn box, not the raw target: the spotlight pads the region
+            // out, and standing in the gap means standing outside what is
+            // actually on screen rather than outside the numbers.
+            x: activeTarget.x - spotlightPolicy.paddingPx,
+            y: activeTarget.y - spotlightPolicy.paddingPx,
+            width: activeTarget.width + spotlightPolicy.paddingPx * 2,
+            height: activeTarget.height + spotlightPolicy.paddingPx * 2,
+          },
+          pointerShadowGeometry,
+          viewport,
+        )
       : null;
 
   const sprungPointerShadow = usePuckSpring(
@@ -2837,6 +2883,7 @@ function OverlayWindowApp() {
     isRefreshingCapture,
     pointerExplanation,
     guidanceFailure: visibleGuidanceFailure,
+    guidanceSuggestions: pendingSuggestions,
     hasAcceptedGuidance,
     targetLabel: activeTarget.label,
     instruction:
@@ -4461,6 +4508,9 @@ function OverlayWindowApp() {
         setGuidanceProviderName(providerResponse.providerName ?? null);
         setGuidanceProviderDebug(providerResponse.debug ?? null);
         setGuidanceProviderError(providerResponse.error ?? null);
+        // Cleared on every answer, not only on the ones that carry offers, so
+        // a stale list from an earlier screen can never be chosen from.
+        setPendingSuggestions(providerResponse.suggestions ?? []);
         setGuidanceIssues(providerResponse.validation?.issues ?? []);
         beginTraceStage("validation", "Applying schema and safety validation.");
         const nextSafetyDecision = evaluateSafetyPolicy({
@@ -4905,12 +4955,26 @@ function OverlayWindowApp() {
 
     let cancelled = false;
     let baseline: RegionFingerprint | null = null;
+    /*
+     * One capture at a time.
+     *
+     * A screenshot of a large display takes longer than the interval between
+     * looks, so without this the timer starts a second capture while the first
+     * is still running, then a third. They queue in the native layer and every
+     * one of them gets slower, which is the opposite of what looking more often
+     * was meant to achieve. Skipping a tick costs nothing: the next one is a
+     * quarter of a second away.
+     */
+    let inFlight = false;
+    let timer = 0;
     const startedAt = Date.now();
 
     async function look() {
-      if (cancelled) {
+      if (cancelled || inFlight) {
         return;
       }
+
+      inFlight = true;
 
       try {
         const screenshot = await invokeCaptureCommand<ScreenshotCapture>(
@@ -4980,23 +5044,43 @@ function OverlayWindowApp() {
       } catch {
         // A failed capture is not a completed step. Stay on the current one and
         // look again; if capture is genuinely broken the timeout ends this.
+      } finally {
+        inFlight = false;
       }
     }
 
-    const timer = window.setInterval(() => {
-      if (Date.now() - startedAt > stepAdvancePolicy.timeoutMs) {
-        cancelled = true;
-        window.clearInterval(timer);
+    /*
+     * The baseline is taken once the overlay has settled, and the polling
+     * starts from there.
+     *
+     * Waiting a whole poll interval for the baseline and another for the first
+     * comparison put two intervals in front of noticing anything. The wait that
+     * is actually needed is for Toki's own animation to finish -- the blob
+     * arriving and the dimming coming up are changes to the watched region --
+     * and that is a fixed, known length rather than a multiple of the polling
+     * rate.
+     */
+    const settle = window.setTimeout(() => {
+      if (cancelled) {
         return;
       }
 
       void look();
-    }, stepAdvancePolicy.pollIntervalMs);
 
-    // The overlay has just been drawn over the target, so the first look waits
-    // one interval rather than photographing the animation.
+      timer = window.setInterval(() => {
+        if (Date.now() - startedAt > stepAdvancePolicy.timeoutMs) {
+          cancelled = true;
+          window.clearInterval(timer);
+          return;
+        }
+
+        void look();
+      }, stepAdvancePolicy.pollIntervalMs);
+    }, stepAdvancePolicy.settleBeforeBaselineMs);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(settle);
       window.clearInterval(timer);
     };
   }, [watchedTargetKey, guidanceSession?.lastScreenshot?.activeWindow?.appName]);
@@ -6188,6 +6272,64 @@ function OverlayWindowApp() {
     }
 
     routedVoiceCommandRef.current = commandKey;
+
+    /*
+     * Answering the offers, before treating this as a new request.
+     *
+     * Toki has just said "I can't see that -- did you mean one of these", so
+     * the very next thing said is most likely an answer to that question. It is
+     * settled here, from a list already in hand, rather than by sending the
+     * screen away again: the target was located when the offers were made, so
+     * choosing one is instant, and asking a model to interpret "the second one"
+     * would cost more than the whole suggestion saves.
+     *
+     * Anything that is not recognisably a choice falls straight through to the
+     * normal routing, which is the case that must not break -- somebody who
+     * ignores the offers and asks for something else entirely is asking for
+     * something else entirely.
+     */
+    if (pendingSuggestions.length > 0) {
+      const choice = matchSpokenChoice(command.text, pendingSuggestions);
+
+      if (choice.kind === "declined") {
+        setPendingSuggestions([]);
+        setOverlayState("idle");
+        setVoiceRuntime((currentState) => ({
+          ...currentState,
+          status: "command_ready",
+        }));
+        return;
+      }
+
+      if (choice.kind === "chose") {
+        const chosen = pendingSuggestions[choice.index];
+
+        setPendingSuggestions([]);
+        setGuidanceProviderError(null);
+        setGuidanceResult({
+          mode: "guide",
+          summary: `Pointing at ${chosen.target.label} instead.`,
+          step: {
+            instruction: `Click ${chosen.target.label}.`,
+            target: chosen.target,
+            // Not the model's confidence in the thing that was asked for --
+            // that was low, which is why offers were made at all. This is a
+            // control the person has just picked by name off a list Toki drew
+            // from what it could see.
+            confidence: 0.9,
+            risk: "safe_navigation",
+            requiresConfirmation: false,
+          },
+        });
+        setOverlayState("guiding");
+        setVoiceRuntime((currentState) => ({
+          ...currentState,
+          status: "command_ready",
+        }));
+        return;
+      }
+    }
+
     setVoiceRuntime((currentState) => ({
       ...currentState,
       status: "transcribing",
@@ -6317,6 +6459,8 @@ function OverlayWindowApp() {
         // thing by moving rather than by drawing a rule across somebody's work.
         pointer={null}
         viewport={viewport}
+        // One voice. The same colour the blob and its trail are painted in.
+        colour={rotateHue(idleCreatureColour, creatureHueShift)}
       />
       <TokiSelectionTrail
         /*
