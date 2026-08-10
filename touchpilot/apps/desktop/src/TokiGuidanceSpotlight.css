@@ -1,0 +1,111 @@
+/*
+ * The guidance layer.
+ *
+ * Drawn over somebody else's screen, so every value here is chosen to stay
+ * legible against a photograph, a white document, and a dark editor alike --
+ * the same reason the selection trail carries a dark halo.
+ */
+
+.toki-spotlight {
+  position: fixed;
+  inset: 0;
+  /*
+   * Never in the way.
+   *
+   * This covers the entire screen, and Toki's whole claim is that it points
+   * without touching. A guidance layer that swallowed a click would break the
+   * application underneath it and break the promise at the same time.
+   */
+  pointer-events: none;
+  overflow: visible;
+}
+
+/*
+ * The dimming arrives after the burst.
+ *
+ * Together, the scrim is the larger change and takes the attention, so the
+ * burst becomes something that already happened rather than the thing that
+ * said "here". Letting it land first is most of what makes the sequence read
+ * as one movement: the blob travels, it lands, then the room darkens around
+ * where it landed.
+ */
+.toki-spotlight__scrim {
+  fill: rgba(4, 10, 20, 0.44);
+  animation: toki-spotlight-settle 320ms ease-out 260ms both;
+}
+
+.toki-spotlight__ring {
+  animation: toki-spotlight-settle 320ms ease-out 260ms both;
+}
+
+@keyframes toki-spotlight-settle {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The delay stays -- it is sequencing, not decoration -- but nothing fades. */
+  .toki-spotlight__scrim,
+  .toki-spotlight__ring {
+    animation-duration: 1ms;
+  }
+}
+
+/*
+ * The lit edge.
+ *
+ * The hole alone reads as a gap; a bright outline makes it read as the thing
+ * being singled out. Cyan rather than white, matching the blob -- so the marker
+ * and the region it points at are visibly the same voice.
+ */
+/*
+ * Dotted, not solid.
+ *
+ * A solid rounded rectangle around a control reads as part of that control --
+ * a focus ring, or a border the application drew itself. Dots read as an
+ * annotation over the top of something, which is what this is: Toki marking
+ * somebody else's interface without pretending to be part of it.
+ *
+ * Round caps on a short dash give circles rather than dashes.
+ */
+.toki-spotlight__ring {
+  fill: none;
+  stroke: var(--toki-cyan-strong, rgba(105, 239, 255, 0.98));
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 0.1 7;
+  filter: drop-shadow(0 0 8px var(--toki-cyan-muted, rgba(151, 239, 255, 0.42)));
+}
+
+.toki-spotlight__arrow line {
+  stroke: var(--toki-cyan, rgba(151, 239, 255, 0.9));
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  /* Dashed, and moving. A solid line between two points reads as a connection
+     that already exists; a travelling dash reads as a direction to follow. */
+  stroke-dasharray: 9 7;
+  animation: toki-spotlight-flow 700ms linear infinite;
+}
+
+.toki-spotlight__arrow polygon {
+  fill: var(--toki-cyan, rgba(151, 239, 255, 0.9));
+}
+
+.toki-spotlight__arrow {
+  filter: drop-shadow(0 0 6px rgba(4, 10, 20, 0.85));
+}
+
+@keyframes toki-spotlight-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  /* The line stays -- it is the information. Only its travel stops. */
+  .toki-spotlight__arrow line {
+    animation: none;
+  }
+}

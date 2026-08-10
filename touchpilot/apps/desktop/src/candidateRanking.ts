@@ -96,6 +96,76 @@ function sourceTrust(candidate: ScreenCandidate): number {
   return 0;
 }
 
+/**
+ * Choose which candidates are actually sent, when the score cannot choose.
+ *
+ * Nothing in a list of ninety usually matches the words somebody said, and when
+ * nothing matches, every candidate scores within half a point of every other --
+ * they are all just "a clickable thing of about button size". The tie-break was
+ * document order, so the twenty that went to the model were the first twenty in
+ * the page.
+ *
+ * On a browser that is the tab strip. Every candidate came back at y=33, forty
+ * pixels tall, and not one control from the page itself was offered as
+ * evidence, whatever the question was.
+ *
+ * So: anything that earned its place by matching the request keeps it. The rest
+ * of the slots go to whatever is furthest from what has already been chosen.
+ * Twenty controls spread across the window say something about where things
+ * are; twenty packed into one strip say almost nothing, and cost the same.
+ */
+function selectWithCoverage(
+  sorted: RankedCandidate[],
+  maxCandidates: number,
+): RankedCandidate[] {
+  const limit = Math.max(1, maxCandidates);
+
+  if (sorted.length <= limit) {
+    return sorted;
+  }
+
+  const earned = sorted.filter((candidate) => (candidate.rank?.relevance ?? 0) > 0);
+  const chosen = earned.slice(0, limit);
+  const remaining = sorted.filter((candidate) => !chosen.includes(candidate));
+
+  const centre = (candidate: RankedCandidate) => ({
+    x: candidate.x + candidate.width / 2,
+    y: candidate.y + candidate.height / 2,
+  });
+
+  while (chosen.length < limit && remaining.length > 0) {
+    let bestIndex = 0;
+    let bestDistance = -1;
+
+    for (let index = 0; index < remaining.length; index += 1) {
+      const at = centre(remaining[index]);
+      let nearest = Infinity;
+
+      for (const picked of chosen) {
+        const other = centre(picked);
+        nearest = Math.min(nearest, Math.hypot(at.x - other.x, at.y - other.y));
+      }
+
+      // Nothing chosen yet: the highest scoring one leads, and `remaining` is
+      // already in score order.
+      if (nearest === Infinity) {
+        bestIndex = 0;
+        break;
+      }
+
+      if (nearest > bestDistance) {
+        bestDistance = nearest;
+        bestIndex = index;
+      }
+    }
+
+    chosen.push(remaining[bestIndex]);
+    remaining.splice(bestIndex, 1);
+  }
+
+  return chosen;
+}
+
 export function rankScreenCandidates(
   candidates: ScreenCandidate[] | undefined,
   goal: string,
@@ -123,6 +193,15 @@ export function rankScreenCandidates(
       const area = candidate.width * candidate.height;
       const duplicateCount = labelCounts.get(normalizeText(candidate.label)) ?? 1;
       let score = 0;
+      /**
+       * How much of the score was earned by matching the request.
+       *
+       * Tracked apart from the total because the two answer different
+       * questions. The total says "is this a plausible control"; this says "is
+       * this control anything to do with what was asked". Only the second one
+       * justifies a place in a list of twenty.
+       */
+      let relevance = 0;
       const reasons: string[] = [];
       const sourceScore = sourceTrust(candidate);
 
@@ -133,17 +212,20 @@ export function rankScreenCandidates(
 
       if (hasExactLabelMatch(candidate.label, goal)) {
         score += 18;
+        relevance += 18;
         reasons.push("exact-label");
       }
 
       if (matchCount > 0) {
         score += matchCount * 12;
+        relevance += matchCount * 12;
         reasons.push(`goal-text:${matchCount}`);
       }
 
       const intentScore = scoreCandidateIntent(candidate, goal);
 
       score += intentScore.score;
+      relevance += intentScore.score;
       reasons.push(...intentScore.reasons);
 
       if (CLICKABLE_ROLE_RE.test(role)) {
@@ -200,17 +282,23 @@ export function rankScreenCandidates(
         ...candidate,
         rank: {
           score: Math.round(score * 100) / 100,
+          relevance: Math.round(relevance * 100) / 100,
           position: 0,
           reasons,
         },
       };
     })
     .sort((a, b) => (b.rank?.score ?? 0) - (a.rank?.score ?? 0))
-    .slice(0, Math.max(1, maxCandidates))
+    .reduce<RankedCandidate[]>(
+      (kept, _candidate, _index, sorted) =>
+        kept.length > 0 ? kept : selectWithCoverage(sorted, maxCandidates),
+      [],
+    )
     .map((candidate, index) => ({
       ...candidate,
       rank: {
         score: candidate.rank?.score ?? 0,
+        relevance: candidate.rank?.relevance ?? 0,
         reasons: candidate.rank?.reasons ?? [],
         position: index + 1,
       },

@@ -533,7 +533,12 @@ function rejectTarget(
 
 function semanticRejectionReason(semantic: CandidateSemanticMatch) {
   if (semantic.command.action == null) {
-    return "the requested action could not be interpreted safely";
+    // Said in terms of what happened rather than in terms of safety. The old
+    // wording -- "the requested action could not be interpreted safely" --
+    // described a refusal on grounds of danger for what is really "the thing I
+    // found does not look like the thing you asked about", and it fired on most
+    // ordinary phrasings.
+    return `nothing on screen matched "${semantic.command.objective}"`;
   }
 
   if (!semantic.candidateActions.includes(semantic.command.action)) {

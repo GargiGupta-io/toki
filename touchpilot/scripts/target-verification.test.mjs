@@ -47,8 +47,8 @@ function request(candidates = [], goal = "Create a report") {
 
 function response(target, confidence = 0.88) {
   return {
-    mode: "codex-subscription",
-    providerName: "codex-subscription:test",
+    mode: "gemini",
+    providerName: "gemini:test",
     result: {
       mode: "guide",
       summary: "Target selected",
@@ -137,7 +137,7 @@ test("exact DOM candidate uses its verified center", () => {
     request([candidate()]),
   );
 
-  assert.equal(result.mode, "codex-subscription");
+  assert.equal(result.mode, "gemini");
   assert.deepEqual(result.result.step.target, {
     candidateId: "candidate-1",
     label: "Create button",
@@ -296,7 +296,7 @@ test("exact symbolic OCR geometry combines with specific current-image semantics
     request([createPlaylist], "How to make a playlist on Spotify?"),
   );
 
-  assert.equal(result.mode, "codex-subscription");
+  assert.equal(result.mode, "gemini");
   assert.equal(result.debug.targetVerification.status, "accepted");
   assert.equal(result.debug.targetVerification.source, "ocr");
   assert.equal(result.debug.targetVerification.match, "candidate_id");
@@ -394,7 +394,7 @@ test("combined evidence enforces the provider-confidence boundary", () => {
       "provider-semantic-augmentation",
     ),
   );
-  assert.equal(boundaryResult.mode, "codex-subscription");
+  assert.equal(boundaryResult.mode, "gemini");
   assert.ok(
     boundaryResult.debug.targetVerification.reasons.includes(
       "provider-semantic-augmentation",
@@ -452,7 +452,7 @@ test("specific high-confidence current-image target is accepted without structur
     request([], "Play the next song"),
   );
 
-  assert.equal(result.mode, "codex-subscription");
+  assert.equal(result.mode, "gemini");
   assert.equal(result.debug.targetVerification.status, "accepted");
   assert.equal(result.debug.targetVerification.source, "vision");
   assert.equal(result.debug.targetVerification.match, "vision_only");
@@ -479,7 +479,7 @@ test("read-only media-history guidance accepts the visible recently played tab",
     request([], "How to see the recently played songs."),
   );
 
-  assert.equal(result.mode, "codex-subscription");
+  assert.equal(result.mode, "gemini");
   assert.equal(result.debug.targetVerification.status, "accepted");
   assert.equal(result.debug.targetVerification.commandIntent.action, "open");
   assert.equal(result.debug.targetVerification.commandIntent.object, "media");
@@ -767,7 +767,7 @@ test("generic provider wording can pass only through specific current evidence",
     request([groundedCandidate], "Create a new playlist"),
   );
 
-  assert.equal(result.mode, "codex-subscription");
+  assert.equal(result.mode, "gemini");
   assert.equal(result.result.step.target.label, "Create a new playlist");
   assert.equal(result.debug.providerOutput.label, "plus icon");
   assert.equal(result.debug.targetVerification.groundingVerdict, "grounded");
@@ -848,7 +848,7 @@ test("rejected targets cannot become renderable overlay guidance", () => {
   );
   const forged = {
     ...rejected,
-    mode: "codex-subscription",
+    mode: "gemini",
     result: response({
       label: "icon",
       x: 420,

@@ -316,6 +316,39 @@ export function interpretCommandIntent(goal: string): InterpretedCommandIntent {
   };
 }
 
+/**
+ * Words the command and the target have in common, ignoring filler.
+ *
+ * Deliberately crude: this is asked only when no verb was recognised, and its
+ * job is to separate "you asked about the quote reply and I found Quote reply"
+ * from "you asked about the quote reply and I found the avatar". A shared
+ * distinctive word answers that; anything cleverer would be inventing certainty
+ * out of two short strings.
+ */
+const INTENT_FILLER_WORDS = new Set([
+  "the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "at", "is",
+  "are", "was", "were", "be", "this", "that", "these", "those", "it", "its",
+  "my", "me", "i", "you", "your", "can", "could", "would", "please", "just",
+  "where", "what", "which", "how", "who", "do", "does", "did", "with", "from",
+  "there", "here", "some", "any", "get", "got", "want", "need", "thing",
+]);
+
+export function sharedDistinctiveWords(
+  command: string,
+  candidate: string,
+): string[] {
+  const words = (text: string) =>
+    new Set(
+      normalizeText(text)
+        .split(/[^a-z0-9]+/u)
+        .filter((word) => word.length >= 3 && !INTENT_FILLER_WORDS.has(word)),
+    );
+
+  const target = words(candidate);
+
+  return [...words(command)].filter((word) => target.has(word));
+}
+
 export function evaluateCandidateSemanticMatch(
   candidate: ScreenCandidate,
   goal: string,
@@ -339,15 +372,61 @@ export function evaluateCandidateSemanticMatch(
   let score = 0;
   let accepted = true;
 
-  if (command.action == null) {
-    accepted = false;
-    reasons.push("command-action-unrecognized");
-  } else if (candidateActions.has(command.action)) {
+  /*
+   * Does this control correspond to what was asked about?
+   *
+   * Agreement between the command's verb and the target's own verbs is the
+   * strongest signal, when it exists. It very often does not, and that used to
+   * be treated as a refusal in two different ways -- both wrong, and the second
+   * worse than the first.
+   *
+   * An unrecognised verb rejected outright, so most ordinary phrasings failed:
+   * "where is the quote reply option", "what is this", or just naming the
+   * thing. Six of ten natural phrasings produced no verb, and every one came
+   * back as "the requested action could not be interpreted safely".
+   *
+   * A *recognised* verb was stricter still, because it then demanded the
+   * target's own label contain a matching verb -- and labels are nouns. So
+   * "quote reply" was accepted while "find the quote reply" was rejected, for
+   * the same intent and the same correct target. The verb describes what the
+   * person wants; the label names the control. They are not the same vocabulary
+   * and requiring them to agree rejects correct answers.
+   *
+   * So: verb agreement scores well when present, and otherwise the words have
+   * to correspond. A target sharing no distinctive word with the request is
+   * still refused, which is the check that was actually wanted -- "you asked
+   * about the quote reply and I found the avatar" fails on every phrasing.
+   *
+   * Nothing about danger is relaxed. Whether an action needs confirming is
+   * decided by the risk class the model returns, which is a separate gate.
+   */
+  /*
+   * Compared against the label, not the whole semantic text.
+   *
+   * That text includes the model's own reason for choosing the target, which
+   * is prose the model wrote after reading the request -- so it echoes the
+   * request's words back and any overlap test against it passes by
+   * construction. Asking "Play the next song" and being handed a pause button
+   * whose justification mentions "the current song" would match on "song".
+   *
+   * The label is the claim about what the control *is*, which is the thing
+   * being checked.
+   */
+  const overlap = sharedDistinctiveWords(command.objective, candidate.label ?? "");
+
+  if (command.action != null && candidateActions.has(command.action)) {
     score += 40;
     reasons.push(`semantic-action:${command.action}`);
+  } else if (overlap.length > 0) {
+    score += 35;
+    reasons.push(`lexical-match:${overlap.slice(0, 3).join("+")}`);
   } else {
     accepted = false;
-    reasons.push(`semantic-action-missing:${command.action}`);
+    reasons.push(
+      command.action == null
+        ? "command-and-target-share-nothing"
+        : `semantic-action-missing:${command.action}`,
+    );
   }
 
   if (command.object == null) {
@@ -356,6 +435,12 @@ export function evaluateCandidateSemanticMatch(
   } else if (candidateObjects.has(command.object)) {
     score += 30;
     reasons.push(`semantic-object:${command.object}`);
+  } else if (overlap.length > 0) {
+    // The same reasoning: a control named "Quote reply" belongs to no object
+    // family this lexicon knows, and that is a gap in the lexicon rather than a
+    // sign the wrong thing was found.
+    score += 15;
+    reasons.push("semantic-object:by-wording");
   } else {
     accepted = false;
     reasons.push(`semantic-object-missing:${command.object}`);

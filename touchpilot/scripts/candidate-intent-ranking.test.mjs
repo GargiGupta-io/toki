@@ -202,3 +202,85 @@ test("read-only navigation understands media-history targets contextually", () =
   assert.equal(playbackAction.accepted, false);
   assert.ok(playbackAction.reasons.includes("semantic-action-missing:next"));
 });
+
+/*
+ * Refusing to point at the right thing.
+ *
+ * The vision-only path asked whether the command and the target agreed, and
+ * answered it with a thirteen-family verb lexicon. That rejected most ordinary
+ * ways of asking -- and then, when a verb *was* recognised, rejected harder,
+ * because it went on to demand the target's own label contain a matching verb.
+ * Labels are nouns.
+ *
+ * So "quote reply" was accepted and "find the quote reply" was refused, for the
+ * same intent and the same correct target, and both came back to the person as
+ * "the requested action could not be interpreted safely".
+ */
+
+const quoteReply = {
+  id: "vision-model-target",
+  label: "Quote reply",
+  role: "button",
+  source: "vision",
+  x: 100,
+  y: 100,
+  width: 40,
+  height: 20,
+};
+
+test("every ordinary way of asking for a control is accepted", () => {
+  for (const phrasing of [
+    "find the quote reply option for the changes reviewed",
+    "where is the quote reply option",
+    "show me the quote reply button",
+    "how do I quote reply to this review",
+    "quote reply",
+    "what is the quote reply option",
+    "can you point at the quote reply",
+    "I want to quote reply to the changes reviewed",
+  ]) {
+    const match = evaluateCandidateSemanticMatch(quoteReply, phrasing);
+    assert.equal(match.accepted, true, phrasing);
+  }
+});
+
+test("naming a thing and asking to find it behave the same", () => {
+  // These differed only in whether a verb happened to be in the lexicon, and
+  // they came out opposite ways round.
+  const bare = evaluateCandidateSemanticMatch(quoteReply, "quote reply");
+  const asked = evaluateCandidateSemanticMatch(
+    quoteReply,
+    "find the quote reply option",
+  );
+
+  assert.equal(bare.accepted, asked.accepted);
+});
+
+test("a target sharing nothing with the request is still refused", () => {
+  // The check that was actually wanted. Loosening the verb rule must not turn
+  // this into a gate that accepts anything the model returns.
+  const wrong = { ...quoteReply, label: "Profile avatar" };
+
+  for (const phrasing of [
+    "find the quote reply option for the changes reviewed",
+    "where is the quote reply option",
+    "how do I quote reply to this review",
+  ]) {
+    assert.equal(
+      evaluateCandidateSemanticMatch(wrong, phrasing).accepted,
+      false,
+      phrasing,
+    );
+  }
+});
+
+test("filler words alone are not correspondence", () => {
+  // "the", "this", "where" and friends appear in everything. Matching on them
+  // would accept any target for any request.
+  const match = evaluateCandidateSemanticMatch(
+    { ...quoteReply, label: "The other thing" },
+    "where is the thing for this",
+  );
+
+  assert.equal(match.accepted, false);
+});
