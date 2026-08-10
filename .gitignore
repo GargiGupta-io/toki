@@ -11,6 +11,12 @@ dist/
 .env.*
 !.env.example
 
+# Wrangler's local state. Not key material, but `cache/wrangler-account.json`
+# carries the Cloudflare account id and the account holder's email address, and
+# the miniflare sqlite files are a local cache of whatever the site was serving
+# while it was being worked on. None of it means anything on another machine.
+.wrangler/
+
 # Signing key material. The updater private key can sign anything the app will
 # install, and the Developer ID private key can sign anything as Toki. Neither
 # belongs in a repository, least of all a public one. These live outside the

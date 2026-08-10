@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Toki — it points at what you're looking for</title>
+    <meta
+      name="description"
+      content="A macOS assistant that watches your hands and shows you where to click. It points — it never clicks, and it never moves your real cursor."
+    />
+    <link rel="icon" href="favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="icon.png" />
+    <link rel="stylesheet" href="style.css" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Toki" />
+    <meta
+      property="og:description"
+      content="A macOS assistant that watches your hands and shows you where to click. It points — it never clicks, and it never moves your real cursor."
+    />
+    <meta property="og:url" content="https://toki-plum.vercel.app/" />
+    <meta
+      property="og:image"
+      content="https://toki-plum.vercel.app/icon.png"
+    />
+    <meta name="twitter:card" content="summary" />
+  </head>
+
+  <body>
+
+    <div class="page">
+      <nav class="bar" id="bar">
+        <div class="bar-inner">
+          <!-- The mark alone. The name is carried by the hero wordmark, and
+               setting it twice made the two read as separate objects rather
+               than one identity. The link still has an accessible name. -->
+          <a class="bar-logo" href="index.html" aria-label="Toki, back to top">
+            <img src="mark.png" alt="" width="508" height="508" />
+          </a>
+
+          <button
+            type="button"
+            class="bar-toggle"
+            id="bar-toggle"
+            aria-expanded="false"
+            aria-controls="bar-links"
+          >
+            <span class="bar-toggle-bars" aria-hidden="true"></span>
+            <span class="sr-only">Menu</span>
+          </button>
+
+          <div class="bar-links" id="bar-links">
+            <a href="what.html">What it does</a>
+            <a href="privacy.html">Privacy</a>
+            <a href="state.html">State</a>
+          </div>
+
+          <div class="bar-actions">
+            <a class="bar-source" href="https://github.com/GargiGupta-io/toki"
+              >Source</a
+            >
+            <a
+              class="btn btn--solid btn--sm"
+              href="https://github.com/GargiGupta-io/toki/releases/latest"
+              >Download</a
+            >
+          </div>
+        </div>
+      </nav>
+
+      <header class="hero" id="top">
+        <!-- The mark, screen-printed at poster scale and bled off the edge.
+             Faint enough to be texture rather than an image, and the same
+             stroke as the small one, so it reads as ink on the page. -->
+        <img class="print" src="mark.png" alt="" aria-hidden="true" />
+        <div class="wrap">
+          <!-- Two nested masks, because two things sweep this ring at
+               different times: the outer one inks it on when the page loads,
+               the inner one un-inks it as you scroll away. One element cannot
+               carry both, since they would drive the same custom property and
+               the last declared animation would win.
+
+               Kept as a real <img> so a browser without mask support simply
+               shows the finished mark instead of nothing. -->
+          <button
+            type="button"
+            class="mark"
+            id="mark"
+            aria-pressed="false"
+            aria-label="Switch the pointer on"
+          >
+            <div class="mark-sweep">
+              <img src="mark.png" alt="" width="508" height="508" />
+            </div>
+          </button>
+          <p class="mark-hint" id="mark-hint" aria-hidden="true">
+            Click the mark to switch the pointer on
+          </p>
+
+          <!-- Split for the staggered build. The letters are hidden from
+               assistive tech and the label carries the real word, so it is
+               never announced one letter at a time. -->
+          <h1 aria-label="Toki"><span aria-hidden="true" class="build"
+              ><i>T</i><i>o</i><i>k</i><i>i</i></span
+            ></h1>
+          <p class="tagline">
+            It watches your hands and shows you where to click.
+          </p>
+
+          <div class="actions">
+            <a
+              class="btn btn--solid"
+              href="https://github.com/GargiGupta-io/toki/releases/latest"
+              >Download for macOS</a
+            >
+            <a
+              class="btn btn--ghost"
+              href="https://github.com/GargiGupta-io/toki"
+              >Read the source</a
+            >
+          </div>
+          <p class="requirement muted">macOS. Signed and notarized by Apple.</p>
+
+
+          <!-- A diagram, not a screenshot. The marker below is the same one
+               that follows your cursor, doing what the app does. -->
+          <!-- Deliberately not reveal-gated. It is the hero's centrepiece and
+               the marker measures its controls on the first frame, so it has to
+               be laid out and visible from the start. -->
+          <div class="stage" id="stage">
+            <div class="stage-caption" aria-hidden="true">
+              <span data-caption="share"
+                >You hold the key and say:
+                <em>"share this with my team"</em></span
+              >
+              <span data-caption="format"
+                >You say: <em>"where are the formatting options?"</em></span
+              >
+              <span data-caption="export"
+                >You say: <em>"I need to export a PDF"</em></span
+              >
+            </div>
+
+            <div class="panel" data-tilt aria-hidden="true">
+              <div class="panel-bar">
+                <i></i><i></i><i></i>
+                <b>Some app you're stuck in</b>
+              </div>
+              <div class="panel-body">
+                <div class="panel-side">
+                  <span class="side-label"></span>
+                  <span class="skel"></span>
+                  <span class="skel"></span>
+                  <span class="skel skel--on"></span>
+                  <span class="skel"></span>
+                  <span class="side-label"></span>
+                  <span class="skel"></span>
+                  <span class="skel"></span>
+                  <span class="skel"></span>
+                </div>
+                <div class="panel-main">
+                  <div class="toolbar">
+                    <span class="control" data-target="share">Share</span>
+                    <span class="control" data-target="format">Format</span>
+                    <span class="control" data-target="export">Export</span>
+                    <span class="control">Insert</span>
+                    <span class="control">History</span>
+                  </div>
+
+                  <span class="skel skel--title"></span>
+
+                  <div class="lines">
+                    <span class="skel"></span>
+                    <span class="skel"></span>
+                    <span class="skel"></span>
+                    <span class="skel"></span>
+                  </div>
+
+                  <div class="blocks">
+                    <span class="block"></span>
+                    <span class="block"></span>
+                  </div>
+
+                  <div class="lines lines--tail">
+                    <span class="skel"></span>
+                    <span class="skel"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p class="small muted" style="margin-top: 1.25rem">
+              Toki points. You click, or you don't. It never touches the control
+              itself.
+            </p>
+          </div>
+        </div>
+        <!-- Keywords as bubbles. Every one of these is a claim the rest of
+             the site can back up — no adjectives, no "seamless", nothing the
+             README does not say.
+
+             Positioned absolutely on wide screens, so document order does not
+             matter there — but it does in the narrow-screen fallback, where
+             they fall back into normal flow. Hence last in the hero. -->
+        <ul class="bubbles" aria-label="What Toki is">
+          <li class="bubble">hand tracking</li>
+          <li class="bubble">runs on your Mac</li>
+          <li class="bubble bubble--accent">never clicks</li>
+          <li class="bubble">camera stays local</li>
+          <li class="bubble">free tier</li>
+          <li class="bubble">source-available</li>
+          <li class="bubble">signed &amp; notarized</li>
+        </ul>
+
+      </header>
+
+      <main>
+        <!-- The page's one raised voice.
+             Everything else here is quiet and annotated; this is the single
+             claim the whole product rests on, so it gets the full width, the
+             inverted ground and the largest type on the page. One instance
+             only — a second would make it a style rather than an emphasis. -->
+        <section class="slab" aria-labelledby="slab-line">
+          <canvas class="slab-ink" aria-hidden="true"></canvas>
+          <div class="wrap">
+            <p class="slab-tag" data-reveal>Constraint · invariant</p>
+            <p class="slab-line" id="slab-line" data-reveal>
+              It points. It never clicks, and it never moves
+              <em>your real cursor.</em>
+            </p>
+            <p class="slab-note" data-reveal>
+              That distinction is the product, and nearly everything else
+              follows from it. Enforced on device — not a setting.
+            </p>
+          </div>
+        </section>
+
+        <!-- A running strip. Print-poster furniture, and the one piece of
+             perpetual motion on the page: it moves without being scrolled to,
+             hovered, or clicked. -->
+        <div class="marquee" aria-hidden="true">
+          <div class="marquee-run">
+            <span>It points · It never clicks · It never moves your cursor · </span>
+            <span>It points · It never clicks · It never moves your cursor · </span>
+          </div>
+        </div>
+
+      <!-- Closing band. The page has been honest for five sections about what
+           is missing; this is the one place it asks for anything, and it still
+           repeats the caveat rather than dropping it to close. -->
+        <!-- Repeated mark around one image. The Warhol grid, using the only
+             image Toki owns — its own stroke — so the repetition is the brand
+             rather than borrowed pop art. -->
+        <section class="tiled">
+          <div class="tiles" aria-hidden="true"></div>
+          <div class="wrap">
+            <figure class="shot shot--wide" data-reveal>
+              <span class="shot-tag">Image · hand in front of the screen · 16:9</span>
+              <span class="corners"></span>
+              <figcaption>
+                Shoot over your own shoulder: raised hand in the foreground, the
+                Mac beyond it, the marker visible on screen.
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <!-- Two words closing in from opposite sides as you scroll, with the
+             image held between them. -->
+        <section class="split">
+          <div class="wrap">
+            <div class="split-row">
+              <figure class="shot shot--tall">
+                <span class="shot-tag">Image · the mark, inked on paper · 4:5</span>
+              </figure>
+              <span class="split-word split-word--l" id="split-l">It points</span>
+              <span class="split-word split-word--r" id="split-r">never clicks</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Prices live on the front page rather than behind a tab. A tab
+             called Plans is a door you have to decide to open; a section you
+             scroll past is one you have already read. -->
+        <section id="plans">
+          <div class="wrap">
+            <h2 class="section-title narrow" data-reveal>
+              What runs on your Mac is free and stays free.
+            </h2>
+
+            <div class="plans">
+              <div class="plan plan--free framed" data-reveal>
+                <span class="tag">tier · free</span>
+                <h3>Free</h3>
+                <div class="price"><span class="amount">$0</span></div>
+                <ul>
+                  <li>Hand tracking and the marker</li>
+                  <li>The overlay and gestures</li>
+                  <li>Everything that runs on your Mac</li>
+                  <li>Live guidance is not included</li>
+                </ul>
+
+                <!-- No account, no checkout, no button that pretends to be a
+                     purchase. The free tier is the download. -->
+                <div class="plan-cta">
+                  <a
+                    class="btn btn--ghost"
+                    href="https://github.com/GargiGupta-io/toki/releases/latest"
+                    >Download for macOS</a
+                  >
+                  <p class="small muted">No account needed.</p>
+                </div>
+              </div>
+
+              <div class="plan plan--paid framed" data-reveal data-delay="1">
+                <span class="tag">tier · pro</span>
+                <h3>Pro</h3>
+                <div class="price">
+                  <span class="amount">$29</span>
+                  <span class="per">a month</span>
+                </div>
+                <ul>
+                  <li>Everything in Free</li>
+                  <li>Live guidance — asking where a control is</li>
+                  <li>Up to 60 guidance requests a minute</li>
+                </ul>
+
+                <!-- The button is a download, not a checkout, because the
+                     app is where you upgrade. A button that starts a purchase
+                     the site cannot finish is worse than no button. -->
+                <div class="plan-cta">
+                  <a
+                    class="btn btn--solid"
+                    href="https://github.com/GargiGupta-io/toki/releases/latest"
+                    >Download for macOS</a
+                  >
+                  <p class="small muted">Upgrade inside the app.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="narrow" data-reveal>
+              <p>
+                The split isn't arbitrary. Everything that runs on your own
+                machine costs nothing to run, so it costs nothing to use.
+                Looking at a screenshot with a model costs real money on every
+                call, so that's the one thing the paid tier buys.
+              </p>
+              <p>
+                Cancel whenever you like — a cancelled subscription keeps
+                working until the end of the period you've already paid for.
+                Payment is taken on Stripe's own page; card details never touch
+                this site or the app.
+              </p>
+              <p class="small muted">
+                Live guidance currently runs on fixtures rather than a real
+                model — read <a href="state.html">where it's up to</a> before you
+                subscribe.
+              </p>
+            </div>
+          </div>
+        </section>
+
+      <section class="closer">
+        <div class="wrap">
+          <h2 class="section-title" data-reveal>
+            It points at what you're looking for.
+          </h2>
+          <p class="lede muted narrow" data-reveal>
+            Free to use everything that runs on your Mac. Nothing is clicked on
+            your behalf, and your cursor stays where you left it.
+          </p>
+          <div class="actions closer-actions" data-reveal>
+            <a
+              class="btn btn--solid"
+              href="https://github.com/GargiGupta-io/toki/releases/latest"
+              >Download for macOS</a
+            >
+            <a
+              class="btn btn--ghost"
+              href="https://github.com/GargiGupta-io/toki"
+              >Read the source</a
+            >
+          </div>
+          <p class="small muted" data-reveal style="margin-top: 1.25rem">
+            Signed and notarized by Apple. It opens like any other app.
+          </p>
+        </div>
+      </section>
+
+      </main>
+
+      <footer>
+        <div class="wrap">
+          <div class="foot-top">
+            <div class="foot-brand">
+              <div class="foot-mark">
+                <img src="icon.png" alt="The Toki app icon" width="54" height="54" />
+                <div>
+                  <p class="foot-name">Toki</p>
+                  <p class="small muted" style="margin: 0">
+                    This is what it looks like in your Dock.
+                  </p>
+                </div>
+              </div>
+              <p class="small muted" style="margin-top: 1.25rem">
+                It points. It never clicks, and it never moves your real cursor.
+              </p>
+            </div>
+
+            <div class="foot-cols">
+              <div>
+                <p class="foot-head">The page</p>
+                <a href="what.html">What it does</a>
+                    <a href="privacy.html">Privacy</a>
+                    <a href="state.html">Where it's up to</a>
+              </div>
+              <div>
+                <p class="foot-head">The project</p>
+                <a href="https://github.com/GargiGupta-io/toki">Source</a>
+                <a href="https://github.com/GargiGupta-io/toki/releases"
+                  >Releases</a
+                >
+                <a
+                  href="https://github.com/GargiGupta-io/toki/blob/main/README.md"
+                  >README</a
+                >
+                <a href="https://github.com/GargiGupta-io/toki/blob/main/LICENSE"
+                  >Licence</a
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="foot-bottom">
+            <p>
+              Built by
+              <a href="https://github.com/GargiGupta-io">Gargi Gupta</a>. 700+
+              commits, 440+ tests.
+            </p>
+            <p>
+              Source-available, not open source — redistribution, derivative
+              works, commercial use, and presenting it as your own are not
+              permitted.
+            </p>
+            <p class="foot-legal">© 2026 Gargi Gupta. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Vendored, not fetched. See vendor/README.md: a page advertising an app
+         that permits zero remote origins should not itself load code from
+         someone else's CDN. -->
+    <script src="vendor/anime.umd.min.js"></script>
+    <script src="dot.js"></script>
+  </body>
+</html>

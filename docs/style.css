@@ -1,0 +1,1966 @@
+/* Toki — landing page.
+ *
+ * A warm blush ground, near-black ink, and exactly one accent. The accent is
+ * reserved for things you can act on — links, buttons, and the pointer itself
+ * — so the hue always carries meaning rather than decorating. Everything
+ * structural (rules, brackets, annotation labels, the diagram) stays neutral.
+ *
+ * Contrast is checked, not assumed: the accent clears 5:1 against the page and
+ * 4.5:1 under white button text, and body ink sits above 14:1.
+ *
+ * No webfont, no CDN, no analytics, no third-party anything. The type is the
+ * system stack, which is San Francisco on the Mac this app runs on, and it
+ * costs nothing and requests nothing. An app whose window is forbidden from
+ * reaching the internet should not have a website that phones out either.
+ *
+ * Depth comes from achromatic gradients rather than colour: a soft light
+ * behind the hero and a top-lit face on each card. Both are pure greyscale, so
+ * the no-colour rule holds.
+ *
+ * Light only. There is no dark variant and no prefers-color-scheme block —
+ * `color-scheme: light` tells the browser so, which keeps scrollbars and form
+ * controls light for a visitor whose system is dark.
+ */
+
+:root {
+  color-scheme: light;
+
+  --ink: #1F1614;
+  --page: #F5EBE8;
+  --card: #FDF9F7;
+  --muted: #6E5F5A;
+  --rule: #E4D5D0;
+  --well: #EDE0DB;
+  --shadow: 0 1px 2px rgb(60 34 28 / 0.05), 0 12px 32px -12px rgb(60 34 28 / 0.16);
+  --lift: 0 2px 4px rgb(60 34 28 / 0.06), 0 40px 80px -32px rgb(60 34 28 / 0.32);
+  /* The soft light behind the hero, and the top-lit face on cards. */
+  --glow: rgb(255 252 251 / 0.9);
+  --sheen: rgb(255 255 255 / 0.5);
+  --skeleton: #EADCD7;
+  --skeleton-on: #D9C5BE;
+
+  /* One accent, used only where something is interactive or is the pointer
+     itself. Everything structural stays achromatic, so the hue always means
+     "you can act on this" rather than decorating. --on-accent is the text
+     colour that sits on top of it. */
+  --accent: #9E4A41;
+  --on-accent: #FFFFFF;
+  /* The accent is tuned for the blush page and measures 2.97:1 against the
+     slab's ink — unreadable. This lightened one clears 4.68:1 there. Same hue,
+     used only where the ground is inverted. */
+  --accent-on-ink: #BF6C63;
+
+  /* A real spring, as an easing curve. This is why there is no animation
+     library on this page: the overshoot-and-settle that makes movement feel
+     physical is expressible in CSS now. */
+  /* The annotation layer is monospace and the human content is not. That
+     split is the whole concept: the machine names what it can see, in its own
+     voice, over content written by a person. */
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --bracket: 13px;
+
+  --spring: linear(
+    0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017,
+    1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%,
+    1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%,
+    0.997 69.8%, 1.003 76.9%, 1
+  );
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  /* Two lights, both achromatic: a broad one behind the hero and a fainter
+     one low on the page, so the long scroll never flattens out. */
+  background:
+    radial-gradient(90% 55% at 50% -8%, var(--glow) 0%, transparent 62%),
+    radial-gradient(70% 40% at 50% 108%, var(--sheen) 0%, transparent 60%),
+    var(--page);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+.page {
+  position: relative;
+  z-index: 1;
+}
+
+.wrap {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0 1.75rem;
+}
+
+.narrow {
+  max-width: 40rem;
+}
+
+/* ---------------- type ---------------- */
+
+h1,
+h2,
+h3 {
+  line-height: 1.08;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(3.5rem, 13vw, 7.5rem);
+  letter-spacing: -0.055em;
+}
+
+.section-title {
+  font-size: clamp(2.25rem, 7vw, 4.25rem);
+  letter-spacing: -0.05em;
+  margin-bottom: 1.25rem;
+}
+
+h3 {
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.4rem;
+}
+
+p {
+  margin: 0 0 1.15rem;
+}
+
+p:last-child {
+  margin-bottom: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+/* Links inside running text take the accent; navigation and footer links are
+   styled on their own and stay neutral, so the hue never becomes wallpaper. */
+main a,
+.hero a:not(.btn),
+.closer a:not(.btn) {
+  color: var(--accent);
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+strong {
+  font-weight: 640;
+}
+
+.lede {
+  font-size: clamp(1.1875rem, 2.4vw, 1.4375rem);
+  line-height: 1.45;
+  letter-spacing: -0.015em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+/* ---------------- the annotation layer ----------------
+ *
+ * Everything the machine "says" about the page is set in this vocabulary:
+ * monospace, small, uppercase, tracked out, and never in the same voice as the
+ * content it is describing.
+ *
+ * Deliberately absent: confidence scores. A landing page reading "0.98" next to
+ * a heading implies a model is running and performing well, and this app's own
+ * README says guidance is still on fixtures. The annotations name what a thing
+ * is — heading, control, list — which is exactly what an accessibility scan
+ * reports and is true of every element they sit on.
+ */
+
+.eyebrow,
+.tag,
+.sec-no,
+.annot,
+.tick-label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.eyebrow {
+  margin: 0 0 1.5rem;
+}
+
+/* Section header: an index number and a label, sitting on a hairline, the way
+   a detector labels a region it has segmented. */
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  padding-bottom: 0.7rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.sec-no {
+  color: var(--ink);
+  opacity: 0.45;
+}
+
+.sec-head .tag {
+  margin-right: auto;
+}
+
+.sec-coord {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+/* A framed region: corner brackets rather than a full border, so it reads as
+   something being identified rather than something in a box.
+
+   The four brackets are eight background layers — two strokes per corner —
+   which keeps the markup to a single element. A border would draw all four
+   sides; this draws only the corners, which is what a detector actually
+   renders. */
+.framed {
+  position: relative;
+  --bracket-ink: var(--ink);
+  background-image:
+    linear-gradient(var(--bracket-ink), var(--bracket-ink)),
+    linear-gradient(var(--bracket-ink), var(--bracket-ink)),
+    linear-gradient(var(--bracket-ink), var(--bracket-ink)),
+    linear-gradient(var(--bracket-ink), var(--bracket-ink)),
+    linear-gradient(var(--bracket-ink), var(--bracket-ink)),
+    linear-gradient(var(--bracket-ink), var(--bracket-ink)),
+    linear-gradient(var(--bracket-ink), var(--bracket-ink)),
+    linear-gradient(var(--bracket-ink), var(--bracket-ink)),
+    linear-gradient(180deg, var(--sheen), transparent 55%);
+  background-repeat: no-repeat;
+  background-size:
+    var(--bracket) 1px, 1px var(--bracket),
+    var(--bracket) 1px, 1px var(--bracket),
+    var(--bracket) 1px, 1px var(--bracket),
+    var(--bracket) 1px, 1px var(--bracket),
+    100% 100%;
+  background-position:
+    left top, left top,
+    right top, right top,
+    left bottom, left bottom,
+    right bottom, right bottom,
+    center;
+}
+
+/* Once the script has replaced them with SVG, the background-drawn brackets
+   must go, or every corner is drawn twice — once statically and once by the
+   animation, a hairline apart. */
+.svg-brackets .framed {
+  background-image: linear-gradient(180deg, var(--sheen), transparent 55%);
+  background-size: 100% 100%;
+  background-position: center;
+}
+
+.bracket {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  color: var(--bracket-ink, var(--ink));
+  pointer-events: none;
+  overflow: visible;
+}
+
+.bracket--tl {
+  top: 0;
+  left: 0;
+}
+
+.bracket--tr {
+  top: 0;
+  right: 0;
+}
+
+.bracket--br {
+  bottom: 0;
+  right: 0;
+}
+
+.bracket--bl {
+  bottom: 0;
+  left: 0;
+}
+
+/* The label sits astride the top edge, punched out of the bracket line. */
+.framed > .tag {
+  position: absolute;
+  top: -0.55rem;
+  left: calc(var(--bracket) + 0.6rem);
+  padding: 0 0.55rem;
+  background: var(--page);
+  white-space: nowrap;
+}
+
+/* A margin callout: a short leader line running out to a label. */
+.annot {
+  position: relative;
+  padding-left: 1.6rem;
+  line-height: 1.5;
+  letter-spacing: 0.1em;
+}
+
+.annot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.5em;
+  width: 1.1rem;
+  border-top: 1px solid var(--rule);
+}
+
+.annot::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: calc(0.5em - 2px);
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  background: var(--page);
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+  background: var(--well);
+  border-radius: 4px;
+  padding: 0.12em 0.4em;
+}
+
+/* ---------------- the marker ---------------- */
+
+/* The product, as a page element. Note there is no `cursor: none` anywhere in
+   this file — the real pointer stays visible the whole time, because that is
+   the promise being made. */
+#marker {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  /* Soft on purpose. It crosses body text on its way to a control, and a hard
+     disc reads as a smudge over words while a soft one reads as a highlight. */
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--accent) 0%,
+    var(--accent) 22%,
+    transparent 70%
+  );
+  opacity: 0;
+  z-index: 40;
+  pointer-events: none;
+  transition: opacity 0.5s var(--ease), width 0.4s var(--spring),
+    height 0.4s var(--spring);
+  will-change: transform;
+}
+
+#marker.live {
+  opacity: 0.8;
+}
+
+#marker.chasing {
+  width: 22px;
+  height: 22px;
+}
+
+/* The pointer's ink trail. Sits under the marker and over the page, and is
+   never interactive. Transparent throughout — it is redrawn from a short
+   history of positions each frame rather than accumulating, so it leaves no
+   haze over the gradient behind it. */
+#trail {
+  position: fixed;
+  inset: 0;
+  z-index: 38;
+  pointer-events: none;
+}
+
+#ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
+  opacity: 0;
+  transform-origin: 50% 50%;
+  z-index: 39;
+  pointer-events: none;
+  transition: opacity 0.45s var(--ease), transform 0.65s var(--spring);
+}
+
+#ring.on {
+  opacity: 0.85;
+}
+
+/* ---------------- the bar ----------------
+ *
+ * Sticky, short, and quiet: it earns its place by holding the download link
+ * within reach at any scroll depth, not by being a site map. The backdrop only
+ * frosts once the page has moved, so at the top it is invisible against the
+ * hero.
+ */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.3s var(--ease), background-color 0.3s var(--ease);
+}
+
+.bar.stuck {
+  border-bottom-color: var(--rule);
+  background: color-mix(in srgb, var(--page) 82%, transparent);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  backdrop-filter: saturate(140%) blur(14px);
+}
+
+.bar-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 1.75rem;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.bar-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-decoration: none;
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  font-size: 1.0625rem;
+  flex: none;
+}
+
+.bar-logo img {
+  width: 22px;
+  height: 22px;
+}
+
+.bar-links {
+  display: flex;
+  align-items: center;
+  gap: 1.35rem;
+  margin-right: auto;
+  font-size: 0.875rem;
+}
+
+.bar-links a {
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.2s var(--ease);
+}
+
+.bar-links a:hover {
+  color: var(--ink);
+}
+
+.bar-links a.current {
+  color: var(--accent);
+}
+
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex: none;
+}
+
+.bar-source {
+  font-size: 0.875rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.bar-source:hover {
+  color: var(--ink);
+}
+
+/* Scoped to .bar so it outranks the base .btn rule, which is declared further
+   down the file and would otherwise win on source order alone. */
+.bar .btn--sm {
+  padding: 0.44rem 1rem;
+  font-size: 0.875rem;
+}
+
+.bar .btn--sm:hover {
+  transform: none;
+}
+
+/* The disclosure button only exists below the breakpoint. */
+.bar-toggle {
+  display: none;
+  margin-left: auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.bar-toggle-bars,
+.bar-toggle-bars::before,
+.bar-toggle-bars::after {
+  display: block;
+  width: 15px;
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: transform 0.28s var(--ease), opacity 0.2s var(--ease);
+}
+
+.bar-toggle-bars::before,
+.bar-toggle-bars::after {
+  content: "";
+  position: absolute;
+}
+
+.bar-toggle-bars::before {
+  transform: translateY(-5px);
+}
+
+.bar-toggle-bars::after {
+  transform: translateY(5px);
+}
+
+.bar-toggle[aria-expanded="true"] .bar-toggle-bars {
+  background: transparent;
+}
+
+.bar-toggle[aria-expanded="true"] .bar-toggle-bars::before {
+  transform: rotate(45deg);
+}
+
+.bar-toggle[aria-expanded="true"] .bar-toggle-bars::after {
+  transform: rotate(-45deg);
+}
+
+@media (max-width: 56rem) {
+  .bar-toggle {
+    display: inline-flex;
+    position: relative;
+  }
+
+  .bar-links {
+    position: absolute;
+    top: 56px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    margin: 0;
+    padding: 0.5rem 1.75rem 1.25rem;
+    background: var(--page);
+    border-bottom: 1px solid var(--rule);
+    font-size: 1rem;
+    display: none;
+  }
+
+  .bar-links.open {
+    display: flex;
+  }
+
+  .bar-links a {
+    padding: 0.7rem 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .bar-actions .bar-source {
+    display: none;
+  }
+}
+
+/* ---------------- hero ---------------- */
+
+.hero {
+  padding: clamp(3.5rem, 9vw, 6rem) 0 clamp(3rem, 7vw, 5rem);
+  text-align: center;
+}
+
+/* The mark inks itself on.
+ *
+ * A conic gradient used as a mask, swept from nothing to a full turn, reveals
+ * the ring the way a brush lays it down — starting at the gap in the stroke
+ * and travelling round to the splatter. It animates the real hand-drawn
+ * artwork rather than a traced approximation of it.
+ *
+ * --sweep is registered so it can interpolate. Its initial value is a full
+ * turn, not zero, so that a browser which ignores @property renders the
+ * finished mark rather than an empty box.
+ */
+@property --sweep {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 360deg;
+}
+
+@property --unsweep {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 360deg;
+}
+
+/* The mark is the switch for the pointer.
+ *
+ * A dot that chases the cursor from the moment the page loads is charming for
+ * about four seconds and irritating thereafter, so it is off until asked for.
+ * A real <button> rather than a click handler on a div, because this is a
+ * control: it needs to be reachable by keyboard and to announce its state. */
+.mark {
+  display: block;
+  width: clamp(76px, 17vw, 104px);
+  aspect-ratio: 1;
+  margin: 0 auto 0.9rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: transform 0.5s var(--spring);
+  --sweep: 360deg;
+  -webkit-mask-image: conic-gradient(
+    from 96deg,
+    #000 var(--sweep),
+    transparent var(--sweep)
+  );
+  mask-image: conic-gradient(
+    from 96deg,
+    #000 var(--sweep),
+    transparent var(--sweep)
+  );
+  animation: ink 1.2s var(--ease) both;
+}
+
+@keyframes ink {
+  from {
+    --sweep: 0deg;
+  }
+  to {
+    --sweep: 360deg;
+  }
+}
+
+.mark img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.mark-hint {
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin: 0 0 1.75rem;
+  transition: opacity 0.3s var(--ease);
+}
+
+/* While the pointer is on, the hint has done its job and gets out of the
+   way — still readable, no longer competing with the mark. */
+.pointer-on .mark-hint {
+  opacity: 0.5;
+}
+
+/* The wordmark builds a letter at a time, each landing with a small overshoot.
+   Starts only after the ring has finished inking, so the two read as one
+   sequence rather than a race. */
+/* Splitting a word into elements throws away pair kerning — the browser can no
+   longer tuck the "o" under the "T". A hair more negative tracking buys most
+   of that back at this size. */
+.build {
+  display: inline-flex;
+  letter-spacing: -0.065em;
+}
+
+.build i {
+  font-style: normal;
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.34em);
+  animation: rise 0.62s var(--spring) forwards;
+}
+
+.build i:nth-child(1) {
+  animation-delay: 1.06s;
+}
+.build i:nth-child(2) {
+  animation-delay: 1.14s;
+}
+.build i:nth-child(3) {
+  animation-delay: 1.22s;
+}
+.build i:nth-child(4) {
+  animation-delay: 1.3s;
+}
+
+@keyframes rise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tagline {
+  font-size: clamp(1.25rem, 3.6vw, 1.75rem);
+  line-height: 1.32;
+  letter-spacing: -0.03em;
+  margin: 1.5rem auto 0;
+  max-width: 22ch;
+  font-weight: 500;
+}
+
+/* ---------------- poster furniture ----------------
+ *
+ * Three borrowings from the print direction, kept quiet enough to live beside
+ * the annotation vocabulary rather than fight it.
+ */
+
+/* The mark at poster scale, bled off the top-right of the hero. Faint enough
+   to read as texture; it is the same stroke as the small one, so the page
+   looks printed on rather than decorated. */
+.hero {
+  position: relative;
+  /* Clips the bled print behind the hero; also contains the scattered
+     bubbles, which are positioned against this box. */
+  overflow: hidden;
+}
+
+.print {
+  position: absolute;
+  top: -14%;
+  right: -14%;
+  width: min(58vw, 760px);
+  height: auto;
+  opacity: 0.05;
+  transform: rotate(-9deg);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero .wrap {
+  position: relative;
+  z-index: 1;
+}
+
+/* A running strip. The only motion on the page that needs no scrolling,
+   hovering or clicking — which is what stops the first screens reading as
+   static. Duplicated content and a -50% translate give a seamless loop. */
+.marquee {
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  overflow: hidden;
+  padding: 0.85rem 0;
+}
+
+.marquee-run {
+  display: flex;
+  width: max-content;
+  animation: run 34s linear infinite;
+}
+
+.marquee-run span {
+  font-size: clamp(0.9375rem, 2vw, 1.25rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding-right: 0.6rem;
+}
+
+@keyframes run {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* The section's number, set once as furniture and once as a numeral big
+   enough to be part of the layout. */
+section[data-n] {
+  position: relative;
+  overflow: hidden;
+}
+
+section[data-n]::before {
+  content: attr(data-n);
+  position: absolute;
+  top: clamp(1.5rem, 4vw, 3rem);
+  right: clamp(-0.5rem, 1vw, 1rem);
+  font-size: clamp(7rem, 22vw, 18rem);
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  line-height: 0.8;
+  color: var(--ink);
+  opacity: 0.045;
+  pointer-events: none;
+  user-select: none;
+}
+
+section[data-n] > .wrap {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------- the slab ----------------
+ *
+ * The page's one raised voice. Everything else is quiet, bracketed and
+ * annotated; this is the single claim the product rests on, so it takes the
+ * full width, inverts the ground and carries the largest type on the page.
+ *
+ * Deliberately used once. Repeat it and it stops being emphasis and becomes a
+ * style — at which point the page is loud everywhere and therefore nowhere.
+ */
+.slab {
+  background: var(--ink);
+  color: var(--page);
+  border-top: 0;
+  padding: clamp(3.5rem, 9vw, 6rem) 0;
+}
+
+.slab-tag {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin: 0 0 1.75rem;
+}
+
+.slab-line {
+  font-size: clamp(1.75rem, 5.6vw, 3.75rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+  text-transform: uppercase;
+  max-width: 20ch;
+  margin: 0;
+}
+
+.slab-line em {
+  font-style: normal;
+  color: var(--accent-on-ink);
+}
+
+.slab-note {
+  margin: 2rem 0 0;
+  max-width: 34rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  opacity: 0.7;
+}
+
+/* ---------------- buttons ---------------- */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.8rem 1.6rem;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 550;
+  text-decoration: none;
+  transition: background-color 0.18s var(--ease), color 0.18s var(--ease),
+    transform 0.4s var(--spring);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn--solid {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn--solid:hover {
+  background: transparent;
+  color: var(--accent);
+}
+
+.btn--ghost {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn--ghost:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+a:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.requirement {
+  margin-top: 1.25rem;
+  font-size: 0.9375rem;
+}
+
+/* ---------------- the stage ---------------- */
+
+/* A diagram, not a screenshot. It is drawn in the page's own greys and is
+   obviously schematic, because dressing it up as a real capture would be a
+   claim about a build nobody has run yet. */
+
+.stage {
+  margin: clamp(2.5rem, 7vw, 4rem) auto 0;
+  perspective: 1400px;
+  max-width: 46rem;
+}
+
+.stage-caption {
+  height: 2.25rem;
+  margin-bottom: 1.25rem;
+  position: relative;
+}
+
+/* Deliberately not a flex container. Flex layout drops the whitespace between
+   a text run and an inline element, which welded "say" onto the opening quote
+   of the phrase that follows it. */
+.stage-caption span {
+  position: absolute;
+  inset: 0;
+  display: block;
+  text-align: center;
+  line-height: 2.25rem;
+  font-size: clamp(0.9375rem, 2vw, 1.0625rem);
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+}
+
+.stage-caption span.on {
+  opacity: 1;
+  transform: none;
+}
+
+.stage-caption em {
+  font-style: normal;
+  color: var(--ink);
+  font-weight: 550;
+}
+
+.panel {
+  --rx: 0deg;
+  --ry: 0deg;
+  background: linear-gradient(180deg, var(--sheen), transparent 45%),
+    var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  box-shadow: var(--lift);
+  overflow: hidden;
+  text-align: left;
+  transform: rotateX(var(--rx)) rotateY(var(--ry));
+  transition: transform 0.7s var(--ease);
+  transform-style: preserve-3d;
+}
+
+.panel-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.panel-bar i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: var(--well);
+}
+
+.panel-bar b {
+  margin-left: auto;
+  margin-right: auto;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  transform: translateX(-16px);
+}
+
+.panel-body {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+}
+
+.panel-side {
+  border-right: 1px solid var(--rule);
+  padding: 1rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+/* The skeleton greys need their own token. Reusing --well put them at almost
+   exactly the card's own lightness in dark mode, which made the whole diagram
+   dissolve into the panel. */
+.skel,
+.side-label,
+.block {
+  background: var(--skeleton);
+  border-radius: 4px;
+}
+
+.skel {
+  height: 8px;
+}
+
+.side-label {
+  height: 6px;
+  width: 45%;
+  border-radius: 3px;
+  opacity: 0.55;
+  margin-top: 0.35rem;
+}
+
+.side-label:first-child {
+  margin-top: 0;
+}
+
+.skel--on {
+  background: var(--skeleton-on);
+}
+
+.skel--title {
+  height: 13px;
+  width: 52%;
+  border-radius: 5px;
+  background: var(--skeleton-on);
+}
+
+.panel-main {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.blocks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.block {
+  height: 54px;
+  border-radius: 8px;
+  opacity: 0.72;
+}
+
+.lines--tail {
+  margin-top: 0.15rem;
+}
+
+.lines--tail .skel:nth-child(1) {
+  width: 76%;
+}
+
+.lines--tail .skel:nth-child(2) {
+  width: 41%;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.control {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--page);
+  color: var(--muted);
+  transition: color 0.4s var(--ease), border-color 0.4s var(--ease);
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.25rem;
+}
+
+.lines .skel:nth-child(2) {
+  width: 88%;
+}
+
+.lines .skel:nth-child(3) {
+  width: 94%;
+}
+
+.lines .skel:nth-child(4) {
+  width: 62%;
+}
+
+@media (max-width: 34rem) {
+  .panel-body {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-side {
+    display: none;
+  }
+}
+
+/* ---------------- sections ---------------- */
+
+section {
+  padding: clamp(4rem, 10vw, 7rem) 0;
+  border-top: 1px solid var(--rule);
+  /* Clears the sticky bar, so an anchor jump doesn't park the heading
+     underneath it. */
+  scroll-margin-top: 72px;
+}
+
+/* Scoped to .js, which dot.js sets on startup. If that file fails to load or
+   throws, the class is never added and every section is simply visible —
+   rather than a page of invisible content held at opacity zero forever. */
+.js [data-reveal] {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
+}
+
+.js [data-reveal].in {
+  opacity: 1;
+  transform: none;
+}
+
+.js [data-reveal][data-delay="1"] {
+  transition-delay: 0.08s;
+}
+
+.js [data-reveal][data-delay="2"] {
+  transition-delay: 0.16s;
+}
+
+.js [data-reveal][data-delay="3"] {
+  transition-delay: 0.24s;
+}
+
+.pair {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+
+@media (min-width: 44rem) {
+  .pair {
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }
+}
+
+.card {
+  position: relative;
+  padding: clamp(1.5rem, 4vw, 2rem);
+  background: linear-gradient(180deg, var(--sheen), transparent 55%),
+    transparent;
+}
+
+/* ---------------- the gatekeeper notice ---------------- */
+
+.notice {
+  position: relative;
+  padding: clamp(1.75rem, 4vw, 2.25rem);
+  margin-top: 2.5rem;
+  background: linear-gradient(180deg, var(--sheen), transparent 55%),
+    transparent;
+}
+
+.notice h3:first-child {
+  margin-top: 0;
+}
+
+.steps {
+  margin: 0.75rem 0 0;
+  padding-left: 1.35rem;
+}
+
+.steps li {
+  margin-bottom: 0.45rem;
+}
+
+.steps li:last-child {
+  margin-bottom: 0;
+}
+
+.divider {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 1.75rem 0;
+}
+
+.route {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+/* ---------------- plans ---------------- */
+
+.plans {
+  display: grid;
+  gap: 1rem;
+  margin: 2.5rem 0;
+}
+
+@media (min-width: 44rem) {
+  .plans {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.plan {
+  position: relative;
+  padding: clamp(1.75rem, 4vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, var(--sheen), transparent 55%),
+    transparent;
+}
+
+/* The paid plan's brackets are drawn solid; the free plan's are muted. The
+   distinction is carried by weight rather than by a fill or a badge. */
+.plan--free {
+  --bracket-ink: var(--muted);
+}
+
+.price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0.5rem 0 1.75rem;
+}
+
+.price .amount {
+  font-size: clamp(2.75rem, 7vw, 3.5rem);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.price .per {
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+.plan ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.plan li {
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+}
+
+.plan li:first-child {
+  border-top: 0;
+}
+
+/* A dot, of course. */
+.plan li::before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink);
+  transform: translateY(-2px);
+}
+
+.plan--free li::before {
+  background: var(--muted);
+}
+
+/* ---------------- fact lists ---------------- */
+
+.facts {
+  margin: 2.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Findings, enumerated. The ordinal sits out in the margin in the machine's
+   voice; the finding itself stays in the human one. */
+.facts li {
+  padding: 1.5rem 0;
+  border-top: 1px solid var(--rule);
+  display: grid;
+  grid-template-columns: 2.75rem 1fr;
+  gap: 0 1rem;
+  align-items: start;
+}
+
+.fact-no {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  opacity: 0.6;
+  padding-top: 0.42rem;
+}
+
+@media (max-width: 34rem) {
+  .facts li {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .fact-no {
+    padding-top: 0;
+  }
+}
+
+.facts li:last-child {
+  padding-bottom: 0;
+}
+
+.facts p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 46rem;
+}
+
+/* ---------------- footer ---------------- */
+
+/* The footer is a panel, not a band.
+ *
+ * Centred and narrower than the viewport so the page shows down both sides,
+ * with only the top corners rounded — it reads as something sliding up over
+ * the page rather than as the page's last stripe. The tint is a few per cent
+ * of the ink colour over a blur, so whatever scrolls underneath stays faintly
+ * visible through it.
+ *
+ * It lifts over the section above by a negative margin; that overlap is what
+ * makes it read as a separate surface instead of the next block down. */
+footer {
+  position: relative;
+  z-index: 2;
+  max-width: 75rem;
+  margin: clamp(-4rem, -5vw, -2rem) auto 0;
+  padding: clamp(2.25rem, 4.5vw, 3rem) clamp(0.5rem, 3vw, 2rem) 2.25rem;
+  border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent);
+  border-bottom: 0;
+  border-top-left-radius: clamp(1.6rem, 4vw, 3rem);
+  border-top-right-radius: clamp(1.6rem, 4vw, 3rem);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  backdrop-filter: blur(20px) saturate(130%);
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+/* The panel needs the section above to run underneath it, otherwise there is
+   nothing for the blur to blur and the overlap has no depth. */
+.closer {
+  padding-bottom: clamp(4.5rem, 9vw, 6.5rem);
+}
+
+footer a {
+  color: var(--ink);
+}
+
+/* The closing band. Centred and quiet — it repeats the ask without a border,
+   a tint, or a change of voice. */
+.closer {
+  text-align: center;
+}
+
+.closer .narrow {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.closer-actions {
+  margin-top: 2rem;
+}
+
+.foot-legal {
+  margin-top: 0.35rem !important;
+  opacity: 0.75;
+}
+
+.foot-top {
+  display: grid;
+  gap: 1.75rem;
+  padding-bottom: 1.75rem;
+}
+
+@media (min-width: 48rem) {
+  .foot-top {
+    grid-template-columns: 1.25fr 1fr;
+    gap: 2.5rem;
+  }
+}
+
+.foot-mark {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.foot-mark img {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  flex: none;
+}
+
+.foot-name {
+  margin: 0 0 0.1rem;
+  font-size: 1.0625rem;
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.foot-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.foot-head {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.65rem;
+}
+
+.foot-cols a {
+  display: block;
+  padding: 0.18rem 0;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9375rem;
+}
+
+.foot-cols a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.foot-bottom {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.foot-bottom p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+/* ---------------- reduced motion ----------------
+ *
+ * Not a courtesy. Vestibular disorders are real, the setting is an explicit
+ * request, and a page whose subject is a moving dot is exactly the kind that
+ * should honour it. Everything below stops; nothing below disappears.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .js [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+
+  #marker,
+  #ring,
+  #trail {
+    display: none;
+  }
+
+  /* The mark must end up fully inked, not frozen part-drawn, and the wordmark
+     must be present rather than stuck at opacity zero. */
+  .mark {
+    --sweep: 360deg;
+    animation: none;
+  }
+
+  .mark-sweep {
+    --unsweep: 360deg;
+    animation: none;
+  }
+
+  .marquee-run,
+  .bubble {
+    animation: none;
+  }
+
+  .slab-ink {
+    display: none;
+  }
+
+
+
+  .build i {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+
+  .stage-caption span:first-child {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Detail pages carry one section, so it needs its own top breathing room. */
+.inner {
+  padding-top: clamp(1rem, 4vw, 3rem);
+}
+
+.inner section {
+  border-top: 0;
+}
+
+/* ---------------- image slots ----------------
+ *
+ * Placeholders that carry their own brief. Each says what to shoot and at what
+ * ratio, and reserves the exact space the real photograph will occupy — so the
+ * layout is finished now and swapping in a file later changes nothing else.
+ *
+ * To fill one: drop an <img> inside the <figure> and delete the tag span.
+ */
+.shot {
+  position: relative;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0 10px,
+      color-mix(in srgb, var(--ink) 4%, transparent) 10px 11px
+    ),
+    color-mix(in srgb, var(--ink) 2.5%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 4px;
+}
+
+.shot > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 3px;
+  display: block;
+}
+
+.shot--wide {
+  aspect-ratio: 16 / 9;
+  max-width: 52rem;
+  margin: 0 auto;
+}
+
+.shot--tall {
+  aspect-ratio: 4 / 5;
+  width: min(34vw, 22rem);
+  flex: none;
+}
+
+.shot-tag {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+  padding: 0 1rem;
+}
+
+.shot figcaption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--muted);
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+/* The mark, tiled behind the image. Same stroke repeated — the Warhol grid
+   done with the only picture this product owns. */
+.tiled {
+  position: relative;
+  padding: clamp(4rem, 9vw, 7rem) 0 clamp(6rem, 10vw, 8rem);
+  overflow: hidden;
+}
+
+.tiles {
+  position: absolute;
+  inset: -5%;
+  background: url(mark.png) 0 0 / clamp(80px, 9vw, 130px) auto repeat;
+  opacity: 0.06;
+  transform: rotate(-6deg);
+  pointer-events: none;
+}
+
+.tiled .wrap {
+  position: relative;
+  z-index: 1;
+}
+
+/* Two words closing in on the image from either side. */
+.split {
+  padding: clamp(4rem, 9vw, 7rem) 0;
+  /* Hidden, so a word that has not arrived yet cannot widen the page. */
+  overflow: hidden;
+}
+
+/* The image is the stage; the words hang off two opposite corners of it and
+   overlap the edge, the way a poster prints type over a photograph. Placement
+   is done with insets, never transforms — the animation owns transform, and
+   sharing it would mean the two fight every frame. */
+.split-row {
+  position: relative;
+  width: min(34vw, 22rem);
+  margin: 0 auto;
+}
+
+@media (max-width: 44rem) {
+  .split-row {
+    width: min(70vw, 20rem);
+  }
+}
+
+.split-word {
+  position: absolute;
+  z-index: 2;
+  font-size: clamp(1.5rem, 5.5vw, 4rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+/* Its right edge lands inside the picture, so the word runs out of the
+   top-left corner and off to the left. */
+.split-word--l {
+  top: 5%;
+  right: 52%;
+  text-align: right;
+}
+
+/* And the mirror: out of the bottom-right corner, off to the right. */
+.split-word--r {
+  bottom: 5%;
+  left: 52%;
+  text-align: left;
+  color: var(--accent);
+}
+
+.shot--tall {
+  width: 100%;
+}
+
+/* ---------------- keyword bubbles ----------------
+ *
+ * Scattered rather than set in a row: they sit out in the hero's left and
+ * right margins, at irregular heights, each drifting on its own path and its
+ * own clock so the group never falls into step.
+ *
+ * Positions are in CSS rather than generated, so the scatter is identical on
+ * every load — a layout that reshuffles itself on refresh reads as broken
+ * rather than playful.
+ *
+ * Below the breakpoint there are no margins to scatter into, so they collapse
+ * back to a centred wrapped row.
+ */
+.bubbles {
+  list-style: none;
+  margin: 2.5rem auto 0;
+  padding: 0 1.75rem;
+  max-width: 42rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.55rem 0.5rem;
+}
+
+/* Each bubble carries its own colour, but only shows it under the cursor.
+ *
+ * At rest the whole cluster is neutral, so the hero stays quiet and the one
+ * accent on the page keeps meaning "you can act on this". The colour is a
+ * reward for poking at it rather than decoration you have to look past.
+ *
+ * The hues are a muted warm family chosen to sit with blush, and every one is
+ * checked against the bubble's own background: the lowest measures 4.65:1 and
+ * the highest 6.22:1, so each stays readable the moment it appears.
+ */
+.bubble {
+  --pop: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--card) 78%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: default;
+  transition: transform 0.35s var(--spring), color 0.28s var(--ease),
+    border-color 0.28s var(--ease), background-color 0.28s var(--ease);
+}
+
+/* On hover the pill fills solid and the label turns white.
+ *
+ * A tinted label on a pale wash was the first attempt and it read as vague —
+ * the colour was doing too little work. Filling the whole shape is what makes
+ * it pop, and it also lets the hues be properly saturated: the fill carries
+ * the colour, and white text on it is a contrast problem I can solve
+ * separately rather than a compromise baked into the hue.
+ *
+ * White on each fill: the weakest is 4.57:1, the strongest 6.83:1. Two of the
+ * vivid picks failed at first — terracotta at 4.49 and ochre at 3.23 — and are
+ * darkened along their own hue until they clear.
+ */
+.bubble:hover,
+.bubble:focus-visible {
+  color: #fff;
+  background: var(--pop);
+  border-color: var(--pop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.bubble:nth-child(1) { --pop: #B03A2E; }  /* brick */
+.bubble:nth-child(2) { --pop: #BE551B; }  /* terracotta */
+.bubble:nth-child(3) { --pop: #907112; }  /* ochre */
+.bubble:nth-child(4) { --pop: #5F8020; }  /* moss */
+.bubble:nth-child(5) { --pop: #0E7A5F; }  /* pine */
+.bubble:nth-child(6) { --pop: #2F6795; }  /* slate */
+.bubble:nth-child(7) { --pop: #8A3F7A; }  /* plum */
+
+ /* "Never clicks" is the one claim that matters most, so it is the only bubble
+   that carries weight at rest — still without colour. Scoped so it cannot win
+   over the hover fill, which it would on a plain :not() free selector. */
+.bubble--accent:not(:hover):not(:focus-visible) {
+  font-weight: 600;
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.bubble--accent {
+  font-weight: 600;
+}
+
+@media (min-width: 64rem) {
+  .bubbles {
+    position: absolute;
+    inset: 0;
+    max-width: none;
+    margin: 0;
+    display: block;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .bubble {
+    position: absolute;
+    pointer-events: auto;
+    --dx: 0px;
+    --dy: -10px;
+    animation: drift 9s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  /* Two loose clumps rather than two neat columns: pulled in off the screen
+     edges so they read as gathered around the hero, and deliberately not
+     mirrored — no left position matches a right one, and no two heights line
+     up across the middle.
+
+     All of them stay in the upper half. The mock window occupies the lower
+     part of the hero, and a keyword drifting across its title bar reads as a
+     mistake rather than as depth.
+
+     Left clump. */
+  .bubble:nth-child(1) { top: 24%; left: 13%;  --dx: 8px;   --dy: -12px; animation-duration: 8.4s; }
+  .bubble:nth-child(3) { top: 36%; left: 9%;   --dx: -10px; --dy: -8px;  animation-duration: 10.6s; }
+  .bubble:nth-child(6) { top: 46%; left: 15%;  --dx: 6px;   --dy: -14px; animation-duration: 9.3s; }
+
+  /* Right clump, one more and set to different heights again. */
+  .bubble:nth-child(2) { top: 19%; right: 12%; --dx: -9px; --dy: -11px; animation-duration: 11.2s; }
+  .bubble:nth-child(4) { top: 31%; right: 16%; --dx: 7px;  --dy: -13px; animation-duration: 8.9s; }
+  .bubble:nth-child(5) { top: 41%; right: 9%;  --dx: -6px; --dy: -9px;  animation-duration: 10.1s; }
+  .bubble:nth-child(7) { top: 50%; right: 14%; --dx: 9px;  --dy: -12px; animation-duration: 9.8s; }
+
+  /* Movement only — the colour comes from the rule above, which must not be
+     re-specified here or every bubble goes back to one shade. */
+  .bubble:hover {
+    transform: translate(var(--dx), var(--dy)) scale(1.07);
+  }
+}
+
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(var(--dx), var(--dy)); }
+}
+
+
+/* Ink drifting through the slab.
+ *
+ * The reference for this area was a WebGL starfield. A starfield says nothing
+ * about a pointing tool, and reproducing it means shipping a 3D library for
+ * decoration — so this is the same idea in the material the product is
+ * actually made of: specks of ink, moving slowly, in the slab's own accent.
+ */
+.slab {
+  position: relative;
+  overflow: hidden;
+}
+
+.slab-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.slab .wrap {
+  position: relative;
+  z-index: 1;
+}
+
+/* The one place on the site that sells anything.
+ *
+ * Each tier carries its own action rather than sharing one button below the
+ * pair. Two cards and a single button forces the reader to work out which card
+ * the button belongs to, and the answer is always the paid one — which makes
+ * the free tier read as a description of what you don't get. */
+.plan-cta {
+  /* Pushes both actions to the bottom of their card, so they line up across
+     the pair no matter how many features each lists. */
+  margin-top: auto;
+  padding-top: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+#pay[disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+#pay-note {
+  margin: 0;
+  /* Reserved so the card doesn't resize as the message changes under it. */
+  min-height: 2.8em;
+}
+
+.plan-cta .small {
+  margin: 0;
+}

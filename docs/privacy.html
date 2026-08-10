@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy — Toki</title>
+    <meta
+      name="description"
+      content="What Toki can see, and what it does with it."
+    />
+    <link rel="icon" href="favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="icon.png" />
+    <link rel="stylesheet" href="style.css" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Toki" />
+    <meta
+      property="og:description"
+      content="A macOS assistant that watches your hands and shows you where to click. It points — it never clicks, and it never moves your real cursor."
+    />
+    <meta property="og:url" content="https://toki-plum.vercel.app/" />
+    <meta
+      property="og:image"
+      content="https://toki-plum.vercel.app/icon.png"
+    />
+    <meta name="twitter:card" content="summary" />
+  </head>
+
+  <body>
+
+    <div class="page">
+      <nav class="bar" id="bar">
+        <div class="bar-inner">
+          <!-- The mark alone. The name is carried by the hero wordmark, and
+               setting it twice made the two read as separate objects rather
+               than one identity. The link still has an accessible name. -->
+          <a class="bar-logo" href="index.html" aria-label="Toki, back to top">
+            <img src="mark.png" alt="" width="508" height="508" />
+          </a>
+
+          <button
+            type="button"
+            class="bar-toggle"
+            id="bar-toggle"
+            aria-expanded="false"
+            aria-controls="bar-links"
+          >
+            <span class="bar-toggle-bars" aria-hidden="true"></span>
+            <span class="sr-only">Menu</span>
+          </button>
+
+          <div class="bar-links" id="bar-links">
+            <a href="what.html">What it does</a>
+            <a href="privacy.html" class="current">Privacy</a>
+            <a href="state.html">State</a>
+          </div>
+
+          <div class="bar-actions">
+            <a class="bar-source" href="https://github.com/GargiGupta-io/toki"
+              >Source</a
+            >
+            <a
+              class="btn btn--solid btn--sm"
+              href="https://github.com/GargiGupta-io/toki/releases/latest"
+              >Download</a
+            >
+          </div>
+        </div>
+      </nav>
+      <main class="inner">
+        <section id="permissions" data-n="02">
+          <div class="wrap">
+            <div class="sec-head" data-reveal>
+              <span class="sec-no">02</span>
+              <span class="tag">What it can see</span>
+              <span class="sec-coord">REGION · PERMISSIONS</span>
+            </div>
+            <h2 class="section-title narrow" data-reveal>
+              Camera, microphone and screen, all at once.
+            </h2>
+            <p class="lede narrow muted" data-reveal>
+              That is the capability set of spyware. An app holding those grants
+              has to be provably trustworthy rather than merely
+              well-intentioned, and that shapes most of how this one is built.
+            </p>
+
+            <ul class="facts">
+              <li data-reveal>
+                <span class="fact-no">01</span>
+                <div class="fact-body">
+                <h3>Your camera never leaves your Mac</h3>
+                <p>
+                  Hand tracking runs locally through MediaPipe. The models are
+                  bundled with the app and checksum-pinned rather than
+                  downloaded. No frame is ever uploaded.
+                </p>
+              </div>
+              </li>
+              <li data-reveal>
+                <span class="fact-no">02</span>
+                <div class="fact-body">
+                <h3>The app's window cannot reach the internet</h3>
+                <p>
+                  Its content security policy permits zero remote origins — not
+                  Toki's own service, not the sign-in provider, not a font.
+                  Every outbound call is made from Rust instead, which also
+                  keeps access tokens out of the JavaScript entirely.
+                </p>
+              </div>
+              </li>
+              <li data-reveal>
+                <span class="fact-no">03</span>
+                <div class="fact-body">
+                <h3>The service is told almost nothing</h3>
+                <p>
+                  When you ask for guidance it receives a prompt and one image.
+                  It knows nothing about your display, your calibration, or what
+                  the accessibility scan found. Turning an answer back into a
+                  place on screen happens on your Mac.
+                </p>
+              </div>
+              </li>
+              <li data-reveal>
+                <span class="fact-no">04</span>
+                <div class="fact-body">
+                <h3>Nothing is searched for on your machine</h3>
+                <p>
+                  Toki never scans directories to find a program to run.
+                  Anything it launches would inherit its screen-recording
+                  permission, so a path is used only because someone typed it
+                  into settings, and it must be absolute and must exist.
+                </p>
+              </div>
+              </li>
+            </ul>
+          </div>
+        </section>
+      </main>
+
+      <!-- Closing band. The page has been honest for five sections about what
+           is missing; this is the one place it asks for anything, and it still
+           repeats the caveat rather than dropping it to close. -->
+      <section class="closer">
+        <div class="wrap">
+          <h2 class="section-title" data-reveal>
+            It points at what you're looking for.
+          </h2>
+          <p class="lede muted narrow" data-reveal>
+            Free to use everything that runs on your Mac. Nothing is clicked on
+            your behalf, and your cursor stays where you left it.
+          </p>
+          <div class="actions closer-actions" data-reveal>
+            <a
+              class="btn btn--solid"
+              href="https://github.com/GargiGupta-io/toki/releases/latest"
+              >Download for macOS</a
+            >
+            <a
+              class="btn btn--ghost"
+              href="https://github.com/GargiGupta-io/toki"
+              >Read the source</a
+            >
+          </div>
+          <p class="small muted" data-reveal style="margin-top: 1.25rem">
+            Signed and notarized by Apple. It opens like any other app.
+          </p>
+        </div>
+      </section>
+
+
+      <footer>
+        <div class="wrap">
+          <div class="foot-top">
+            <div class="foot-brand">
+              <div class="foot-mark">
+                <img src="icon.png" alt="The Toki app icon" width="54" height="54" />
+                <div>
+                  <p class="foot-name">Toki</p>
+                  <p class="small muted" style="margin: 0">
+                    This is what it looks like in your Dock.
+                  </p>
+                </div>
+              </div>
+              <p class="small muted" style="margin-top: 1.25rem">
+                It points. It never clicks, and it never moves your real cursor.
+              </p>
+            </div>
+
+            <div class="foot-cols">
+              <div>
+                <p class="foot-head">The page</p>
+                <a href="what.html">What it does</a>
+                    <a href="#permissions">Privacy</a>
+                    <a href="state.html">Where it's up to</a>
+              </div>
+              <div>
+                <p class="foot-head">The project</p>
+                <a href="https://github.com/GargiGupta-io/toki">Source</a>
+                <a href="https://github.com/GargiGupta-io/toki/releases"
+                  >Releases</a
+                >
+                <a
+                  href="https://github.com/GargiGupta-io/toki/blob/main/README.md"
+                  >README</a
+                >
+                <a href="https://github.com/GargiGupta-io/toki/blob/main/LICENSE"
+                  >Licence</a
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="foot-bottom">
+            <p>
+              Built by
+              <a href="https://github.com/GargiGupta-io">Gargi Gupta</a>. 700+
+              commits, 440+ tests.
+            </p>
+            <p>
+              Source-available, not open source — redistribution, derivative
+              works, commercial use, and presenting it as your own are not
+              permitted.
+            </p>
+            <p class="foot-legal">© 2026 Gargi Gupta. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Vendored, not fetched. See vendor/README.md: a page advertising an app
+         that permits zero remote origins should not itself load code from
+         someone else's CDN. -->
+    <script src="vendor/anime.umd.min.js"></script>
+    <script src="dot.js"></script>
+  </body>
+</html>

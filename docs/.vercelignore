@@ -1,0 +1,13 @@
+# Notes on the Vercel setup live here rather than in vercel.json, because that
+# file is schema-checked and rejects any key it does not recognise — including
+# a "//" comment key. This file allows comments; that one does not.
+#
+# vercel.json turns on cleanUrls so pages address each other as /state rather
+# than /state.html, matching how the links are already written and how
+# Cloudflare serves them. There is no build step: the folder is the site.
+#
+# Below: Cloudflare's Pages Function. It does not run on Vercel, and uploading it
+# would publish the source as a plain file the browser could download. When
+# accounts and payments are connected here, this gets ported to an api/
+# directory instead — see the note in vercel.json.
+functions
