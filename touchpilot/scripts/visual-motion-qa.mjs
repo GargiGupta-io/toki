@@ -8,8 +8,8 @@ const blobCursor = readFileSync("apps/desktop/src/BlobCursor.tsx", "utf8");
 const blobCursorCss = readFileSync("apps/desktop/src/BlobCursor.css", "utf8");
 const creatureLayer = readFileSync("apps/desktop/src/TokiCreatureLayer.tsx", "utf8");
 const creatureCss = readFileSync("apps/desktop/src/TokiCreatureLayer.css", "utf8");
-const statusRing = readFileSync("apps/desktop/src/TokiStatusRing.tsx", "utf8");
-const statusRingCss = readFileSync("apps/desktop/src/TokiStatusRing.css", "utf8");
+const spotlight = readFileSync("apps/desktop/src/TokiGuidanceSpotlight.tsx", "utf8");
+const spotlightCss = readFileSync("apps/desktop/src/TokiGuidanceSpotlight.css", "utf8");
 const topUtility = readFileSync("apps/desktop/src/TokiTopUtilitySurface.tsx", "utf8");
 const guidanceAcceptance = readFileSync(
   "apps/desktop/src/guidanceAcceptance.ts",
@@ -39,10 +39,12 @@ check(
 );
 
 check(
-  "target ring motion has a reduced-motion fallback",
-  /@media\s*\(prefers-reduced-motion:\s*reduce\)/.test(statusRingCss) &&
-    /\.toki-status-ring svg,[\s\S]*\.toki-status-ring__region-progress[\s\S]*animation:\s*none/.test(
-      statusRingCss,
+  // Somebody who asked for less motion still has to be told where to look, so
+  // the outline and the dimming appear -- they just do not fade in.
+  "target outline motion has a reduced-motion fallback",
+  /@media\s*\(prefers-reduced-motion:\s*reduce\)/.test(spotlightCss) &&
+    /\.toki-spotlight__ring\s*\{\s*animation-duration:\s*1ms/.test(
+      spotlightCss.replace(/\.toki-spotlight__scrim,\s*/g, ""),
     ),
 );
 
@@ -62,27 +64,28 @@ check(
 );
 
 check(
-  "accepted target owns the rotating status ring",
-  creatureLayer.includes("target != null") &&
-    creatureLayer.includes("<TokiStatusRing") &&
-    creatureLayer.includes("target.x + target.width / 2") &&
-    creatureLayer.includes("target.y + target.height / 2"),
+  // A rotating circle with the mode written around it sat on the control it
+  // was pointing at, saying what the notch and the dotted outline already say.
+  "no status ring is drawn over the target",
+  !creatureLayer.includes("<TokiStatusRing"),
 );
 
 check(
-  "wide targets receive a full region outline",
-  creatureLayer.includes("targetWidth={target.width}") &&
-    creatureLayer.includes("targetHeight={target.height}") &&
-    statusRing.includes("getTargetCueGeometry") &&
-    statusRing.includes("data-shape={geometry.shape}") &&
-    statusRing.includes('className="toki-status-ring__region-progress"'),
+  // The outline now comes from the spotlight, sized to the target itself, so a
+  // wide control gets a wide box and a small one gets a small box without a
+  // separate shape decision.
+  "the target outline is sized from the target",
+  spotlight.includes("target.width + paddingPx * 2") &&
+    spotlight.includes("target.height + paddingPx * 2") &&
+    spotlight.includes('className="toki-spotlight__ring"'),
 );
 
 check(
-  "compact targets preserve the circular ring",
-  statusRing.includes('geometry.shape === "region"') &&
-    statusRing.includes('viewBox="0 0 52 52"') &&
-    statusRing.includes('className="toki-status-ring__orbit"'),
+  // Dots read as something marked over another application's interface; a
+  // solid rounded rectangle reads as a focus ring that application drew.
+  "the target outline reads as an annotation",
+  spotlightCss.includes("stroke-dasharray: 0.1") &&
+    spotlightCss.includes("stroke-linecap: round"),
 );
 
 check(

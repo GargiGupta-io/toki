@@ -26,3 +26,18 @@
 .inner-dot {
   position: absolute;
 }
+
+/*
+ * The roundness.
+ *
+ * Drawn over the merged droplet rather than in it, so it is never thresholded
+ * by the merge filter and stays a soft sheen. Both of its gradients fade out
+ * well before the edge, which is what keeps a crisp circular rim from appearing
+ * over the softer silhouette underneath.
+ */
+.blob-sheen {
+  position: absolute;
+  pointer-events: none;
+  will-change: transform;
+  transform: translate(-50%, -50%);
+}

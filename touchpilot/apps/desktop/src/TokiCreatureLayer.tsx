@@ -1,16 +1,27 @@
 import type { ReactNode } from "react";
 import type { TargetBox } from "@toki/shared";
 import type { TokiCreatureState } from "./tokiCreatureState";
-import { TokiStatusRing } from "./TokiStatusRing";
 import "./TokiCreatureLayer.css";
 
+/*
+ * No ring at the target any more.
+ *
+ * A rotating circle with the mode written around it -- "Guiding" -- sat on top
+ * of the control being pointed at, moved, and said the same thing as the notch
+ * and the dotted outline. Three things narrating one step, and the one drawn
+ * over the target was the one covering it.
+ *
+ * `target` stays in the signature because every caller passes it and the layer
+ * is the natural place for anything that needs to be drawn at the target again.
+ * Nothing is drawn from it today.
+ */
 type TokiCreatureLayerProps = {
   state: TokiCreatureState;
   target: TargetBox | null;
   children: ReactNode;
 };
 
-export function TokiCreatureLayer({ state, target, children }: TokiCreatureLayerProps) {
+export function TokiCreatureLayer({ state, children }: TokiCreatureLayerProps) {
   return (
     <div
       className="toki-creature-layer"
@@ -27,15 +38,6 @@ export function TokiCreatureLayer({ state, target, children }: TokiCreatureLayer
       data-reason={state.reason}
       aria-hidden="true"
     >
-      {target != null ? (
-        <TokiStatusRing
-          centerX={target.x + target.width / 2}
-          centerY={target.y + target.height / 2}
-          targetWidth={target.width}
-          targetHeight={target.height}
-          state={state}
-        />
-      ) : null}
       {children}
     </div>
   );

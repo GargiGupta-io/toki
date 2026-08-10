@@ -105,7 +105,7 @@ type NativeInvoke = (
   args?: Record<string, unknown>,
 ) => Promise<unknown>;
 
-type NativeCodexVisionResponse = {
+type NativeGeminiVisionResponse = {
   rawAnswer: string;
   providerName: string;
   durationMs: number;
@@ -131,6 +131,30 @@ export type PointerExplanationProviderOptions = {
   invokeImpl?: NativeInvoke;
   model?: string;
   timeoutMs?: number;
+  /**
+   * Ask the service instead of a CLI on this machine.
+   *
+   * Reading a locked control is the same job as reading a screen for guidance,
+   * and guidance already goes to the service. Only this path did not, so it
+   * kept asking for a developer CLI and reporting "CLI guidance is not
+   * configured" -- on a build where the vision provider was working, for a
+   * feature the person had no reason to think was wired differently.
+   *
+   * The CLI stays as the fallback for a machine with no service configured.
+   */
+  hostedVision?: {
+    send: (body: {
+      prompt: string;
+      imageBase64: string;
+      imageFormat: "png" | "jpeg";
+      outputSchema?: unknown;
+    }) => Promise<
+      | { kind: "ok"; rawAnswer: string; providerName?: string }
+      | { kind: "upgrade_required"; error: string }
+      | { kind: "signed_out"; error: string }
+      | { kind: "error"; error: string }
+    >;
+  };
 };
 
 const DEFAULT_TIMEOUT_MS = 25_000;
@@ -510,7 +534,7 @@ function clarify(
 export function verifyPointerExplanationResponse(
   rawAnswer: string,
   request: PointerExplanationProviderRequest,
-  providerName = "codex-subscription",
+  providerName = "gemini",
 ): PointerExplanationProviderResult {
   let parsed: RawPointerExplanationResponse;
   try {
@@ -619,15 +643,42 @@ export function verifyPointerExplanationResponse(
   };
 }
 
-export async function requestCodexPointerExplanation(
+export async function requestGeminiPointerExplanation(
   request: PointerExplanationProviderRequest,
   options: PointerExplanationProviderOptions = {},
 ): Promise<PointerExplanationProviderResult> {
   const invokeImpl = options.invokeImpl ?? (invoke as NativeInvoke);
   const timeoutMs = Math.max(5_000, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
+  // The service first, when there is one. Same picture, same question, and it
+  // does not need a binary on this machine to answer it.
+  if (options.hostedVision != null) {
+    const reply = await options.hostedVision.send({
+      prompt: createPointerExplanationPrompt(request),
+      imageBase64: request.image.imageBase64,
+      imageFormat: request.image.format,
+      outputSchema: POINTER_EXPLANATION_OUTPUT_SCHEMA,
+    });
+
+    if (reply.kind === "ok") {
+      return verifyPointerExplanationResponse(
+        reply.rawAnswer,
+        request,
+        reply.providerName || "toki-service",
+      );
+    }
+
+    return clarify(
+      request,
+      reply.kind === "signed_out" || reply.kind === "upgrade_required"
+        ? "provider_unavailable"
+        : "provider_unavailable",
+      `I couldn't read the locked control from the current screen: ${reply.error}`,
+    );
+  }
+
   try {
-    const response = (await invokeImpl("request_codex_vision_guidance", {
+    const response = (await invokeImpl("request_gemini_vision_guidance", {
       request: {
         imageBase64: request.image.imageBase64,
         imageFormat: request.image.format,
@@ -636,12 +687,12 @@ export async function requestCodexPointerExplanation(
         model: options.model?.trim() || null,
         timeoutMs,
       },
-    })) as NativeCodexVisionResponse;
+    })) as NativeGeminiVisionResponse;
 
     return verifyPointerExplanationResponse(
       response.rawAnswer,
       request,
-      response.providerName || "codex-subscription",
+      response.providerName || "gemini",
     );
   } catch (error) {
     return clarify(

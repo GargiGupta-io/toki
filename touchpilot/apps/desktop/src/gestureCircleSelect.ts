@@ -217,28 +217,51 @@ function distance(
  * losses are ordinary -- but it does break angular continuity, handled through
  * the bridge gap below.
  */
+/**
+ * The thresholds a stroke is judged by.
+ *
+ * Widened to `number` deliberately. Frozen object literals infer their literal
+ * values, so the inferred type would say `requiredDegrees: 700` -- and then the
+ * only policy assignable to it is the one it came from, which defeats the point
+ * of passing one in.
+ */
+export type CircleSelectPolicy = {
+  readonly [Key in keyof typeof circleSelectPolicy]: number;
+};
+
 export function advanceCircleStroke({
   previous,
   point,
   nowMs,
+  /*
+   * Which thresholds to judge this stroke by.
+   *
+   * A hand in the air and a finger on a trackpad are not the same instrument.
+   * The hand needs two laps because one is a motion people make by accident
+   * while thinking; a trackpad is precise, deliberate, and already gated behind
+   * a held key, so demanding two laps of it is just work. Same detector, same
+   * geometry -- only the numbers differ.
+   */
+  policy = circleSelectPolicy,
 }: {
   previous: CircleStrokeState;
   point: { x: number; y: number } | null;
   nowMs: number;
+  policy?: CircleSelectPolicy;
 }): CircleStrokeState {
   if (previous.phase === "complete" || previous.phase === "abandoned") {
     return previous;
   }
 
-  const settled = nowMs - previous.armedAtMs >= circleSelectPolicy.settleMs;
+  const settled = nowMs - previous.armedAtMs >= policy.settleMs;
 
   // Time out first, so a stalled stroke is abandoned even on a frame with no
   // hand in it -- which is exactly the frame a stall tends to arrive on.
   const idleFor = nowMs - previous.lastProgressAtMs;
   const limit =
     previous.startedAtMs == null
-      ? circleSelectPolicy.beginMs
-      : circleSelectPolicy.stallMs;
+      ? policy.beginMs
+      : policy.stallMs;
   if (idleFor >= limit) {
     return { ...previous, phase: "abandoned" };
   }
@@ -249,7 +272,7 @@ export function advanceCircleStroke({
 
   const sample: StrokePoint = { x: point.x, y: point.y, atMs: nowMs };
   const kept = [...previous.points, sample].filter(
-    (entry) => nowMs - entry.atMs <= circleSelectPolicy.historyMs,
+    (entry) => nowMs - entry.atMs <= policy.historyMs,
   );
 
   // The untwist is still swinging the hand. Keep the path so the trail can be
@@ -274,12 +297,12 @@ export function advanceCircleStroke({
   const anchor = previous.points[0] ?? sample;
   const started =
     previous.startedAtMs ??
-    (distance(anchor, sample) >= circleSelectPolicy.startRadiusPx ? nowMs : null);
+    (distance(anchor, sample) >= policy.startRadiusPx ? nowMs : null);
 
   const from = previous.lastHeadingPoint ?? anchor;
   // Wait for enough travel to have a direction at all. Heading over a one pixel
   // step is tremor, and sixty of those a second would drown the real curve.
-  if (distance(from, sample) < circleSelectPolicy.minimumSegmentPx) {
+  if (distance(from, sample) < policy.minimumSegmentPx) {
     return { ...previous, points: kept, startedAtMs: started };
   }
 
@@ -289,7 +312,7 @@ export function advanceCircleStroke({
 
   if (
     previous.lastHeadingDegrees == null ||
-    gapMs > circleSelectPolicy.bridgeGapMs
+    gapMs > policy.bridgeGapMs
   ) {
     // Nothing to measure against: either this is the first segment, or the hand
     // was missing long enough that whatever it did is unknown. Resume from here
@@ -306,17 +329,17 @@ export function advanceCircleStroke({
 
   const delta = shortestAngleDelta(previous.lastHeadingDegrees, heading);
   const usable =
-    Math.abs(delta) <= circleSelectPolicy.maximumFrameDegrees ? delta : 0;
+    Math.abs(delta) <= policy.maximumFrameDegrees ? delta : 0;
   const turnedDegrees = previous.turnedDegrees + usable;
   const progress = Math.min(
     1,
-    Math.abs(turnedDegrees) / circleSelectPolicy.requiredDegrees,
+    Math.abs(turnedDegrees) / policy.requiredDegrees,
   );
 
   return {
     ...previous,
     phase:
-      Math.abs(turnedDegrees) >= circleSelectPolicy.requiredDegrees
+      Math.abs(turnedDegrees) >= policy.requiredDegrees
         ? "complete"
         : started == null
           ? "waiting"
@@ -329,7 +352,7 @@ export function advanceCircleStroke({
     lastHeadingPoint: sample,
     loopStartedAtMs:
       previous.loopStartedAtMs ??
-      (Math.abs(turnedDegrees) >= circleSelectPolicy.loopStartDegrees
+      (Math.abs(turnedDegrees) >= policy.loopStartDegrees
         ? from.atMs
         : null),
     // Only turning counts as progress. A hand travelling in a dead straight

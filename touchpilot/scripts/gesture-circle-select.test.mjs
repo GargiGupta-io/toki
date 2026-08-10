@@ -7,6 +7,11 @@ import {
   createCircleStroke,
   strokeBounds,
 } from "../apps/desktop/src/gestureCircleSelect.ts";
+import {
+  placeStrokePoint,
+  trailBounds,
+} from "../apps/desktop/src/selectionTrailPath.ts";
+import { fluidTrailPolicy } from "../apps/desktop/src/fluidTrail.ts";
 
 /**
  * Circling a thing to select it.
@@ -292,14 +297,129 @@ test("the frame reads its clock once", () => {
 // trail is the only feedback the gesture has: there is no click, no sound, and
 // the panel is elsewhere.
 
-const trail = readFileSync(
-  path.join(here, "..", "apps", "desktop", "src", "TokiSelectionTrail.tsx"),
-  "utf8",
-);
+// The component and the geometry it draws, read as one thing. The arithmetic
+// moved into its own module after a length mismatch between the drawn points
+// and the recorded ones threw during render and tore down the whole overlay --
+// a component that imports a stylesheet cannot be tested without a browser, and
+// that bug deserved a test that runs.
+const trailViewport = { width: 1440, height: 900, scaleFactor: 2 };
+
+/** A loop sampled at the rate the cursor actually is: every 50ms. */
+function trailLoop({ degrees = 200, radius = 60, nowMs = 100_000 } = {}) {
+  const steps = Math.round(degrees / 10);
+
+  return Array.from({ length: steps }, (_, i) => {
+    const angle = ((degrees / steps) * i * Math.PI) / 180;
+    return {
+      x: 700 + Math.cos(angle) * radius,
+      y: 400 + Math.sin(angle) * radius,
+      atMs: nowMs - (steps - i) * 50,
+    };
+  });
+}
+
+const trail = [
+  readFileSync(
+    path.join(here, "..", "apps", "desktop", "src", "TokiSelectionTrail.tsx"),
+    "utf8",
+  ),
+  readFileSync(
+    path.join(here, "..", "apps", "desktop", "src", "selectionTrailPath.ts"),
+    "utf8",
+  ),
+].join("\n");
 const trailCss = readFileSync(
   path.join(here, "..", "apps", "desktop", "src", "TokiSelectionTrail.css"),
   "utf8",
 );
+
+
+
+
+
+test("the trail is a fluid being disturbed, not a shape being drawn", () => {
+  // Four attempts drew a path -- sample, smooth, stroke, fade -- and every one
+  // read as an object being dragged, because that is what it was. Smoothing it
+  // more only changed how the object looked.
+  //
+  // Nothing is stroked now. Colour and momentum go into a fluid where the
+  // pointer went, and the fluid behaves; the curl and the settling are not
+  // animated, they fall out of the simulation.
+  assert.doesNotMatch(trail, /createStrokePathData/u);
+  assert.doesNotMatch(trail, /toki-selection-trail__segment/u);
+  assert.match(trail, /createFluidTrail/u);
+});
+
+test("the fluid is focused, not a splash", () => {
+  // The reference throws paint across the screen. Over somebody's actual work
+  // that obscures what they are doing and reads as decoration, so every number
+  // is turned towards a tight ribbon that dies quickly.
+  assert.ok(fluidTrailPolicy.splatRadius <= 0.08, "a ribbon, not a cloud");
+  assert.ok(fluidTrailPolicy.splatForce <= 2_500, "pushed, not thrown");
+  assert.ok(fluidTrailPolicy.curl <= 2, "alive, but it does not wander");
+  // Fast enough that it is gone soon after it has been read. The exact rate
+  // was measured against a real loop rather than guessed: see the table in
+  // fluidTrailPolicy. Too slow and the dye accumulates until alpha saturates,
+  // at which point the ribbon stops being fluid and becomes a shape again --
+  // which is the failure this whole approach replaced.
+  assert.ok(fluidTrailPolicy.densityDissipation >= 2, "it does not linger");
+});
+
+test("the simulation stops when the fluid has settled", () => {
+  // Toki is open all day. A full-screen simulation stepping in the background
+  // would spend battery drawing nothing.
+  assert.match(trail, /if \(trail\.frame\(nowMs\)\)/u);
+  assert.match(trail, /runningRef\.current = false/u);
+  const fluid = readFileSync(
+    path.join(here, "..", "apps", "desktop", "src", "fluidTrail.ts"),
+    "utf8",
+  );
+  assert.match(fluid, /nowMs - lastPushMs < fluidTrailPolicy\.settleMs/u);
+  // Long enough for the colour to actually vanish before the canvas is
+  // cleared, and no longer -- see the fade arithmetic in fluidTrailPolicy.
+  assert.ok(fluidTrailPolicy.settleMs <= 4_000);
+});
+
+test("the wake comes off the creature, not off the raw sample", () => {
+  // The blob lags the pointer on purpose -- it is on a spring -- so pushing
+  // only at recorded positions left the fluid running beside it rather than
+  // out of it.
+  const fromHead = trail.slice(trail.indexOf("The wake comes off the creature"));
+  assert.match(fromHead.slice(0, 900), /trail\.pushSegment\(previous, head\)/u);
+});
+
+test("the trail is placed exactly where the blob is placed", () => {
+  // The creature floats beside the fingertip rather than sitting on it, so a
+  // trail measured from the raw pointer ran parallel to the blob instead of
+  // out of it, and the two read as separate things.
+  const placed = placeStrokePoint({ x: 700, y: 400, atMs: 0 }, trailViewport);
+
+  assert.ok(Number.isFinite(placed.x) && Number.isFinite(placed.y));
+  assert.match(trail, /placeStrokePoint/u);
+  assert.match(
+    readFileSync(
+      path.join(here, "..", "apps", "desktop", "src", "selectionTrailPath.ts"),
+      "utf8",
+    ),
+    /getDetachedGesturePointerShadowPosition/u,
+  );
+});
+
+test("the region is still measured from what was circled", () => {
+  // The box is not decoration. It is Toki stating which region it took, so it
+  // has to be exactly what was taken.
+  const placed = trailLoop({ degrees: 360 }).map((point) =>
+    placeStrokePoint(point, trailViewport),
+  );
+  const bounds = trailBounds(placed);
+
+  for (const point of placed) {
+    assert.ok(point.x >= bounds.minX && point.x <= bounds.maxX);
+    assert.ok(point.y >= bounds.minY && point.y <= bounds.maxY);
+  }
+
+  assert.equal(trailBounds([]), null);
+});
 
 test("the trail never intercepts what it is drawn over", () => {
   // It annotates somebody else's screen. A record of a gesture that swallowed
@@ -307,24 +427,26 @@ test("the trail never intercepts what it is drawn over", () => {
   assert.match(trailCss, /pointer-events: none/u);
 });
 
-test("the trail fades along its length rather than as a whole", () => {
-  // Drawn per segment: a single path cannot be fainter at the tail than at the
-  // head, and without that the trail reads as a shape rather than a direction.
-  assert.match(trail, /segments\.map/u);
-  assert.match(trail, /opacity: 0\.12 \+ age \* 0\.68/u);
-});
 
-test("progress is carried by brightness, not by a number", () => {
-  // A count on screen would be read instead of the thing being circled.
-  assert.match(trail, /"--trail-progress": stroke\.progress/u);
-  assert.match(trailCss, /var\(--trail-progress, 0\)/u);
+
+
+test("progress is carried by the overlay, not by a number", () => {
+  // A count on screen gets read instead of the thing being circled. The fluid
+  // carries it inherently: more of the loop drawn is more dye pushed in, so it
+  // brightens towards completion without anybody counting.
+  //
+  // This used to be a CSS variable driving opacity, which a stroked path needed
+  // because a drawn line has one fixed brightness. A simulation does not.
+  assert.doesNotMatch(trail, /toki-selection-trail__count|<text/u);
+  assert.match(trail, /trail\.pushSegment\(/u);
 });
 
 test("completing the circle is visible", () => {
-  // The gesture has no other ending. Without this, "two laps was enough" looks
-  // exactly like tracking having failed.
-  assert.match(trail, /data-complete=\{complete\}/u);
-  assert.match(trailCss, /\[data-complete="true"\]/u);
+  // One lap is still long enough to wonder whether anything is happening. The
+  // region appears only once the loop has actually closed, so its arrival is
+  // the answer.
+  assert.match(trail, /stroke\?\.phase === "complete"/u);
+  assert.match(trail, /toki-selection-trail__region/u);
 });
 
 test("an abandoned stroke leaves nothing on screen", () => {
@@ -338,14 +460,6 @@ test("reduced motion keeps the path and drops the movement", () => {
   assert.doesNotMatch(reduced, /display: none|visibility: hidden/u);
 });
 
-test("the trail is placed exactly where the blob is placed", () => {
-  // The blob does not sit on the fingertip -- it floats beside it by a fixed
-  // offset with edge clamping. A trail measured from the raw pointer ran
-  // parallel to the blob instead of out of it, so the two read as separate
-  // objects and the line appeared to be drawn by nothing.
-  assert.match(trail, /getDetachedGesturePointerShadowPosition\(/u);
-  assert.match(trail, /puckCentreOffset/u);
-});
 
 test("the trail wears the blob's own colour, not one chosen to match", () => {
   // A nearby-but-different blue reads as a second object trailing the first.
@@ -410,11 +524,16 @@ test("releasing a lock releases its region", () => {
 });
 
 test("nothing draws at the fingertip except Toki's own cursor", () => {
-  // The blob is already there. A second marker at the leading end put two
-  // things at one fingertip and made the trail look like something else was
-  // drawing it.
-  assert.doesNotMatch(trail, /<circle/u);
+  // The blob is already there, and a second distinct marker at the leading end
+  // put two things at one fingertip -- it made the trail look like something
+  // else was drawing it.
+  //
+  // The grains are not that. They are all the same kind of mark, differing only
+  // in how faded they are, so the newest is the near end of a trail rather than
+  // a marker of its own. What must not come back is a dedicated head element.
   assert.doesNotMatch(trailCss, /__head/u);
+  assert.doesNotMatch(trail, /__head/u);
+  assert.doesNotMatch(trail, /<circle/u);
 });
 
 test("relaxing the wrist does not throw the lock away", () => {
@@ -437,4 +556,57 @@ test("relaxing the wrist does not throw the lock away", () => {
   // And not by discarding the stroke, which would end the circle the untwist
   // was making room for.
   assert.doesNotMatch(unlock, /circleStrokeRef\.current = null/u);
+});
+
+test("a finished loop resolves into the region Toki actually locked", () => {
+  // The box is the claim about what was selected, so it is measured from the
+  // circled points rather than from wherever the fluid happened to spread.
+  assert.match(trail, /trailBounds\(stroke\.points\.map/u);
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+test("a failure does not pin the click-taking bar across the screen", () => {
+  // Any status at all keeps the top bar on screen, and that bar deliberately
+  // takes clicks -- it exists to be clicked to open the panel. So an error that
+  // never cleared left a click-eating strip over exactly where browser tabs and
+  // menu bars live, until something else happened to replace it.
+  //
+  // It read as the overlay being broken. Nothing was wrong with the overlay:
+  // the bar was still there, reporting something already read.
+  const app = readFileSync(
+    path.join(here, "..", "apps", "desktop", "src", "App.tsx"),
+    "utf8",
+  );
+
+  assert.match(app, /GUIDANCE_FAILURE_VISIBLE_MS/u);
+  assert.match(app, /failureShownAt == null \? null : rawGuidanceFailure/u);
+
+  const window = Number(
+    /const GUIDANCE_FAILURE_VISIBLE_MS = ([\d_]+)/u.exec(app)[1].replace(/_/gu, ""),
+  );
+  assert.ok(window >= 4_000, "long enough to read a sentence");
+  assert.ok(window <= 20_000, "not the rest of the day");
 });

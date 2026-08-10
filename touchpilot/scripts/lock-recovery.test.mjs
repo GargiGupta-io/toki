@@ -51,7 +51,7 @@ test("eligibility for a fresh pinch really does depend on the lock being gone", 
 });
 
 test("live guidance goes through the service, not a developer CLI", () => {
-  // codex-subscription routes straight to a binary on the machine, skipping
+  // gemini routes straight to a binary on the machine, skipping
   // both the free local pass and the hosted service. It stayed on the live
   // paths after the service shipped, so every spoken command asked for a tool
   // no user has installed.
@@ -61,18 +61,18 @@ test("live guidance goes through the service, not a developer CLI", () => {
   );
   assert.match(voiceCall, /refreshCaptureMetadata\(command\.text, "real"/u);
 
-  // The deliberate Codex tester in the debug window is allowed to keep it, as
+  // The deliberate Gemini tester in the debug window is allowed to keep it, as
   // is the check for which modes count as live. Comments are stripped first:
   // the explanation of this very change names the mode it removed.
   const code = appSource
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("//"))
     .join("\n");
-  const remaining = code.split('"codex-subscription"').length - 1;
+  const remaining = code.split('"gemini"').length - 1;
   assert.equal(
     remaining,
     2,
-    "only the debug tester and the live-mode check may name codex-subscription",
+    "only the debug tester and the live-mode check may name gemini",
   );
 });
 

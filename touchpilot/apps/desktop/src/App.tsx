@@ -116,7 +116,7 @@ import {
   explicitObjectConflictsWithLabel,
   getPointerEvidenceDecision,
   hasSpecificPointerEvidenceLabel,
-  requestCodexPointerExplanation,
+  requestGeminiPointerExplanation,
   shouldRoutePointerExplanation,
   type PointerExplanationImageEvidence,
   type PointerExplanationIntent,
@@ -190,15 +190,46 @@ import {
   shouldClearDiagnosticsOnChange,
   type DiagnosticsSettings,
 } from "./diagnosticsSettings";
-import { createAuthSession } from "./authBindings";
-import type { AuthSession } from "./authSession";
+import { createAuthSession, listenForAuthCallback } from "./authBindings";
+import { signedOut } from "./authSession";
+import type { AuthSession, AuthState } from "./authSession";
 import { transcribeNativeVoiceCapture } from "./voiceTranscription";
 import type { OverlayState } from "./puckMotion";
 import { BlobPuck } from "./BlobPuck";
 import { TokiCreatureLayer } from "./TokiCreatureLayer";
 import { TokiTopUtilitySurface } from "./TokiTopUtilitySurface";
+import { TokiPermissionNotch } from "./TokiPermissionNotch";
+import { TokiFirstRun } from "./TokiFirstRun";
+import { readFirstRun, isFirstRunVisible, type FirstRunColourId } from "./firstRun";
+import { hueShiftFor, rotateHue } from "./creatureColour";
+import { idleCreatureColour } from "./BlobPuck";
+import { arrivalAt, idleArrival, type ArrivalState } from "./creatureArrival";
+import {
+  readHandledPermissions,
+  shouldRunOnboarding,
+  type PermissionSnapshot,
+} from "./permissionOnboarding";
 import { TokiTaskProgress } from "./TokiTaskProgress";
 import { TokiSelectionTrail } from "./TokiSelectionTrail";
+import { TokiGuidanceSpotlight } from "./TokiGuidanceSpotlight";
+import { TokiTargetSpark } from "./TokiTargetSpark";
+import {
+  advancePointerCircle,
+  pointerCircleSelectPolicy,
+  armPointerCircle,
+  disarmPointerCircle,
+  idlePointerCircle,
+  selectCircleInput,
+  shouldDrawPointerStroke,
+  type PointerCircleState,
+} from "./pointerCircleSelect";
+import {
+  fingerprintRegion,
+  getWatchedRegion,
+  hasRegionChanged,
+  stepAdvancePolicy,
+  type RegionFingerprint,
+} from "./guidanceStepAdvance";
 import { usePuckSpring } from "./puckSpring";
 import { TokiPointerExplanationCard } from "./TokiPointerExplanationCard";
 import {
@@ -261,6 +292,16 @@ type OverlaySnapshot = {
 
 type DebugSnapshot = OverlaySnapshot & {
   gestureDiagnostics: GestureRuntimeDiagnostics;
+  /** The trackpad circle, so whether it works is observable rather than inferred. */
+  pointerCircle: {
+    source: "hand" | "pointer";
+    armed: boolean;
+    phase: string | null;
+    turnedDegrees: number | null;
+    requiredDegrees: number;
+    points: number;
+    region: { x: number; y: number; width: number; height: number } | null;
+  };
   adaptiveGestureProfile: AdaptiveGestureProfile | null;
   gestureCalibration: GestureCalibrationSession;
   guidanceTrace: GuidanceTrace | null;
@@ -332,8 +373,16 @@ type OverlayCommand =
   | { type: "set-pointer-explanation-speech-muted"; muted: boolean }
   | { type: "set-diagnostics-settings"; settings: DiagnosticsSettings }
   | { type: "clear-diagnostics" }
+  | { type: "open-permission-notch" }
   | { type: "submit-voice-listening" }
-  | { type: "stop-voice-listening" };
+  | { type: "stop-voice-listening" }
+  // Command with Right Option. Its own chord, so that circling and speaking
+  // cannot be started by the same key and then have to be told apart.
+  | { type: "start-circle-select" }
+  | { type: "end-circle-select" }
+  // "Give me a home" was pressed. The creature appears in the middle of the
+  // screen and travels to the notch, which is the thing that sentence promises.
+  | { type: "introduce-creature" };
 
 type NativeClickMonitorStatus = {
   armed: boolean;
@@ -378,6 +427,15 @@ const testTarget = {
 };
 
 const clickAwareHitPadding = 18;
+
+/**
+ * How long a guidance failure stays on the bar.
+ *
+ * Long enough to read a sentence, and no longer. The bar takes clicks, so it
+ * cannot be left sitting over somebody's tab strip narrating something that
+ * already happened -- the message is worth a moment, not the rest of the day.
+ */
+const GUIDANCE_FAILURE_VISIBLE_MS = 8_000;
 const voiceCaptureStartupTimeoutMs = 5_000;
 
 type RenderedGuidanceTarget = TargetBox & {
@@ -1144,6 +1202,55 @@ function getScreenshotSignature(screenshot: ScreenshotMetadata | ScreenshotCaptu
   return `${base}:${sample}`;
 }
 
+/**
+ * Read one region of a screenshot into something two of which can be compared.
+ *
+ * Decoding the whole image to look at a small part of it is wasteful, but the
+ * capture arrives as one encoded blob and there is no way to ask for less. The
+ * canvas is only the size of the region, so what is kept afterwards is a few
+ * hundred samples rather than a screenful of pixels.
+ */
+async function fingerprintScreenshotRegion(
+  screenshot: ScreenshotCapture,
+  region: { x: number; y: number; width: number; height: number },
+): Promise<RegionFingerprint | null> {
+  const image = new Image();
+  const loaded = new Promise<boolean>((resolve) => {
+    image.onload = () => resolve(true);
+    image.onerror = () => resolve(false);
+  });
+  image.src = `data:image/${screenshot.format};base64,${screenshot.imageBase64}`;
+
+  if (!(await loaded)) {
+    return null;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = region.width;
+  canvas.height = region.height;
+  const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+
+  if (context == null) {
+    return null;
+  }
+
+  context.drawImage(
+    image,
+    region.x,
+    region.y,
+    region.width,
+    region.height,
+    0,
+    0,
+    region.width,
+    region.height,
+  );
+
+  const data = context.getImageData(0, 0, region.width, region.height);
+
+  return fingerprintRegion(data.data, region.width, region.height);
+}
+
 function verifySessionScreenChange(
   session: GuidanceSession,
   screenshot: ScreenshotCapture,
@@ -1814,6 +1921,15 @@ function createEmptyDebugSnapshot(): DebugSnapshot {
     hasAcceptedGuidance: false,
     isRefreshingCapture: false,
     gestureRuntime,
+    pointerCircle: {
+      source: "hand",
+      armed: false,
+      phase: null,
+      turnedDegrees: null,
+      requiredDegrees: pointerCircleSelectPolicy.requiredDegrees,
+      points: 0,
+      region: null,
+    },
     gestureDiagnostics: createEmptyGestureRuntimeDiagnostics(
       gestureRuntime.thresholds,
     ),
@@ -2371,9 +2487,6 @@ function OverlayWindowApp() {
    * it always had. Most of the time there is no hand -- which meant most of the
    * time there was no spring, and the change was invisible.
    */
-  const sprungPointerShadow = usePuckSpring(
-    gesturePointerShadow ?? pointerShadow,
-  );
 
   const gesturePuckPresentation = useMemo(
     () =>
@@ -2437,10 +2550,48 @@ function OverlayWindowApp() {
     !isRefreshingCapture &&
     overlayState !== "paused";
   const hasAcceptedGuidance = acceptedTarget != null || workflowTarget != null;
-  const baseGuidanceFailure =
+  /*
+   * A failure is said once, and then it stops being said.
+   *
+   * Any status at all keeps the bar on screen, and the bar deliberately takes
+   * clicks -- it exists to be clicked to open the panel. So an error that never
+   * cleared pinned a click-eating strip across the top of the display, over
+   * exactly where browser tabs and menu bars live, until something else
+   * happened to replace it. Nothing was wrong with the overlay; the bar was
+   * simply still there hours later, reporting something already read.
+   */
+  const [failureShownAt, setFailureShownAt] = useState<number | null>(null);
+  const rawGuidanceFailure =
     !isRefreshingCapture && !hasAcceptedGuidance
       ? captureError ?? guidanceProviderError
       : null;
+
+  useEffect(() => {
+    if (rawGuidanceFailure == null) {
+      setFailureShownAt(null);
+      return;
+    }
+
+    setFailureShownAt(Date.now());
+
+    const timer = window.setTimeout(() => {
+      setFailureShownAt(null);
+      /*
+       * The state goes with the message.
+       *
+       * Clearing only the text left the bar showing "Guidance unavailable" with
+       * the generic fallback underneath -- the error state outlives the reason,
+       * so what remained was a permanent notice that said nothing. Worse than
+       * before: the bar still ate clicks *and* the actual reason was gone.
+       */
+      setOverlayState((current) => (current === "error" ? "idle" : current));
+    }, GUIDANCE_FAILURE_VISIBLE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [rawGuidanceFailure]);
+
+  const baseGuidanceFailure =
+    failureShownAt == null ? null : rawGuidanceFailure;
   // A locked feature is not a broken one, and the message has to say which.
   // The overlay stays out of the way -- no buttons on a transparent window
   // floating over someone's work -- so it names where the control is instead.
@@ -2460,6 +2611,144 @@ function OverlayWindowApp() {
             instruction: currentWorkflowStep.instruction,
           }
       : testTarget;
+  /**
+   * Where Toki's attention is, which is not always where the hand is.
+   *
+   * Normally the blob mirrors the pointer. While guidance is on screen it
+   * travels to the target instead and stays there: during that moment its job
+   * is to indicate a thing, not to follow a hand, and a marker that keeps
+   * chasing the cursor cannot also be pointing at something else.
+   */
+  const guidanceAnchor =
+    hasAcceptedGuidance && activeTarget != null
+      ? {
+          x: activeTarget.x + activeTarget.width / 2 - pointerShadowGeometry.width / 2,
+          y: activeTarget.y + activeTarget.height / 2 - pointerShadowGeometry.height / 2,
+        }
+      : null;
+
+  const sprungPointerShadow = usePuckSpring(
+    guidanceAnchor ?? gesturePointerShadow ?? pointerShadow,
+    {
+      maxX: Math.max(0, viewport.width - pointerShadowGeometry.width),
+      maxY: Math.max(0, viewport.height - pointerShadowGeometry.height),
+    },
+  );
+
+  /*
+   * The burst waits for the blob to get there.
+   *
+   * It used to fire the moment a target was accepted, which is the moment the
+   * blob *sets off*. The spring takes a few hundred milliseconds to cross the
+   * screen, so the burst had already been and gone by the time anything arrived
+   * -- it played at the destination while the eye was still following the blob,
+   * and read as nothing happening at all.
+   *
+   * Latched per target rather than recomputed from the distance every frame.
+   * The blob settles with a small overshoot, so a bare distance test flickers
+   * either side of the threshold and would fire the burst several times.
+   */
+  const targetArrivalKey =
+    hasAcceptedGuidance && activeTarget != null
+      ? `${activeTarget.label}:${Math.round(activeTarget.x)}:${Math.round(activeTarget.y)}`
+      : null;
+  const [arrivedTargetKey, setArrivedTargetKey] = useState<string | null>(null);
+
+  /*
+   * Open the introduction, once, on a machine that has not seen it.
+   *
+   * Read here because localStorage is shared across this app's windows, so the
+   * overlay -- which is always running -- can answer a question about a popup
+   * that is not open yet. Rust cannot: the answer lives in the webview.
+   */
+  useEffect(() => {
+    if (isFirstRunVisible(readFirstRun())) {
+      // Into the notch, not into a window. Toki lives up there; an
+      // introduction that opens a window somewhere else is introducing the
+      // wrong thing.
+      requestTopUtilityMode("expanded", { focus: true });
+    }
+  }, []);
+
+  /*
+   * Open the notch as an ask, when something essential is missing.
+   *
+   * Driven from here rather than from Rust because the overlay owns the panel's
+   * mode -- Rust showing the window would fight whatever the overlay decided a
+   * frame later. Only for the two Toki cannot work without; an optional
+   * permission somebody declined is a decision, not a reason to reopen a panel
+   * on every launch.
+   */
+  useEffect(() => {
+    void invoke<PermissionSnapshot>("permission_snapshot")
+      .then((snapshot) => {
+        if (shouldRunOnboarding(snapshot, readHandledPermissions())) {
+          requestTopUtilityMode("expanded", { focus: true });
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  /*
+   * Circling with the trackpad, when the camera cannot do it.
+   *
+   * Held in a ref as well as state: the cursor arrives on a native event
+   * outside React's render cycle, and reading the stroke from state there would
+   * see whatever the last render captured rather than the loop in progress.
+   */
+  const pointerCircleRef = useRef<PointerCircleState>(idlePointerCircle);
+  const handledPointerRegionRef = useRef<PointerCircleState["region"]>(null);
+  /*
+   * Whether the recording now running was started by a circle closing.
+   *
+   * Releasing the chord ends the circle. If listening began because of that
+   * circle then the release is also somebody finishing their sentence, and it
+   * has to submit -- otherwise the words are recorded and thrown away.
+   */
+  const circleVoiceRef = useRef(false);
+  const [pointerCircle, setPointerCircle] =
+    useState<PointerCircleState>(idlePointerCircle);
+  /*
+   * Which instrument drew the loop on screen.
+   *
+   * The trackpad while its own chord is held; the hand otherwise. Decided by
+   * how the gesture started rather than by whether a camera is running, because
+   * the old rule silently disabled the trackpad on any machine whose camera
+   * worked -- which is most of them.
+   */
+  const circleInputSource = selectCircleInput(
+    pointerCircleRef.current.armed ? "keyboard" : "gesture",
+  );
+
+  useEffect(() => {
+    if (targetArrivalKey == null || guidanceAnchor == null) {
+      setArrivedTargetKey(null);
+      return;
+    }
+
+    if (arrivedTargetKey === targetArrivalKey || sprungPointerShadow == null) {
+      return;
+    }
+
+    const remaining = Math.hypot(
+      sprungPointerShadow.x - guidanceAnchor.x,
+      sprungPointerShadow.y - guidanceAnchor.y,
+    );
+
+    // Close enough to read as landed. Waiting for the spring to be exactly at
+    // rest would delay the burst past the moment it is describing.
+    if (remaining <= 6) {
+      setArrivedTargetKey(targetArrivalKey);
+    }
+  }, [
+    arrivedTargetKey,
+    guidanceAnchor?.x,
+    guidanceAnchor?.y,
+    sprungPointerShadow?.x,
+    sprungPointerShadow?.y,
+    targetArrivalKey,
+  ]);
+
   const puckMotion = getPuckMotionModel({
     overlayState,
     hasAcceptedGuidance,
@@ -2468,6 +2757,66 @@ function OverlayWindowApp() {
     hasCaptureError: captureError != null,
     guidanceIssueCount: guidanceIssues.length,
   });
+  /*
+   * The colour chosen when Toki was first met.
+   *
+   * Read once at mount and kept for the session. It is stored by the panel,
+   * which is a different window with its own JavaScript context, so it arrives
+   * here through the shared store rather than as a prop -- and it changes only
+   * during an introduction, which ends with this window reloading anyway.
+   */
+  const [creatureHueShift, setCreatureHueShift] = useState(() =>
+    hueShiftFor(readFirstRun().colour),
+  );
+
+  useEffect(() => {
+    const unlisten = listen<{ colour: FirstRunColourId }>(
+      "toki://creature-colour",
+      (event) => setCreatureHueShift(hueShiftFor(event.payload.colour)),
+    );
+
+    return () => {
+      void unlisten.then((stop) => stop()).catch(() => undefined);
+    };
+  }, []);
+
+  /*
+   * The creature arriving, once, at the end of the introduction.
+   *
+   * Driven from a start time rather than advanced per frame, so a dropped frame
+   * costs nothing and the arrival always takes exactly as long as it says.
+   */
+  const [arrivalStartedAt, setArrivalStartedAt] = useState<number | null>(null);
+  const [arrival, setArrival] = useState<ArrivalState>(idleArrival);
+
+  useEffect(() => {
+    if (arrivalStartedAt == null) {
+      return;
+    }
+
+    let frame = 0;
+
+    const tick = () => {
+      const next = arrivalAt(Date.now() - arrivalStartedAt);
+      setArrival(next);
+
+      if (next.phase === "idle") {
+        setArrivalStartedAt(null);
+        // Only now do the permissions open. Asking for one over the top of the
+        // arrival would talk across the only moment Toki has to introduce
+        // itself.
+        void invoke("open_top_utility_for_permissions").catch(() => undefined);
+        return;
+      }
+
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(frame);
+  }, [arrivalStartedAt]);
+
   const tokiCreatureState = getTokiCreatureState({
     overlayState,
     hasAcceptedGuidance,
@@ -2767,6 +3116,49 @@ function OverlayWindowApp() {
     });
     setGestureWindowValidationDiagnostics(null);
   }, [alwaysOnGestureRuntime.regionLockRequest, gesturePointerDisplay]);
+
+  /*
+   * A finished trackpad loop becomes the locked region.
+   *
+   * Deliberately not routed through the hand's request: that carries a hand
+   * track id and a wrist roll, and a trackpad has neither. Inventing them would
+   * put a hand that never existed into the diagnostics -- the record used to
+   * work out why a target was refused, which is worth nothing if it contains
+   * fiction. The region and the display are the whole truth here, so they are
+   * all that is sent.
+   */
+  useEffect(() => {
+    const region = pointerCircle.region;
+
+    if (region == null || handledPointerRegionRef.current === region) {
+      return;
+    }
+
+    handledPointerRegionRef.current = region;
+    window.speechSynthesis?.cancel();
+    setPointerExplanation(null);
+    setGesturePointerRegion(
+      region.width >= MINIMUM_CIRCLED_REGION_PX &&
+        region.height >= MINIMUM_CIRCLED_REGION_PX
+        ? region
+        : null,
+    );
+
+    /*
+     * Circling something is half a sentence.
+     *
+     * "What is this?" means nothing without the region, and the region means
+     * nothing without the question -- so the moment the loop closes, Toki
+     * starts listening. The keys are still held at that point, which makes the
+     * whole thing one gesture: hold, circle, ask, let go.
+     *
+     * Making somebody complete a circle and then reach for a second shortcut to
+     * say what they wanted about it is asking them to do the same thing twice.
+     */
+    void startVoiceListening("gesture").then((started) => {
+      circleVoiceRef.current = started;
+    });
+  }, [pointerCircle.region]);
 
   useEffect(() => {
     const request = alwaysOnGestureRuntime.unlockRequest;
@@ -3204,6 +3596,26 @@ function OverlayWindowApp() {
     () => ({
       ...overlaySnapshot,
       gestureDiagnostics: alwaysOnGestureRuntime.diagnostics,
+      /*
+       * The trackpad circle, so it can be seen rather than guessed at.
+       *
+       * It was added as a whole second way to select something and given no
+       * diagnostic surface at all, which meant the only evidence about whether
+       * it worked was whether a line appeared on screen. That is how an evening
+       * goes into tuning how a stroke looks while nobody can tell whether it
+       * ever completes.
+       */
+      pointerCircle: {
+        source: circleInputSource,
+        armed: pointerCircle.armed,
+        phase: pointerCircle.stroke?.phase ?? null,
+        turnedDegrees: pointerCircle.stroke
+          ? Math.round(pointerCircle.stroke.turnedDegrees)
+          : null,
+        requiredDegrees: pointerCircleSelectPolicy.requiredDegrees,
+        points: pointerCircle.stroke?.points.length ?? 0,
+        region: pointerCircle.region,
+      },
       adaptiveGestureProfile,
       gestureCalibration,
       guidanceTrace,
@@ -3233,6 +3645,8 @@ function OverlayWindowApp() {
     }),
     [
       overlaySnapshot,
+      pointerCircle,
+      circleInputSource,
       alwaysOnGestureRuntime.diagnostics,
       adaptiveGestureProfile,
       gestureCalibration,
@@ -3646,16 +4060,28 @@ function OverlayWindowApp() {
         },
         structuredEvidence,
       };
-      const configuredCodexTimeoutMs = Number(
-        import.meta.env.VITE_TOKI_CODEX_TIMEOUT_MS,
+      const configuredVisionTimeoutMs = Number(
+        import.meta.env.VITE_TOKI_VISION_TIMEOUT_MS,
       );
-      const result = await requestCodexPointerExplanation(providerRequest, {
-        model: import.meta.env.VITE_TOKI_CODEX_MODEL,
+      // Built here rather than reused from the guidance path, which constructs
+      // its own inside the request it serves. Same endpoint, same sign-in.
+      const lockApiClient = createTokiApiClient({
+        endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
+        session: authSessionRef.current,
+      });
+      const result = await requestGeminiPointerExplanation(providerRequest, {
+        model: import.meta.env.VITE_TOKI_GEMINI_MODEL,
         timeoutMs:
-          Number.isFinite(configuredCodexTimeoutMs) &&
-          configuredCodexTimeoutMs > 0
-            ? configuredCodexTimeoutMs
+          Number.isFinite(configuredVisionTimeoutMs) &&
+          configuredVisionTimeoutMs > 0
+            ? configuredVisionTimeoutMs
             : undefined,
+        // Only when there is a service to ask. Without one this stays on the
+        // developer CLI, which is what a machine with no endpoint configured
+        // has always used.
+        hostedVision: lockApiClient.configured
+          ? { send: (body) => lockApiClient.vision(body) }
+          : undefined,
       });
 
       if (result.status === "clarify") {
@@ -3770,7 +4196,7 @@ function OverlayWindowApp() {
     } = {},
   ) {
     const isLiveGuidanceProvider =
-      providerMode === "real" || providerMode === "codex-subscription";
+      providerMode === "real" || providerMode === "gemini";
 
     if (guidanceRefreshInFlightRef.current) {
       setGuidanceProviderError(
@@ -3950,8 +4376,8 @@ function OverlayWindowApp() {
         let providerResponse: GuidanceProviderResponse;
 
         beginTraceStage("provider", "Requesting a guidance decision.");
-        const configuredCodexTimeoutMs = Number(
-          import.meta.env.VITE_TOKI_CODEX_TIMEOUT_MS,
+        const configuredVisionTimeoutMs = Number(
+          import.meta.env.VITE_TOKI_VISION_TIMEOUT_MS,
         );
         const apiClient = createTokiApiClient({
           endpoint,
@@ -3972,12 +4398,15 @@ function OverlayWindowApp() {
               }
             : undefined,
           localCandidateProvider: createLocalCandidateGuidance,
-          codex: {
-            model: import.meta.env.VITE_TOKI_CODEX_MODEL,
+          // So a local answer that would be rejected falls through to vision
+          // rather than ending the request.
+          verify: verifyGuidanceTarget,
+          gemini: {
+            model: import.meta.env.VITE_TOKI_GEMINI_MODEL,
             timeoutMs:
-              Number.isFinite(configuredCodexTimeoutMs) &&
-              configuredCodexTimeoutMs > 0
-                ? configuredCodexTimeoutMs
+              Number.isFinite(configuredVisionTimeoutMs) &&
+              configuredVisionTimeoutMs > 0
+                ? configuredVisionTimeoutMs
                 : undefined,
           },
         });
@@ -4446,6 +4875,131 @@ function OverlayWindowApp() {
       source: "session",
     });
   }
+
+  /*
+   * Notice that the step was done, and give the next one.
+   *
+   * Without this the session waited forever: continueGuidanceSession had one
+   * caller, a button in the debug window, so somebody would click exactly what
+   * they had been told to click and Toki would sit there.
+   *
+   * Only the region around the target is watched. Comparing the whole screen is
+   * the obvious thing and it cannot work -- a video playing, or the clock in the
+   * menu bar, differs every frame, so it would advance immediately and forever
+   * whether or not anybody had done anything.
+   */
+  const continueGuidanceSessionRef = useRef(continueGuidanceSession);
+  continueGuidanceSessionRef.current = continueGuidanceSession;
+
+  const watchedTargetKey =
+    hasAcceptedGuidance &&
+    activeTarget != null &&
+    guidanceSession?.status === "waiting_for_user"
+      ? `${guidanceSession.id}:${Math.round(activeTarget.x)}:${Math.round(activeTarget.y)}`
+      : null;
+
+  useEffect(() => {
+    if (watchedTargetKey == null || activeTarget == null) {
+      return;
+    }
+
+    let cancelled = false;
+    let baseline: RegionFingerprint | null = null;
+    const startedAt = Date.now();
+
+    async function look() {
+      if (cancelled) {
+        return;
+      }
+
+      try {
+        const screenshot = await invokeCaptureCommand<ScreenshotCapture>(
+          "capture_screenshot",
+        );
+
+        if (cancelled || activeTarget == null) {
+          return;
+        }
+
+        /*
+         * Only watch the application the step was about.
+         *
+         * A step takes several seconds to answer, which is long enough for
+         * somebody to decide it has not worked and go and look at something
+         * else. The region then changes because a different window is covering
+         * it, the session continues, and a screenshot of whatever is in front
+         * now is sent as evidence for a task about another application.
+         *
+         * That happened: a request about Spotify was answered with "this is a
+         * terminal, there is no playlist control here" -- correctly -- and it
+         * surfaced as the vision provider having low confidence.
+         *
+         * Skipped rather than cancelled, and the baseline is deliberately kept:
+         * coming back compares against how the region looked when the step was
+         * given, so a click made before switching away is still noticed.
+         */
+        const sessionApp =
+          guidanceSession?.lastScreenshot?.activeWindow?.appName ?? null;
+        const frontApp = screenshot.activeWindow?.appName ?? null;
+
+        if (sessionApp != null && frontApp != null && sessionApp !== frontApp) {
+          return;
+        }
+
+        const region = getWatchedRegion(
+          activeTarget,
+          screenshot.display,
+          { width: screenshot.imageWidth, height: screenshot.imageHeight },
+        );
+
+        if (region == null) {
+          return;
+        }
+
+        const fingerprint = await fingerprintScreenshotRegion(screenshot, region);
+
+        if (cancelled || fingerprint == null) {
+          return;
+        }
+
+        // The first look is what the region looked like when the step was
+        // shown, not a comparison. Taken here rather than from the screenshot
+        // the step was planned from, because the blob has since travelled onto
+        // the target and the dimming has come up -- neither of which was in
+        // that earlier picture, and both of which would read as a change.
+        if (baseline == null) {
+          baseline = fingerprint;
+          return;
+        }
+
+        if (hasRegionChanged(baseline, fingerprint)) {
+          cancelled = true;
+          window.clearInterval(timer);
+          await continueGuidanceSessionRef.current();
+        }
+      } catch {
+        // A failed capture is not a completed step. Stay on the current one and
+        // look again; if capture is genuinely broken the timeout ends this.
+      }
+    }
+
+    const timer = window.setInterval(() => {
+      if (Date.now() - startedAt > stepAdvancePolicy.timeoutMs) {
+        cancelled = true;
+        window.clearInterval(timer);
+        return;
+      }
+
+      void look();
+    }, stepAdvancePolicy.pollIntervalMs);
+
+    // The overlay has just been drawn over the target, so the first look waits
+    // one interval rather than photographing the animation.
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [watchedTargetKey, guidanceSession?.lastScreenshot?.activeWindow?.appName]);
 
   async function advanceActiveWorkflowStep() {
     const verification = await verifyActiveWorkflowStep(workflowRuntime);
@@ -5015,15 +5569,19 @@ function OverlayWindowApp() {
     let lastPointerShadow: PointerShadowPosition | null = null;
 
     function updateTopUtility(position: Pick<NativeCursorPosition, "x" | "y">) {
-      if (
-        topUtilityModeRef.current === "expanded" &&
-        topUtilityFocusedRef.current
-      ) {
-        clearTopUtilityTimer(topUtilityRevealTimerRef);
-        clearTopUtilityTimer(topUtilityLeaveTimerRef);
-        return;
-      }
-
+      /*
+       * Being focused is not a reason to stay open.
+       *
+       * This used to return here, which meant an expanded panel never collapsed
+       * at all: every route that opens it passes focus, so the guard was always
+       * true and the leave logic below was unreachable. The panel then sat over
+       * whatever application was underneath until something else closed it.
+       *
+       * What focus is actually for is not stealing the panel out from under
+       * somebody using it, and the check for that is the pointer being inside
+       * it -- which the code below already does, for focused and unfocused
+       * alike.
+       */
       if (isTopUtilityRevealPoint(position, viewport)) {
         clearTopUtilityTimer(topUtilityLeaveTimerRef);
 
@@ -5068,6 +5626,26 @@ function OverlayWindowApp() {
 
     function updateCursorShadow(position: Pick<NativeCursorPosition, "x" | "y">) {
       updateTopUtility(position);
+
+      /*
+       * The same cursor stream feeds the circle, when the trackpad is the one
+       * drawing. Fed from here rather than from a listener of its own so there
+       * is one source of cursor truth; two would drift by a frame and put the
+       * loop somewhere the blob is not.
+       */
+      const circle = pointerCircleRef.current;
+      if (circle.armed) {
+        const advanced = advancePointerCircle(
+          circle,
+          { x: position.x, y: position.y },
+          Date.now(),
+        );
+
+        if (advanced !== circle) {
+          pointerCircleRef.current = advanced;
+          setPointerCircle(advanced);
+        }
+      }
 
       const nextPointerShadow =
         viewport.width <= 240 && viewport.height <= 240
@@ -5287,7 +5865,7 @@ function OverlayWindowApp() {
 
   useEffect(() => {
     window.__tokiRunRealGuidanceSmoke = (goal = "Show me what to click next.") => {
-      // Named "real guidance smoke" and, until now, running the Codex path.
+      // Named "real guidance smoke" and, until now, running the CLI path.
       void refreshCaptureMetadata(goal, "real", { source: "debug" });
     };
 
@@ -5516,6 +6094,47 @@ function OverlayWindowApp() {
         return;
       }
 
+      if (event.payload.type === "open-permission-notch") {
+        // The first run has finished introducing itself; permissions happen in
+        // the panel from here.
+        requestTopUtilityMode("expanded", { focus: true });
+        return;
+      }
+
+      if (event.payload.type === "introduce-creature") {
+        setArrivalStartedAt(Date.now());
+        return;
+      }
+
+      if (event.payload.type === "start-circle-select") {
+        /*
+         * Its own chord, and its own command.
+         *
+         * Arming this from the talk key meant one movement had to mean two
+         * things at once, and which one it meant depended on whether a camera
+         * was running. Command with Right Option says which was meant.
+         */
+        pointerCircleRef.current = armPointerCircle(Date.now());
+        setPointerCircle(pointerCircleRef.current);
+        return;
+      }
+
+      if (event.payload.type === "end-circle-select") {
+        // A loop still being drawn is dropped rather than completed. Letting go
+        // is not agreement about a half-drawn shape.
+        pointerCircleRef.current = disarmPointerCircle();
+        setPointerCircle(pointerCircleRef.current);
+
+        // If the circle closed and Toki started listening because of it, this
+        // release is the end of the sentence, not just the end of the gesture.
+        if (circleVoiceRef.current) {
+          circleVoiceRef.current = false;
+          await submitVoiceListening();
+        }
+
+        return;
+      }
+
       if (event.payload.type === "start-voice-listening") {
         await startVoiceListening(
           event.payload.source,
@@ -5525,6 +6144,8 @@ function OverlayWindowApp() {
       }
 
       if (event.payload.type === "stop-voice-listening") {
+        // The circle is not disarmed here any more. It has its own chord and
+        // its own start and end, so speaking neither begins nor ends one.
         stopVoiceListening();
         return;
       }
@@ -5584,12 +6205,11 @@ function OverlayWindowApp() {
         })
       : shouldExplainPointer && pointerIntent != null
         ? explainFrozenGesturePointer(command, pointerIntent)
-        : // Live mode, not the Codex one. That mode goes straight to a
-          // developer CLI on the machine, skipping both the free local pass and
-          // the hosted service -- so a spoken command asked for a tool no user
-          // has installed and failed with instructions naming an environment
-          // variable. These call sites were never moved across when the service
-          // shipped. Live mode reads the screen locally first and only sends a
+        : // Live mode, not the direct-to-model one. That mode skips both the
+          // free local pass and the hosted service, so a spoken command went
+          // straight out to a paid-per-call provider without trying the two
+          // cheaper answers first. These call sites were never moved across
+          // when the service shipped. Live mode reads the screen locally first and only sends a
           // screenshot for what that cannot answer.
           refreshCaptureMetadata(command.text, "real", {
             traceId: command.traceId,
@@ -5677,10 +6297,45 @@ function OverlayWindowApp() {
       <TokiTaskProgress runtime={workflowRuntime} />
       {/* Under everything Toki draws for itself: the trail annotates the
           screen beneath, and must not sit on top of the pointer it follows. */}
+      {/* Under the creature, over the screen: the person's own work stays
+          visible through the scrim, and Toki's own marks stay on top of it. */}
+      <TokiTargetSpark
+        at={
+          guidanceAnchor == null
+            ? null
+            : {
+                x: guidanceAnchor.x + pointerShadowGeometry.width / 2,
+                y: guidanceAnchor.y + pointerShadowGeometry.height / 2,
+              }
+        }
+        // Set on arrival, not on acceptance, so the burst marks the landing.
+        sparkKey={arrivedTargetKey}
+      />
+      <TokiGuidanceSpotlight
+        target={hasAcceptedGuidance ? activeTarget : null}
+        // No line drawn: the blob travels there itself, which says the same
+        // thing by moving rather than by drawing a rule across somebody's work.
+        pointer={null}
+        viewport={viewport}
+      />
       <TokiSelectionTrail
-        stroke={alwaysOnGestureRuntime.circleStroke}
+        /*
+          Whichever instrument is drawing. Only one can be armed at a time, so
+          this is a choice rather than a merge -- and the fluid and the
+          snap-to-region work the same either way, because neither ever knew
+          what moved the points.
+        */
+        stroke={
+          circleInputSource === "pointer" && shouldDrawPointerStroke(pointerCircle)
+            ? pointerCircle.stroke
+            : alwaysOnGestureRuntime.circleStroke
+        }
         viewport={viewport}
         head={sprungPointerShadow}
+        // The creature's own colour, including whatever was chosen when Toki
+        // was first met. A trail in a different colour is a second thing on
+        // screen rather than a wake off the first.
+        colour={rotateHue(idleCreatureColour, creatureHueShift)}
       />
       <TokiCreatureLayer
         state={tokiCreatureState}
@@ -5691,6 +6346,8 @@ function OverlayWindowApp() {
           viewport={viewport}
         />
         <BlobPuck
+          arrival={arrival}
+          hueShift={creatureHueShift}
           creatureState={tokiCreatureState}
           motion={puckMotion}
           pointerShadow={sprungPointerShadow ?? pointerShadow}
@@ -5722,6 +6379,97 @@ function SettingsWindowApp() {
   );
   const [topStatus, setTopStatus] = useState<TokiTopStatusModel | null>(null);
   const [pointerOverPanel, setPointerOverPanel] = useState(false);
+  /*
+   * Whether anything Toki cannot work without is still missing.
+   *
+   * Read once on mount. The flow itself re-reads the system as it goes; this
+   * only decides whether the panel opens as an ask or as the ordinary panel.
+   */
+  /*
+   * The physical notch's height, asked for rather than assumed: it differs by
+   * model, and an external display has none, where this is zero.
+   */
+  const [notchInset, setNotchInset] = useState(0);
+
+  useEffect(() => {
+    void invoke<number>("top_utility_notch_inset")
+      .then((value) => {
+        if (Number.isFinite(value) && value >= 0) {
+          setNotchInset(value);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const [permissionsPending, setPermissionsPending] = useState(false);
+
+  /*
+   * The introduction, ahead of the permissions.
+   *
+   * Both live in this panel, in that order: meet Toki, then let it work. Its
+   * own auth session because this window is not the settings window and does
+   * not have one.
+   */
+  const [firstRunPending, setFirstRunPending] = useState(() =>
+    isFirstRunVisible(readFirstRun()),
+  );
+  const firstRunSessionRef = useRef<AuthSession | null>(null);
+  const [firstRunAuth, setFirstRunAuth] = useState<AuthState>(signedOut);
+
+  useEffect(() => {
+    const session = createAuthSession();
+    firstRunSessionRef.current = session;
+    void session?.restore().then(setFirstRunAuth);
+
+    const stopping = listenForAuthCallback((url) => {
+      void session?.completeSignIn(url).then(setFirstRunAuth);
+    });
+
+    return () => {
+      void stopping.then((stop) => stop()).catch(() => undefined);
+    };
+  }, []);
+
+  useEffect(() => {
+    void invoke<PermissionSnapshot>("permission_snapshot")
+      .then((snapshot) =>
+        setPermissionsPending(
+          // What has already been answered, remembered across launches. Screen
+          // recording ends in a restart, and without this the panel came back,
+          // saw its two required permissions held, and quietly dropped the
+          // three it had not reached -- including the one the talk shortcut
+          // needs.
+          shouldRunOnboarding(snapshot, readHandledPermissions()),
+        ),
+      )
+      .catch(() => setPermissionsPending(false));
+  }, []);
+
+  /*
+   * Hold the panel open for as long as it is being used.
+   *
+   * Both flows send somebody somewhere else half way through -- a browser to
+   * sign in, Apple's dialog, System Settings -- and the panel closes when the
+   * cursor leaves the top of the screen, which is exactly what going to do
+   * those things looks like. Signing in worked and then there was nothing on
+   * screen, which reads as sign-in having failed.
+   *
+   * Told to the Rust side rather than handled here: the *overlay* is what
+   * closes this panel, and the two are separate windows with no view of each
+   * other's state.
+   */
+  useEffect(() => {
+    const active = firstRunPending || permissionsPending;
+    void invoke("set_onboarding_active", { active }).catch(() => undefined);
+
+    return () => {
+      if (active) {
+        void invoke("set_onboarding_active", { active: false }).catch(
+          () => undefined,
+        );
+      }
+    };
+  }, [firstRunPending, permissionsPending]);
   const isSpaceVoiceHeldRef = useRef(false);
   const utilityModeRef = useRef<TopUtilityMode>("hidden");
   const topStatusRef = useRef<TokiTopStatusModel | null>(null);
@@ -5973,7 +6721,76 @@ function SettingsWindowApp() {
       onPointerEnter={() => setPointerOverPanel(true)}
       onPointerLeave={() => setPointerOverPanel(false)}
     >
-      {utilityMode !== "hidden" && (
+      {/*
+        Permissions come first, in the notch rather than in a window.
+        
+        An application with no Dock icon should not grow a window for the one
+        job it should be least intrusive doing -- and macOS is already putting
+        its own dialog on screen at that moment, which is the thing to read.
+      */}
+      {firstRunPending || permissionsPending ? (
+        /*
+          The panel's own chrome, kept.
+          
+          The black and the curved bottom corners belong to
+          TokiTopUtilitySurface, not to the shell, which is transparent. So
+          rendering anything *instead* of the surface left the contents hanging
+          on the desktop with no panel behind them -- the introduction and the
+          permission asks were floating text.
+        */
+        <div
+          className="toki-top-utility"
+          data-mode="expanded"
+          /*
+           * The housing height, passed down.
+           *
+           * The panel is flush with the top of the display on purpose, so its
+           * first line sits *behind* the physical notch unless the content is
+           * pushed below it. The surface does this for its own header; anything
+           * rendered in its place has to do the same, and the introduction did
+           * not -- so the creature was clipped by the housing.
+           */
+          style={{ "--notch-inset": `${notchInset}px` } as React.CSSProperties}
+        >
+          {firstRunPending ? (
+        /*
+          The introduction, in the notch.
+          
+          Not a window. Toki lives in the panel under the notch, and the whole
+          point of "I live in your notch now" is that meeting it happens there
+          -- a separate window would be introducing something that then moves
+          somewhere else.
+        */
+        <TokiFirstRun
+          signedIn={firstRunAuth.status === "signed_in"}
+          displayName={
+            firstRunAuth.status === "signed_in" && firstRunAuth.email
+              ? (firstRunAuth.email.split("@")[0] ?? null)
+              : null
+          }
+          onSignIn={async () => {
+            const session = firstRunSessionRef.current;
+            if (session != null) {
+              setFirstRunAuth(await session.signIn());
+            }
+          }}
+            onFinished={() => {
+              setFirstRunPending(false);
+              /*
+               * "Give me a home" is a request, and this is it being granted.
+               * The overlay draws the arrival; the permissions wait until it
+               * has landed, so nothing talks over the one moment Toki has to
+               * introduce itself.
+               */
+              void invoke("introduce_creature").catch(() => undefined);
+            }}
+          />
+          ) : (
+            <TokiPermissionNotch onFinished={() => setPermissionsPending(false)} />
+          )}
+        </div>
+      ) : (
+        utilityMode !== "hidden" && (
         <TokiTopUtilitySurface
           mode={utilityMode}
           status={topStatus}
@@ -6045,7 +6862,9 @@ function SettingsWindowApp() {
             );
           }}
         />
+        )
       )}
+      
     </main>
   );
 }
@@ -6182,12 +7001,12 @@ function DebugWindowApp() {
     sendOverlayCommand({ type: "run-real-guidance-smoke" });
   }
 
-  function testCodexVisionGuidance() {
+  function testGeminiVisionGuidance() {
     setGuidanceTesterVerdict("untested");
     sendOverlayCommand({
       type: "refresh-capture",
       goal: "Show me what to click next.",
-      providerMode: "codex-subscription",
+      providerMode: "gemini",
     });
   }
 
@@ -7801,10 +8620,10 @@ function DebugWindowApp() {
               </button>
               <button
                 type="button"
-                onClick={testCodexVisionGuidance}
+                onClick={testGeminiVisionGuidance}
                 disabled={snapshot.isRefreshingCapture}
               >
-                Codex vision
+                Gemini vision
               </button>
               <button
                 type="button"

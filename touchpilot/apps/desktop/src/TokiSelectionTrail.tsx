@@ -2,134 +2,234 @@
 // Source-available for evaluation only; see LICENSE at the repository root.
 // Not open source: no redistribution, derivative works, or presenting as your own.
 
+import { useEffect, useRef } from "react";
+
 import type { CircleStrokeState } from "./gestureCircleSelect";
 import { circleSelectPolicy } from "./gestureCircleSelect";
-import {
-  getDetachedGesturePointerShadowPosition,
-  pointerShadowGeometry,
-} from "./overlayGeometry";
+import { createFluidTrail, fluidTrailPolicy, type FluidTrail } from "./fluidTrail";
 import type { ViewportMetrics } from "./overlayGeometry";
+import { placeStrokePoint, trailBounds } from "./selectionTrailPath";
 import "./TokiSelectionTrail.css";
 
 /**
- * The path drawn while circling something.
+ * The mark left by circling something.
  *
- * Two laps is a long time to spend with no idea whether Toki is watching. The
- * trail answers three questions continuously: that the gesture was recognised,
- * where the loop has been, and how much of it is left -- the last one by
- * brightening as the second lap closes, so nobody has to count.
+ * Four attempts drew a **path**: sample the pointer, smooth it, stroke a curve,
+ * fade the tail. Every one read as an object being dragged, because that is
+ * what it was -- a shape, redrawn each frame. Making it smoother, wider and
+ * grainier changed how the object looked without changing that it was one.
  *
- * Only the path. There is no marker at the leading end, because Toki's own
- * cursor is already there: a second dot drawing the line put two things at one
- * fingertip and made the trail look like something else was doing it. The blob
- * draws; this is what it has drawn.
+ * This draws nothing. It pushes colour and momentum into a fluid wherever the
+ * pointer went, and then lets the fluid behave. What appears is the
+ * *consequence* of movement rather than a record of it: the curl, the drift and
+ * the settling are not animated, they fall out of the simulation. That is why
+ * it reads as air being disturbed rather than as a line being drawn.
  *
- * Colour, in an interface that is otherwise black and white. That rule governs
- * *chrome*, where monochrome is what lets white mean "live". This is not
- * chrome: it is annotation drawn over somebody else's screen, and it has to
- * stay legible against a photograph, a white document, and a dark editor. A
- * grey line would disappear into two of those three.
+ * **One implementation for both instruments.** A hand and a trackpad produce
+ * the same thing -- points and times -- and the detector never knew which moved
+ * them. Neither does this.
+ *
+ * The only drawn thing left is the box on completion, and that is not
+ * decoration: it is Toki stating which region it took, so it has to be exact.
  */
-/**
- * The placement function returns a box corner; the trail wants its middle.
- */
-const puckCentreOffset = {
-  x: pointerShadowGeometry.width / 2,
-  y: pointerShadowGeometry.height / 2,
-};
+
+export { fluidTrailPolicy as trailPolicy };
 
 export function TokiSelectionTrail({
   stroke,
   viewport,
   head,
+  colour = "#2A9BFF",
 }: {
   stroke: CircleStrokeState | null;
   viewport: ViewportMetrics;
   /**
    * Where the blob actually is, after its spring.
    *
-   * The path is a record of raw sample positions; the blob lags them slightly
-   * because it springs. Ending the line at the blob rather than at the newest
-   * sample is what keeps the two joined while the hand is moving fast.
+   * The fluid is pushed from here as well as from the samples, so the wake
+   * comes off the creature instead of running alongside it.
    */
   head: { x: number; y: number } | null;
+  /** The creature's colour, so the trail is plainly the same thing. */
+  colour?: string;
 }) {
-  if (
-    stroke == null ||
-    stroke.phase === "abandoned" ||
-    stroke.points.length < 2
-  ) {
-    return null;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const trailRef = useRef<FluidTrail | null>(null);
+  const frameRef = useRef(0);
+  const runningRef = useRef(false);
+  const lastPushRef = useRef<{ x: number; y: number } | null>(null);
+  const consumedRef = useRef(0);
+
+  const live =
+    stroke != null && stroke.phase !== "abandoned" && stroke.points.length > 0;
+
+  /*
+   * The loop runs only while there is something to show.
+   *
+   * Toki is open all day. A full-screen fluid simulation stepping in the
+   * background would spend battery drawing nothing, so this starts on the first
+   * push and parks itself once the fluid has settled.
+   */
+  function ensureRunning() {
+    if (runningRef.current || trailRef.current == null) {
+      return;
+    }
+
+    runningRef.current = true;
+
+    const tick = (nowMs: number) => {
+      const trail = trailRef.current;
+
+      if (trail == null) {
+        runningRef.current = false;
+        return;
+      }
+
+      if (trail.frame(nowMs)) {
+        frameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      runningRef.current = false;
+    };
+
+    frameRef.current = requestAnimationFrame(tick);
   }
 
-  // Placed exactly where the blob is placed, through the same function.
-  //
-  // The blob does not sit on the fingertip -- it floats beside it, by a fixed
-  // offset with edge clamping. A trail measured from the raw pointer therefore
-  // ran parallel to the blob rather than out of it, which is what made the two
-  // look like separate things.
-  const points = stroke.points.map((point) => {
-    const placed = getDetachedGesturePointerShadowPosition(
-      point.x,
-      point.y,
-      viewport,
-    );
-    return {
-      x: placed.x + puckCentreOffset.x,
-      y: placed.y + puckCentreOffset.y,
-    };
-  });
+  useEffect(() => {
+    const canvas = canvasRef.current;
 
-  // Drawn as segments rather than one polyline, because a single stroke cannot
-  // fade along its length: the tail has to grow fainter than the head, and only
-  // per-segment opacity can say that.
-  const segments = points.slice(1).map((point, index) => {
-    const from = points[index];
-    // 0 at the oldest surviving point, 1 at the fingertip.
-    const age = (index + 1) / (points.length - 1);
-    return {
-      key: `${index}`,
-      d: `M ${from.x} ${from.y} L ${point.x} ${point.y}`,
-      opacity: 0.12 + age * 0.68,
-    };
-  });
+    if (canvas == null) {
+      return;
+    }
 
-  if (head != null) {
-    points[points.length - 1] = {
-      x: head.x + puckCentreOffset.x,
-      y: head.y + puckCentreOffset.y,
-    };
-  }
+    // Created once and kept. Building a WebGL context costs tens of
+    // milliseconds, and that is the beginning of a gesture -- the part that
+    // most has to feel immediate.
+    trailRef.current = createFluidTrail(canvas, { colour });
 
-  const complete = stroke.phase === "complete";
+    const onResize = () => trailRef.current?.resize();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      cancelAnimationFrame(frameRef.current);
+      runningRef.current = false;
+      trailRef.current?.dispose();
+      trailRef.current = null;
+    };
+    // Built once for the life of the overlay; the colour is applied below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    trailRef.current?.setColour(colour);
+  }, [colour]);
+
+  /*
+   * Feed the fluid whatever is new since the last render.
+   *
+   * By index rather than by time, so every sample is pushed exactly once: a
+   * slow hand does not pile colour into one spot, and a fast one does not skip
+   * the middle of its own arc.
+   */
+  useEffect(() => {
+    const trail = trailRef.current;
+
+    // An abandoned stroke is one Toki gave up on. Continuing to push colour
+    // for it would leave a wake behind a gesture that is no longer happening.
+    if (trail == null || stroke == null || stroke.phase === "abandoned") {
+      return;
+    }
+
+    if (stroke.points.length < consumedRef.current) {
+      // A new stroke. Start counting again.
+      consumedRef.current = 0;
+      lastPushRef.current = null;
+    }
+
+    for (let index = consumedRef.current; index < stroke.points.length; index += 1) {
+      const at = placeStrokePoint(stroke.points[index], viewport);
+      const previous = lastPushRef.current;
+
+      if (previous != null) {
+        // Laid continuously between samples. The cursor is read every fifty
+        // milliseconds, which at any real speed is tens of pixels apart, and
+        // pushing only at those positions leaves a row of separate dots.
+        trail.pushSegment(previous, at);
+      }
+
+      lastPushRef.current = at;
+    }
+
+    consumedRef.current = stroke.points.length;
+    ensureRunning();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stroke, viewport]);
+
+  /*
+   * The wake comes off the creature, not off the raw sample.
+   *
+   * The blob lags the pointer on purpose -- it is on a spring -- so pushing
+   * only at recorded positions left the fluid running beside it rather than out
+   * of it.
+   */
+  useEffect(() => {
+    const trail = trailRef.current;
+
+    if (trail == null || head == null || !live) {
+      return;
+    }
+
+    const previous = lastPushRef.current;
+
+    if (previous != null) {
+      trail.pushSegment(previous, head);
+      ensureRunning();
+    }
+
+    lastPushRef.current = head;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [head, live]);
+
+  const bounds =
+    stroke?.phase === "complete"
+      ? trailBounds(stroke.points.map((point) => placeStrokePoint(point, viewport)))
+      : null;
 
   return (
-    <svg
-      className="toki-selection-trail"
-      data-complete={complete}
-      viewBox={`0 0 ${viewport.width} ${viewport.height}`}
-      width={viewport.width}
-      height={viewport.height}
-      aria-hidden="true"
-      focusable="false"
-      style={
-        {
-          // Brightness carries progress. Two laps is far enough that "am I
-          // nearly there" is a real question, and a number on screen would be
-          // read instead of the thing being circled.
-          "--trail-progress": stroke.progress.toFixed(3),
-        } as React.CSSProperties
-      }
-    >
-      {segments.map((segment) => (
-        <path
-          key={segment.key}
-          className="toki-selection-trail__segment"
-          d={segment.d}
-          opacity={segment.opacity}
-        />
-      ))}
-    </svg>
+    <>
+      <canvas
+        ref={canvasRef}
+        className="toki-selection-trail__fluid"
+        aria-hidden="true"
+      />
+
+      {bounds != null && Number.isFinite(bounds.minX) ? (
+        <svg
+          className="toki-selection-trail"
+          data-complete="true"
+          viewBox={`0 0 ${viewport.width} ${viewport.height}`}
+          width={viewport.width}
+          height={viewport.height}
+          aria-hidden="true"
+          focusable="false"
+        >
+          {/*
+            What Toki understood. The box is the region that was locked, so it
+            has to be exactly what was taken.
+          */}
+          <rect
+            className="toki-selection-trail__region"
+            x={bounds.minX}
+            y={bounds.minY}
+            width={Math.max(1, bounds.maxX - bounds.minX)}
+            height={Math.max(1, bounds.maxY - bounds.minY)}
+            rx={12}
+          />
+        </svg>
+      ) : null}
+    </>
   );
 }
 

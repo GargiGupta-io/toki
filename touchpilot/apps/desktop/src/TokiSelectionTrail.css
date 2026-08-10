@@ -10,10 +10,6 @@
  * is about chrome, where monochrome is what lets white mean "live". This is
  * drawn over somebody else's screen and has to survive a photograph, a white
  * document, and a dark editor, and grey survives none of those.
- *
- * The dark outline underneath is what makes that true. A light stroke alone
- * vanishes against a light page; the same stroke with a dark halo reads on
- * anything, which is how subtitles have always worked.
  */
 
 .toki-selection-trail {
@@ -28,20 +24,16 @@
 .toki-selection-trail__segment {
   fill: none;
   stroke: var(--toki-cyan, rgba(151, 239, 255, 0.9));
-  stroke-width: 3.5;
+  /* Round on both, so the short segments the fade needs join without
+     showing their seams. Width is set per segment, from the policy. */
   stroke-linecap: round;
+  stroke-linejoin: round;
   /* Brightening is the progress bar. At the start the line is quiet; by the
      end of the second lap it is unmistakably lit, so nobody counts laps. */
   filter: drop-shadow(
     0 0 calc(2px + var(--trail-progress, 0) * 7px)
       var(--toki-cyan-muted, rgba(151, 239, 255, 0.42))
   );
-  paint-order: stroke;
-}
-
-/* The dark halo, drawn by doubling the stroke underneath itself. */
-.toki-selection-trail__segment {
-  stroke-linejoin: round;
 }
 
 /*
@@ -59,16 +51,54 @@
 
 @keyframes toki-selection-settle {
   from {
-    stroke-width: 5.5;
+    stroke-width: 7;
   }
-  to {
-    stroke-width: 3.5;
+}
+
+/*
+ * The box Toki actually locked onto.
+ *
+ * Appears as the loop closes: the freehand ring is what was asked, this is what
+ * was understood, and showing the second is more honest than leaving only the
+ * first. Same colour as the line, so it reads as the same mark resolving rather
+ * than as a new object arriving.
+ */
+.toki-selection-trail__region {
+  fill: none;
+  stroke: var(--toki-cyan-strong, rgba(105, 239, 255, 0.98));
+  stroke-width: 3;
+  stroke-linejoin: round;
+  animation: toki-selection-resolve 260ms ease-out both;
+}
+
+@keyframes toki-selection-resolve {
+  from {
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* The path stays -- it is the information. Only the movement goes. */
-  .toki-selection-trail[data-complete="true"] .toki-selection-trail__segment {
+  .toki-selection-trail[data-complete="true"] .toki-selection-trail__segment,
+  .toki-selection-trail__region {
     animation: none;
   }
+}
+
+/*
+ * The fluid, over everything Toki is drawn over and under nothing.
+ *
+ * Always mounted, because building a WebGL context takes tens of milliseconds
+ * and that is the start of a gesture. It costs nothing while idle: the
+ * simulation stops stepping once the fluid has settled, and a canvas that is
+ * not being drawn to is a texture sitting still.
+ */
+.toki-selection-trail__fluid {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* It annotates somebody else's screen. It must never take a click. */
+  pointer-events: none;
 }

@@ -3,6 +3,52 @@ import "./BlobCursor.css";
 
 type BlobType = "circle" | "square";
 
+/**
+ * Where the shadow comes from.
+ *
+ * "per-blob" gives every disc its own box-shadow, which is what the original
+ * component did. Inside the gooey filter that is wrong: the discs overlap, so
+ * the trailing one casts its shadow *onto* the lead one and paints a dark
+ * crescent across the middle of what is supposed to be a single droplet. It is
+ * the clearest tell that the shape is two circles.
+ *
+ * "silhouette" drops the shadow after the merge instead, so it is cast by the
+ * outline the eye actually sees. Physically that is what a shadow is, and the
+ * inside of the droplet stays one flat colour.
+ */
+type BlobShadowMode = "per-blob" | "silhouette";
+
+/**
+ * The highlight that makes the droplet look round.
+ *
+ * A flat fill is what stopped the two discs showing as two discs, but flat is
+ * also all it is -- a sticker rather than a body. The obvious repair, a gradient
+ * on each disc, is exactly what was removed: two of them disagree wherever they
+ * overlap.
+ *
+ * So there is one highlight, drawn on top of the merged shape rather than
+ * inside it. One cannot disagree with itself, and being outside the filter it
+ * is never thresholded, so it stays a soft sheen instead of the hard white dot
+ * that the old inner glint became once the fill went flat.
+ *
+ * A lit top-left and a shaded bottom-right is the whole trick; it is how a
+ * sphere is drawn, and the eye reads it as volume without being told.
+ *
+ * Filter-based lighting was the other candidate -- feSpecularLighting over the
+ * merged alpha, which is more correct and deforms with the shape. Rendered, it
+ * washed the droplet almost white and cost five more primitives on a
+ * full-screen filter that runs every frame. This is cheaper and looked better.
+ */
+function sheenBackground(strength: number): string {
+  const light = (alpha: number) => `rgba(255, 255, 255, ${(alpha * strength).toFixed(3)})`;
+  const shade = (alpha: number) => `rgba(2, 18, 44, ${(alpha * strength).toFixed(3)})`;
+
+  return [
+    `radial-gradient(circle at 33% 27%, ${light(0.62)} 0%, ${light(0.2)} 30%, rgba(255, 255, 255, 0) 58%)`,
+    `radial-gradient(circle at 70% 80%, ${shade(0.4)} 0%, rgba(2, 18, 44, 0) 56%)`,
+  ].join(", ");
+}
+
 type BlobCursorPosition = {
   clientX: number;
   clientY: number;
@@ -30,6 +76,9 @@ type BlobCursorProps = {
   shadowBlur?: number;
   shadowOffsetX?: number;
   shadowOffsetY?: number;
+  shadowMode?: BlobShadowMode;
+  /** 0 turns the highlight off; 1 is the tuned strength. */
+  sheenStrength?: number;
   filterId?: string;
   filterStdDeviation?: number;
   filterColorMatrixValues?: string;
@@ -59,6 +108,8 @@ export default function BlobCursor({
   shadowBlur = 5,
   shadowOffsetX = 10,
   shadowOffsetY = 10,
+  shadowMode = "per-blob",
+  sheenStrength = 0,
   filterId = "blob",
   filterStdDeviation = 30,
   filterColorMatrixValues = "1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 35 -10",
@@ -75,6 +126,7 @@ export default function BlobCursor({
 }: BlobCursorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const blobsRef = useRef<Array<HTMLDivElement | null>>([]);
+  const sheenRef = useRef<HTMLDivElement | null>(null);
   const targetPositionRef = useRef<{ x: number; y: number } | null>(null);
   const lastClientPositionRef = useRef<BlobCursorPosition | null>(null);
   const blobFramesRef = useRef<BlobFrame[]>([]);
@@ -176,7 +228,20 @@ export default function BlobCursor({
       }
 
       const remainingDistance = Math.hypot(desiredX - frame.x, desiredY - frame.y);
-      const speed = Math.min(Math.hypot(frame.x - frame.previousX, frame.y - frame.previousY) / 16, 1);
+      // Divided by 9, not 16.
+      //
+      // This never measured pointer velocity. The macOS cursor is polled every
+      // 50ms and only emitted once it has moved, so the target arrived as a
+      // 20Hz staircase and this measured the lerp *catching up* to each step --
+      // which peaked at nearly twice the true speed and pulsed about 5:1 within
+      // every cycle. That pulse was what made the stretch visible, and 16 was
+      // calibrated against it.
+      //
+      // A spring now smooths the position before it arrives, which removed the
+      // staircase and the bonus with it. 9 restores the same stretch across the
+      // speeds people actually move at, and it is steady rather than
+      // flickering, so it reads as more rather than less.
+      const speed = Math.min(Math.hypot(frame.x - frame.previousX, frame.y - frame.previousY) / 9, 1);
       const ambientShape = ambientMotionIsActive
         ? Math.sin(phase * 1.41) * ambientDeform * (isLead ? 1 : 0.72)
         : 0;
@@ -187,6 +252,25 @@ export default function BlobCursor({
 
       blobFramesRef.current[i] = frame;
       el.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0) translate(-50%, -50%) rotate(${rotation + rotationWobble}deg) scale(${scaleX}, ${scaleY})`;
+
+      if (isLead && sheenRef.current != null) {
+        /*
+         * The highlight follows the lead lobe, but not its rotation.
+         *
+         * The blob is turned to face the way it is travelling, which is
+         * invisible on a circle. Turning the highlight with it would make the
+         * light appear to orbit the droplet whenever the direction changed --
+         * light does not follow a mouse.
+         *
+         * It takes the smaller of the two stretch factors, applied evenly. The
+         * blob's own stretch is measured along its direction of travel; matching
+         * that exactly without the rotation would let the highlight cross the
+         * outline diagonally. The smaller factor is inside the shape whichever
+         * way it is pointing.
+         */
+        const containedScale = Math.min(scaleX, scaleY);
+        sheenRef.current.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0) translate(-50%, -50%) scale(${containedScale})`;
+      }
 
       if (blobType === "circle") {
         const radiusShift = ambientMotionIsActive
@@ -241,7 +325,14 @@ export default function BlobCursor({
       const deltaY = previous == null ? 0 : clientY - previous.clientY;
       const distance = Math.hypot(deltaX, deltaY);
 
-      if (distance > 1.25) {
+      // 0.4px, not 1.25px.
+      //
+      // The threshold was sized for the 20Hz staircase, where a real movement
+      // arrived as one large jump every three frames. Smoothed input arrives as
+      // small steps every frame instead, so 1.25 let the trail direction go
+      // stale below roughly 75 px/s -- the trail pointed the wrong way during
+      // exactly the slow, deliberate movement it is meant to describe.
+      if (distance > 0.4) {
         trailVectorRef.current = {
           x: -deltaX / distance,
           y: -deltaY / distance,
@@ -358,6 +449,31 @@ export default function BlobCursor({
     moveTo(position.clientX, position.clientY);
   }, [moveTo, position]);
 
+  const castsSilhouetteShadow = shadowMode === "silhouette";
+  /*
+   * The shadow is a filter primitive, not a chained CSS function.
+   *
+   * Writing `filter: url(#goo) drop-shadow(...)` reads better and is the same
+   * picture in Gecko and Blink, but a CSS filter list mixing url() with a
+   * shorthand function is the case WebKit has always been weakest at -- and
+   * this ships inside a WebView. As a primitive it is one filter, evaluated
+   * after feColorMatrix, so the shadow is cast by the merged shape and there is
+   * nothing for the engine to compose.
+   *
+   * It is also cheaper: one pass over the layer instead of two.
+   *
+   * CSS blur radius is roughly twice a Gaussian standard deviation, so the
+   * halved value here reproduces the box-shadow it replaces.
+   */
+  const shadowDeviation = shadowBlur / 2;
+  // Only when the filter is off does the shadow have to come from CSS, since
+  // there is then no filter chain to put it in.
+  const mainFilter = useFilter
+    ? `url(#${filterId})`
+    : castsSilhouetteShadow
+      ? `drop-shadow(${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px ${shadowColor})`
+      : "";
+
   return (
     <div
       ref={containerRef}
@@ -371,11 +487,21 @@ export default function BlobCursor({
           <filter id={filterId}>
             <feGaussianBlur in="SourceGraphic" result="blur" stdDeviation={filterStdDeviation} />
             <feColorMatrix in="blur" values={filterColorMatrixValues} />
+            {castsSilhouetteShadow ? (
+              // No `in`, so it takes the merged result above -- the shadow is
+              // cast by the outline the eye sees rather than by each disc.
+              <feDropShadow
+                dx={shadowOffsetX}
+                dy={shadowOffsetY}
+                stdDeviation={shadowDeviation}
+                floodColor={shadowColor}
+              />
+            ) : null}
           </filter>
         </svg>
       )}
 
-      <div className="blob-main" style={{ filter: useFilter ? `url(#${filterId})` : undefined }}>
+      <div className="blob-main" style={{ filter: mainFilter === "" ? undefined : mainFilter }}>
         {Array.from({ length: trailCount }).map((_, i) => (
           <div
             key={i}
@@ -389,7 +515,9 @@ export default function BlobCursor({
               borderRadius: blobType === "circle" ? "50%" : "0%",
               background: fillColor,
               opacity: opacities[i],
-              boxShadow: `${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px 0 ${shadowColor}`,
+              boxShadow: castsSilhouetteShadow
+                ? undefined
+                : `${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px 0 ${shadowColor}`,
             }}
           >
             {(innerSizes[i] ?? 0) > 0 ? (
@@ -408,6 +536,22 @@ export default function BlobCursor({
           </div>
         ))}
       </div>
+
+      {sheenStrength > 0 && (sizes[0] ?? 0) > 0 ? (
+        // Outside .blob-main, so the merge filter never touches it. Inside, the
+        // alpha threshold would turn this soft gradient into a hard edge --
+        // which is what it is here to replace.
+        <div
+          ref={sheenRef}
+          className="blob-sheen"
+          style={{
+            width: sizes[0],
+            height: sizes[0],
+            borderRadius: blobType === "circle" ? "50%" : "0%",
+            background: sheenBackground(sheenStrength),
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   classifyPointerExplanationCommand,
   explicitObjectConflictsWithLabel,
   getPointerEvidenceDecision,
-  requestCodexPointerExplanation,
+  requestGeminiPointerExplanation,
   shouldRoutePointerExplanation,
   verifyPointerExplanationResponse,
 } from "../apps/desktop/src/gesturePointerExplanation.ts";
@@ -136,9 +136,9 @@ test("refuses provider answers that move away, stay generic, or conflict with sp
 
 test("sends the frozen point and bounded region through the existing subscription bridge", async () => {
   let nativeArgs;
-  const result = await requestCodexPointerExplanation(providerRequest(), {
+  const result = await requestGeminiPointerExplanation(providerRequest(), {
     invokeImpl: async (command, args) => {
-      assert.equal(command, "request_codex_vision_guidance");
+      assert.equal(command, "request_gemini_vision_guidance");
       nativeArgs = args;
       return {
         rawAnswer: JSON.stringify({
@@ -151,7 +151,7 @@ test("sends the frozen point and bounded region through the existing subscriptio
           disabled: false,
           target: { centerX: 420, centerY: 280, width: 150, height: 36 },
         }),
-        providerName: "codex-subscription:test",
+        providerName: "gemini:test",
         durationMs: 14,
       };
     },
@@ -161,6 +161,59 @@ test("sends the frozen point and bounded region through the existing subscriptio
   assert.match(nativeArgs.request.prompt, /Exact locked point: 420,280/);
   assert.match(nativeArgs.request.prompt, /Bounded focus region: 340,200,160x160/);
   assert.equal(nativeArgs.request.imageBase64, "dGVzdA==");
+});
+
+test("the service answers the lock when there is one, not a CLI on this machine", async () => {
+  // Reading a locked control is the same job as reading a screen for guidance,
+  // and guidance already went to the service. Only this path did not, so on a
+  // build whose vision provider was working it still said "CLI guidance is not
+  // configured" -- naming a developer environment variable to somebody who had
+  // no reason to think this feature was wired differently.
+  let sent = null;
+  const result = await requestGeminiPointerExplanation(providerRequest(), {
+    invokeImpl: async () => assert.fail("must not reach for a local binary"),
+    hostedVision: {
+      send: async (body) => {
+        sent = body;
+        return {
+          kind: "ok",
+          providerName: "claude-cli-dev",
+          rawAnswer: JSON.stringify({
+            found: true,
+            label: "Recently played tab",
+            explanation: "Shows songs and media played recently.",
+            target: { centerX: 420, centerY: 280, width: 150, height: 36 },
+            confidence: 0.91,
+            evidence: ["Visible label and tab boundary at the locked point."],
+            riskWarning: "",
+            disabled: false,
+          }),
+        };
+      },
+    },
+  });
+
+  assert.equal(result.status, "grounded");
+  assert.equal(result.debug.providerName, "claude-cli-dev");
+  // The same evidence the CLI path sends, so the service is asked the same
+  // question rather than a weaker version of it.
+  assert.match(sent.prompt, /Exact locked point: 420,280/);
+  assert.match(sent.prompt, /Bounded focus region: 340,200,160x160/);
+  assert.equal(sent.imageBase64, "dGVzdA==");
+});
+
+test("without a service the lock still uses the developer CLI", async () => {
+  // A machine with no endpoint configured has always used the CLI, and must
+  // keep working exactly as it did.
+  let reached = false;
+  await requestGeminiPointerExplanation(providerRequest(), {
+    invokeImpl: async () => {
+      reached = true;
+      return { rawAnswer: "{}", providerName: "cli", durationMs: 1 };
+    },
+  });
+
+  assert.equal(reached, true);
 });
 
 test("the explanation provider has no click or generic guidance side effects", () => {
@@ -187,7 +240,7 @@ test("the overlay revalidates the frozen screen before the provider and never re
 
   assert.match(
     appSource,
-    /createScreenStateFingerprint\(snapshot\.window\)[\s\S]*?getPointerLockInvalidationReason[\s\S]*?requestCodexPointerExplanation/,
+    /createScreenStateFingerprint\(snapshot\.window\)[\s\S]*?getPointerLockInvalidationReason[\s\S]*?requestGeminiPointerExplanation/,
   );
   assert.match(appSource, /shouldRoutePointerExplanation/);
   assert.match(appSource, /current\?\.id === lock\.id \? null : current/);

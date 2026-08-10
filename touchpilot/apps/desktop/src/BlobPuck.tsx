@@ -2,6 +2,12 @@ import type { CSSProperties } from "react";
 import type { TargetBox } from "@toki/shared";
 import BlobCursor from "./BlobCursor";
 import {
+  arrivalPlacement,
+  idleArrival,
+  type ArrivalState,
+} from "./creatureArrival";
+import { applyCreatureColour } from "./creatureColour";
+import {
   clampPuckCenterToViewport,
   pointerShadowGeometry,
   type PointerShadowPosition,
@@ -16,8 +22,8 @@ import "./BlobPuck.css";
 type BlobPuckVisualConfig = {
   fillColor: string;
   sizes: [number, number];
-  innerSizes: [number, number];
-  innerColor: string;
+  /** Strength of the single highlight drawn over the merged droplet. */
+  sheenStrength: number;
   opacities: [number, number];
   shadowColor: string;
   shadowBlur: number;
@@ -34,20 +40,69 @@ type BlobPuckVisualConfig = {
 
 export const gestureBlobFollowDurationSeconds = 0.025;
 
+/** The roundness comes from the sheen over the merged shape instead. */
+const noInnerDot: [number, number] = [0, 0];
+
+/*
+ * Flat fill, full opacity.
+ *
+ * These were radial gradients at 0.82-0.98 opacity, and both choices gave the
+ * two discs away. A gradient is positioned relative to its own element, so the
+ * lead and the trail each carried their own highlight and their own dark edge;
+ * where they overlapped, the merge had a light ball welded to a dark one. Being
+ * translucent made it worse, because the overlap composited twice and came out
+ * darker than either disc.
+ *
+ * One flat colour at full opacity has nothing to disagree about, so the merged
+ * outline reads as a single droplet even at full lag, when the two centres are
+ * 22px apart.
+ *
+ * Flat is not the finished look, though -- on its own it is a sticker. The
+ * roundness comes back as a single sheen drawn over the merged shape, and the
+ * depth from a shadow cast by that same merged outline rather than by each
+ * disc. Both are one-of, which is why neither can bring the seam back.
+ *
+ * Rendered and compared side by side before changing: gradient fill kept the
+ * visible seam even after the shadow was fixed, so the fill was the larger of
+ * the two causes.
+ *
+ * Each colour below is its gradient's old midpoint, which was the body tone;
+ * "paused" says paused with a dim slate instead of with transparency.
+ *
+ * The lead blob is the large one.
+ *
+ * These were [small, large]. Blobs render in index order inside one stacking
+ * context, so the trailing blob painted *over* the lead -- and every property
+ * that carries the liquid character is weighted towards the lead: the velocity
+ * stretch at 1.0 against 0.65, the shape morph at 1.0 against 0.72, and the
+ * glint. All of it was happening on the disc underneath, hidden by a larger,
+ * calmer circle. That is why the thing read as a rigid dot however much the
+ * deformation was turned up.
+ *
+ * The largest size is unchanged in every preset, so the puck's radius, the
+ * viewport clamping, and the two-hand split geometry all behave exactly as
+ * before.
+ */
+/**
+ * The creature at rest, which is also what the trail is coloured with.
+ *
+ * Exported so the wake off the blob is plainly the same substance as the blob,
+ * including whatever colour was chosen when Toki was first met.
+ */
+export const idleCreatureColour = "#2A9BFF";
+
 const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
   idle: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(250, 254, 255, 0.96) 0%, rgba(105, 230, 255, 0.9) 18%, rgba(30, 150, 255, 0.84) 58%, rgba(45, 55, 218, 0.8) 100%)",
-    sizes: [15, 22],
-    innerSizes: [4, 0],
-    innerColor: "rgba(255,255,255,0.56)",
-    opacities: [0.88, 0.82],
+    fillColor: "#2A9BFF",
+    sizes: [22, 14],
+    sheenStrength: 1,
+    opacities: [1, 1],
     shadowColor: "rgba(2, 13, 34, 0.5)",
     shadowBlur: 7,
     shadowOffsetX: 3,
     shadowOffsetY: 5,
     fastDuration: 0.14,
-    slowDuration: 0.16,
+    slowDuration: 0.266,
     trailPull: 3,
     liquidStretch: 0.28,
     ambientMotion: 1.6,
@@ -55,18 +110,16 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     ambientDeform: 0.075,
   },
   listening: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.98) 0%, rgba(130, 250, 255, 0.96) 20%, rgba(31, 188, 255, 0.94) 58%, rgba(45, 92, 235, 0.88) 100%)",
-    sizes: [17, 24],
-    innerSizes: [5, 0],
-    innerColor: "rgba(255,255,255,0.68)",
-    opacities: [0.96, 0.9],
+    fillColor: "#24BEFF",
+    sizes: [24, 15],
+    sheenStrength: 1,
+    opacities: [1, 1],
     shadowColor: "rgba(3, 54, 92, 0.58)",
     shadowBlur: 9,
     shadowOffsetX: 3,
     shadowOffsetY: 6,
     fastDuration: 0.11,
-    slowDuration: 0.13,
+    slowDuration: 0.209,
     trailPull: 4,
     liquidStretch: 0.36,
     ambientMotion: 2.6,
@@ -74,18 +127,16 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     ambientDeform: 0.11,
   },
   thinking: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.95) 0%, rgba(143, 206, 255, 0.9) 18%, rgba(84, 104, 255, 0.88) 58%, rgba(72, 42, 198, 0.84) 100%)",
-    sizes: [16, 25],
-    innerSizes: [4, 0],
-    innerColor: "rgba(255,255,255,0.58)",
-    opacities: [0.9, 0.86],
+    fillColor: "#5A6EFF",
+    sizes: [25, 16],
+    sheenStrength: 1,
+    opacities: [1, 1],
     shadowColor: "rgba(20, 17, 75, 0.58)",
     shadowBlur: 9,
     shadowOffsetX: 3,
     shadowOffsetY: 6,
     fastDuration: 0.16,
-    slowDuration: 0.2,
+    slowDuration: 0.304,
     trailPull: 5,
     liquidStretch: 0.4,
     ambientMotion: 3.4,
@@ -93,18 +144,16 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     ambientDeform: 0.145,
   },
   guiding: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.98) 0%, rgba(98, 236, 255, 0.98) 19%, rgba(20, 162, 255, 0.96) 58%, rgba(44, 73, 229, 0.9) 100%)",
-    sizes: [17, 24],
-    innerSizes: [5, 0],
-    innerColor: "rgba(255,255,255,0.68)",
-    opacities: [0.98, 0.92],
+    fillColor: "#17A6FF",
+    sizes: [24, 15],
+    sheenStrength: 1,
+    opacities: [1, 1],
     shadowColor: "rgba(4, 44, 92, 0.62)",
     shadowBlur: 10,
     shadowOffsetX: 3,
     shadowOffsetY: 6,
     fastDuration: 0.12,
-    slowDuration: 0.14,
+    slowDuration: 0.228,
     trailPull: 4,
     liquidStretch: 0.44,
     ambientMotion: 2.2,
@@ -112,18 +161,16 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     ambientDeform: 0.105,
   },
   confirming: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.99) 0%, rgba(178, 255, 242, 0.96) 20%, rgba(39, 203, 220, 0.9) 58%, rgba(35, 103, 216, 0.86) 100%)",
-    sizes: [17, 24],
-    innerSizes: [5, 0],
-    innerColor: "rgba(255,255,255,0.72)",
-    opacities: [0.96, 0.9],
+    fillColor: "#2BCEDF",
+    sizes: [24, 15],
+    sheenStrength: 1,
+    opacities: [1, 1],
     shadowColor: "rgba(6, 58, 88, 0.6)",
     shadowBlur: 10,
     shadowOffsetX: 3,
     shadowOffsetY: 6,
     fastDuration: 0.13,
-    slowDuration: 0.15,
+    slowDuration: 0.247,
     trailPull: 4,
     liquidStretch: 0.36,
     ambientMotion: 2.8,
@@ -131,18 +178,16 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     ambientDeform: 0.12,
   },
   paused: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(240, 247, 255, 0.7) 0%, rgba(120, 164, 196, 0.58) 24%, rgba(59, 91, 148, 0.5) 62%, rgba(44, 50, 93, 0.45) 100%)",
-    sizes: [14, 20],
-    innerSizes: [3, 0],
-    innerColor: "rgba(255,255,255,0.42)",
-    opacities: [0.62, 0.52],
+    fillColor: "#45638F",
+    sizes: [20, 13],
+    sheenStrength: 0.7,
+    opacities: [1, 1],
     shadowColor: "rgba(0, 0, 0, 0.42)",
     shadowBlur: 6,
     shadowOffsetX: 3,
     shadowOffsetY: 5,
     fastDuration: 0.2,
-    slowDuration: 0.26,
+    slowDuration: 0.38,
     trailPull: 2,
     liquidStretch: 0.16,
     ambientMotion: 0,
@@ -150,18 +195,16 @@ const blobPuckVisuals: Record<TokiCreatureMode, BlobPuckVisualConfig> = {
     ambientDeform: 0,
   },
   error: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 160, 120, 0.92) 18%, rgba(255, 78, 106, 0.86) 58%, rgba(132, 40, 95, 0.82) 100%)",
-    sizes: [17, 24],
-    innerSizes: [4, 0],
-    innerColor: "rgba(255,255,255,0.6)",
-    opacities: [0.9, 0.82],
+    fillColor: "#FF5470",
+    sizes: [24, 15],
+    sheenStrength: 1,
+    opacities: [1, 1],
     shadowColor: "rgba(82, 10, 45, 0.52)",
     shadowBlur: 9,
     shadowOffsetX: 3,
     shadowOffsetY: 6,
     fastDuration: 0.17,
-    slowDuration: 0.22,
+    slowDuration: 0.323,
     trailPull: 3,
     liquidStretch: 0.24,
     ambientMotion: 1.3,
@@ -176,9 +219,7 @@ const blobPuckLockVisuals: Record<
 > = {
   none: {},
   checking: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.99) 0%, rgba(255, 238, 166, 0.98) 20%, rgba(255, 181, 63, 0.95) 58%, rgba(194, 85, 36, 0.9) 100%)",
-    innerColor: "rgba(255,255,255,0.86)",
+    fillColor: "#FFB63F",
     shadowColor: "rgba(255, 165, 55, 0.78)",
     shadowBlur: 15,
     ambientMotion: 0,
@@ -186,9 +227,7 @@ const blobPuckLockVisuals: Record<
     ambientDeform: 0,
   },
   locked: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.99) 0%, rgba(155, 255, 242, 0.98) 20%, rgba(33, 220, 211, 0.95) 58%, rgba(27, 113, 202, 0.9) 100%)",
-    innerColor: "rgba(255,255,255,0.9)",
+    fillColor: "#26DED5",
     shadowColor: "rgba(45, 240, 220, 0.78)",
     shadowBlur: 16,
     ambientMotion: 0,
@@ -196,9 +235,7 @@ const blobPuckLockVisuals: Record<
     ambientDeform: 0,
   },
   limited: {
-    fillColor:
-      "radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.99) 0%, rgba(255, 224, 150, 0.97) 20%, rgba(245, 152, 51, 0.94) 58%, rgba(176, 67, 45, 0.9) 100%)",
-    innerColor: "rgba(255,255,255,0.86)",
+    fillColor: "#F79A35",
     shadowColor: "rgba(255, 143, 48, 0.76)",
     shadowBlur: 15,
     ambientMotion: 0,
@@ -215,6 +252,8 @@ export function BlobPuck({
   splitVisual,
   lockState,
   target,
+  hueShift = 0,
+  arrival = idleArrival,
 }: {
   creatureState?: TokiCreatureState;
   motion: PuckMotionModel;
@@ -223,16 +262,43 @@ export function BlobPuck({
   splitVisual: CreatureSplitVisualState | null;
   lockState: GesturePuckLockState;
   target: TargetBox | null;
+  /** How far to turn the creature's colours. Zero is the colour it was drawn in. */
+  hueShift?: number;
+  /**
+   * The one-off journey from the middle of the screen to the notch, at the end
+   * of the introduction. Idle every other second of the creature's life.
+   */
+  arrival?: ArrivalState;
 }) {
   const presentedSplitVisual = lockState === "none" ? splitVisual : null;
+  const arriving = arrival.phase !== "idle";
 
-  if (pointerShadow == null && presentedSplitVisual == null) {
+  /*
+   * During the arrival the creature is not following anything.
+   *
+   * It is being introduced: it appears in the middle of the screen, oversized,
+   * and travels to the notch. Letting the pointer drive it here would have it
+   * chase the cursor across its own introduction.
+   */
+  if (!arriving && pointerShadow == null && presentedSplitVisual == null) {
     return null;
   }
 
   const mode = creatureState?.mode ?? "idle";
+
+  /*
+   * The colour somebody chose when they met Toki, applied here.
+   *
+   * A rotation of the whole family rather than one hex overwriting every state:
+   * resting, listening and thinking are deliberately different tones, and that
+   * difference is what makes a glance at the creature informative.
+   *
+   * The lock colours are applied *after*, and are not rotated. Amber means
+   * checking and teal means locked on; those are meanings, and a green Toki
+   * still has to be able to say them.
+   */
   const visual = {
-    ...blobPuckVisuals[mode],
+    ...applyCreatureColour(blobPuckVisuals[mode], mode, hueShift),
     ...blobPuckLockVisuals[lockState],
   };
   const gesture = creatureState?.gesture;
@@ -259,26 +325,39 @@ export function BlobPuck({
           presentedSplitVisual.phase === "merging"
         ? 0.74
         : 0.82;
+  /*
+   * Where it is arriving from, and how big it is on the way.
+   *
+   * The destination is the notch, measured rather than assumed: the creature
+   * settles where it actually lives, which is under the housing at the top
+   * centre of the display.
+   */
+  const arrivalAt_ = arriving
+    ? arrivalPlacement(
+        arrival,
+        { width: window.innerWidth, height: window.innerHeight },
+        { x: window.innerWidth / 2, y: pointerShadowGeometry.margin + 26 },
+      )
+    : null;
+
   const sizes = visual.sizes.map(
-    (size) => size * gestureScale * splitScale,
+    (size) => size * gestureScale * splitScale * (arrivalAt_?.scale ?? 1),
   ) as [number, number];
-  const innerSizes = visual.innerSizes.map(
-    (size) => size * gestureScale * splitScale,
-  ) as [
-    number,
-    number,
-  ];
   const puckRadius = Math.max(...sizes) / 2 + 12;
-  const unclampedCenterX = presentedSplitVisual
-    ? presentedSplitVisual.primary.x
-    : (pointerShadow?.x ?? 0) +
-      pointerShadowGeometry.width / 2 +
-      (gestureIsActive ? (gesture?.offsetX ?? 0) : 0);
-  const unclampedCenterY = presentedSplitVisual
-    ? presentedSplitVisual.primary.y
-    : (pointerShadow?.y ?? 0) +
-      pointerShadowGeometry.height / 2 +
-      (gestureIsActive ? (gesture?.offsetY ?? 0) : 0);
+  const unclampedCenterX = arrivalAt_
+    ? arrivalAt_.x
+    : presentedSplitVisual
+      ? presentedSplitVisual.primary.x
+      : (pointerShadow?.x ?? 0) +
+        pointerShadowGeometry.width / 2 +
+        (gestureIsActive ? (gesture?.offsetX ?? 0) : 0);
+  const unclampedCenterY = arrivalAt_
+    ? arrivalAt_.y
+    : presentedSplitVisual
+      ? presentedSplitVisual.primary.y
+      : (pointerShadow?.y ?? 0) +
+        pointerShadowGeometry.height / 2 +
+        (gestureIsActive ? (gesture?.offsetY ?? 0) : 0);
   const centerX = clampPuckCenterToViewport(
     unclampedCenterX,
     puckRadius,
@@ -373,16 +452,22 @@ export function BlobPuck({
         fillColor={visual.fillColor}
         trailCount={2}
         sizes={sizes}
-        innerSizes={innerSizes}
-        innerColor={visual.innerColor}
+        // No inner dot. It was the only highlight once the fill went flat,
+        // and at 4px it read as a hard white speck rather than a shine --
+        // most visible while moving, which is when it was most looked at.
+        innerSizes={noInnerDot}
+        sheenStrength={visual.sheenStrength}
         opacities={visual.opacities}
         shadowColor={visual.shadowColor}
         shadowBlur={visual.shadowBlur}
         shadowOffsetX={visual.shadowOffsetX}
         shadowOffsetY={visual.shadowOffsetY}
+        // Cast by the merged outline, not by each disc. Per-disc shadows
+        // land inside the droplet and draw the seam between the two.
+        shadowMode="silhouette"
         filterId="toki-blob-puck"
-        filterStdDeviation={11}
-        useFilter={false}
+        filterStdDeviation={5}
+        useFilter={true}
         fastDuration={leadFollowDuration}
         slowDuration={gestureIsActive ? visual.slowDuration * 0.88 : visual.slowDuration}
         trailPull={gestureIsActive ? visual.trailPull + 2 : visual.trailPull}
@@ -409,16 +494,19 @@ export function BlobPuck({
               fillColor={visual.fillColor}
               trailCount={2}
               sizes={sizes}
-              innerSizes={innerSizes}
-              innerColor={visual.innerColor}
+              innerSizes={noInnerDot}
+              sheenStrength={visual.sheenStrength}
               opacities={visual.opacities}
               shadowColor={visual.shadowColor}
               shadowBlur={visual.shadowBlur}
               shadowOffsetX={visual.shadowOffsetX}
               shadowOffsetY={visual.shadowOffsetY}
+        // Cast by the merged outline, not by each disc. Per-disc shadows
+        // land inside the droplet and draw the seam between the two.
+        shadowMode="silhouette"
               filterId="toki-blob-puck-secondary"
-              filterStdDeviation={11}
-              useFilter={false}
+              filterStdDeviation={5}
+              useFilter={true}
               fastDuration={visual.fastDuration}
               slowDuration={visual.slowDuration}
               trailPull={visual.trailPull}

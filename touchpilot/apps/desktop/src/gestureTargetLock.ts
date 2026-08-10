@@ -137,7 +137,20 @@ export type PointerRegionLockRequest = {
   id: string;
   lockedAt: string;
   pointer: GesturePointerSample;
-  roll: WristRollCycle;
+  /**
+   * What drew the circle.
+   *
+   * A trackpad has no hand and no wrist, and the two fields below describe both.
+   * Filling them with invented values would put a hand that never existed into
+   * the diagnostics -- which are the record used to work out why a target was
+   * refused, and are worth nothing if they contain fiction. Absent is the honest
+   * answer, and this field is what makes the absence readable.
+   *
+   * Optional so every existing caller keeps compiling and keeps meaning "hand".
+   */
+  source?: "hand" | "pointer";
+  /** Absent when a trackpad drew the circle: there was no wrist to roll. */
+  roll?: WristRollCycle;
   region: { x: number; y: number; width: number; height: number };
   /** Signed, so the trail and the diagnostics can say which way it went. */
   turnedDegrees: number;

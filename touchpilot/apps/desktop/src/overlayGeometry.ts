@@ -30,9 +30,21 @@ export const cursorPointerSeparation = {
 
 export const cursorPointerEdgeRadius = 25;
 
+/**
+ * How far the blob sits from a tracked fingertip.
+ *
+ * It sits *beside* the point rather than on it, so the thing being pointed at
+ * stays visible -- but 100 across and 80 down put it about 128px away, three
+ * and a half times the cursor's own 36px, and at that range it reads as a
+ * separate object that happens to move nearby rather than as the pointer.
+ *
+ * Close enough now to be attached, still clear of what it is indicating -- and
+ * still leaving room to compress near a screen edge without landing on the
+ * fingertip, which is what the 45px floor in the pointing tests protects.
+ */
 export const gesturePointerSeparation = {
-  horizontal: 100,
-  vertical: 80,
+  horizontal: 64,
+  vertical: 44,
 } as const;
 
 export const gesturePointerEdgeFade = {

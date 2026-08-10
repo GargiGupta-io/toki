@@ -74,7 +74,14 @@ function intersectRects(first: CoordinateRect, second: CoordinateRect) {
   };
 }
 
-function displayRectToScreenshotRect(
+/**
+ * A rectangle in display points, expressed in screenshot pixels.
+ *
+ * Exported because watching a target region for change needs the same
+ * mapping as cropping one, and two copies of a scale factor is how they
+ * come to disagree.
+ */
+export function displayRectToScreenshotRect(
   rect: CoordinateRect,
   display: CoordinateSize,
   screenshot: CoordinateSize,
