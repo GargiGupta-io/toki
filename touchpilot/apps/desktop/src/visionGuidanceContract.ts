@@ -148,7 +148,78 @@ export function parseVisionTargetResponse(text: string): VisionTargetResponse {
     throw new Error("vision provider did not return a JSON object");
   }
 
-  return JSON.parse(candidate.slice(start, end + 1)) as VisionTargetResponse;
+  const parsed = JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>;
+
+  return normalizeVisionTargetShape(parsed);
+}
+
+/**
+ * Put every field where this app expects it, wherever the model put it.
+ *
+ * The schema says `target` holds the box, its label and its candidate id, and
+ * that `confidence`, `reason` and `risk` sit beside it. Models treat that as a
+ * suggestion. One provider returned four different arrangements in one evening:
+ * reason inside the target, then confidence inside it too, then the label and
+ * candidate id lifted out of it.
+ *
+ * Every one of those was a correct, confident answer, and every one was thrown
+ * away -- each by a different gate further down, which made one problem look
+ * like four unrelated ones. A nested reason left an icon-only control with no
+ * evidence and read as "the screen does not match". A nested confidence parsed
+ * to NaN, which is not below the low-confidence threshold, and so came out as
+ * "invalid target". A lifted label left the target anonymous.
+ *
+ * Fixing the fields one at a time was the mistake. This reads each from either
+ * level, so the arrangement stops mattering. What is deliberately not done is
+ * inventing anything: a field absent from both levels stays absent, and a value
+ * the model put where the schema asked for it always wins.
+ */
+export function normalizeVisionTargetShape(
+  parsed: Record<string, unknown>,
+): VisionTargetResponse {
+  const target = (
+    parsed.target != null && typeof parsed.target === "object"
+      ? { ...(parsed.target as Record<string, unknown>) }
+      : null
+  ) as (Record<string, unknown> & Partial<VisionTarget>) | null;
+
+  const firstString = (...values: unknown[]) =>
+    values.find(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    ) as string | undefined;
+  const firstNumber = (...values: unknown[]) =>
+    values.find((value) => Number.isFinite(Number(value))) as number | undefined;
+
+  if (target != null) {
+    // Down into the target: what names and identifies the control belongs with
+    // the control.
+    // Falling back to what was already there, so an explicitly empty candidate
+    // id -- which is how a coordinate-only target says it matched no candidate
+    // -- stays an empty string rather than quietly becoming absent.
+    target.candidateId =
+      firstString(target.candidateId, parsed.candidateId) ?? target.candidateId;
+    target.label = firstString(target.label, parsed.label) ?? target.label;
+
+    for (const key of ["centerX", "centerY", "width", "height", "x", "y"]) {
+      const value = firstNumber(target[key], parsed[key]);
+      if (value !== undefined) {
+        target[key] = value;
+      }
+    }
+  }
+
+  // Up out of the target: these describe the answer, not the control.
+  const reason = firstString(parsed.reason, target?.reason);
+  const risk = firstString(parsed.risk, target?.risk);
+  const confidence = firstNumber(parsed.confidence, target?.confidence);
+
+  return {
+    ...(parsed as VisionTargetResponse),
+    target: target as VisionTarget | null,
+    ...(reason === undefined ? {} : { reason }),
+    ...(risk === undefined ? {} : { risk: risk as VisionTargetResponse["risk"] }),
+    ...(confidence === undefined ? {} : { confidence }),
+  };
 }
 
 export function resolveVisionTargetToDisplay(
@@ -352,6 +423,11 @@ export function createVisionLocalizationPrompt(request: GuidanceRequest) {
     "If one candidate is the exact control, copy its candidate id exactly.",
     "Do not invent candidate ids. If no exact candidate exists but the control is visually unambiguous in the current screenshot, use an empty candidate id and return its precise image coordinates.",
     "A visually grounded coordinate-only target must have a specific semantic label, a reason describing the visible evidence, and confidence at or above 0.72.",
+    "",
+    // Said explicitly because it is the single thing most often got wrong.
+    // The parser now accepts either arrangement, but an answer in the shape
+    // that was asked for needs no repair and cannot be repaired incorrectly.
+    "Put candidateId and label INSIDE target. Put confidence, reason and risk OUTSIDE target, at the top level. Do not nest them in target.",
   ].join("\n");
 }
 
@@ -414,11 +490,54 @@ export function createVisionGuidanceResponse(
     const validation = validateGuidanceResult(result);
 
     if (!validation.valid || result.mode !== "guide") {
+      /*
+       * Say what happened, in the order it is useful.
+       *
+       * This led with "Vision confidence was too low (20%)" and put the model's
+       * own sentence after it. The panel truncates, so the number survived and
+       * the explanation did not -- and the number is the one part that helps
+       * nobody. A person reading "confidence was too low" learns that something
+       * inside Toki is unsure; the model had actually said the control was not
+       * visible or expanded, which says exactly what to do about it.
+       *
+       * What Toki heard comes first, because when it is wrong that is the whole
+       * answer and nothing after it matters. A request for the "quote reply"
+       * option was transcribed as "code reply", and the model then correctly
+       * reported that no such thing was on screen -- which reads as vision
+       * failing when nothing about vision failed.
+       */
+      const heard = request.goal?.trim();
+      const asked = heard ? `"${heard}"` : "that";
+
+      /*
+       * "Not there" and "not sure" are different answers.
+       *
+       * Both used to come out as "Vision confidence was too low (20%)", which
+       * is Toki reporting its own internal number for two unrelated situations
+       * -- and it invites the fix of lowering the number, which makes it point
+       * at something random instead.
+       *
+       * A model that returns no target at all is not uncertain. It is telling
+       * you the control is not currently rendered: inside a closed menu, a
+       * collapsed section, below the fold, or behind a hover. That is the
+       * commonest way a request fails and it is not a fault in anything -- Toki
+       * can only see what is on the screen at the moment it looks.
+       *
+       * A model that returns a target it does not believe in is the other case,
+       * and there the number is the point.
+       */
+      const message =
+        step == null
+          ? `I can't see ${asked} on screen. It may be inside a menu or section that isn't open.`
+          : `I'm not sure enough about ${asked} to point at it.`;
+
       return {
         mode: "unavailable",
         error:
           confidence < 0.45
-            ? `Vision confidence was too low (${Math.round(confidence * 100)}%). ${result.summary}`
+            ? [message, result.summary]
+                .filter((part) => part && part.trim().length > 0)
+                .join(" ")
             : "Vision provider returned an invalid target.",
         validation,
         providerName,

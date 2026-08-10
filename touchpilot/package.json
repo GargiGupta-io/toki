@@ -28,6 +28,7 @@
     "rust:fmt": "cargo fmt --all",
     "guidance:smoke:dev": "node scripts/guidance-smoke-server.mjs",
     "guidance:smoke:freellmapi": "TOKI_GUIDANCE_PROVIDER=freellmapi-dev node scripts/guidance-smoke-server.mjs",
+    "guidance:smoke:gemini": "TOKI_GUIDANCE_PROVIDER=gemini-dev node scripts/guidance-smoke-server.mjs",
     "guidance:provider:check": "node scripts/guidance-provider-check.mjs",
     "guidance:known-screen": "node scripts/guidance-known-screen-smoke.mjs",
     "test:guidance:smoke": "node --test scripts/guidance-smoke-server.test.mjs scripts/candidate-ranking.test.mjs scripts/browser-candidate-payload.test.mjs scripts/macos-accessibility-candidates.test.mjs scripts/macos-vision-ocr-candidates.test.mjs",
@@ -71,6 +72,8 @@
     "test:version-consistency": "node --test scripts/version-consistency.test.mjs",
     "test:performance-budget": "node --test scripts/performance-budget.test.mjs",
     "toki:debug": "node scripts/read-toki-debug.mjs",
+    "toki:guidance": "node scripts/read-toki-guidance.mjs",
+    "toki:failure": "node scripts/read-toki-failure.mjs",
     "toki:footprint": "node scripts/runtime-footprint.mjs",
     "toki:gesture-replay": "node --import tsx scripts/replay-toki-gesture.mjs",
     "desktop:dev:guidance-smoke": "VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm run desktop:dev",
@@ -96,6 +99,7 @@
     "qa:windows:runtime": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-runtime-qa.ps1",
     "qa:windows:visual": "powershell.exe -ExecutionPolicy Bypass -File scripts/windows-visual-qa.ps1",
     "test:camera-reframing": "node --import tsx --test scripts/camera-reframing.test.mjs",
-    "api:dev": "npm --workspace @toki/api run dev"
+    "api:dev": "npm --workspace @toki/api run dev",
+    "desktop:install:mac:smoke": "VITE_TOKI_GUIDANCE_ENDPOINT=http://127.0.0.1:8787/api/guidance/smoke npm --workspace @toki/desktop run tauri -- build --bundles app; npm run desktop:install:mac"
   }
 }

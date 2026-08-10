@@ -62,17 +62,8 @@ test("the path must be named explicitly by an operator", () => {
   assert.match(resolver, /std::env::var\(env_name\)/u);
   assert.match(
     source,
-    /const DEVELOPER_CLI_BIN_ENV: &str = "TOKI_DEVELOPER_CLI_BIN"/u,
+    /const WHISPER_BIN_ENV: &str = "WHISPER_CPP_BIN"/u,
   );
-  assert.match(
-    sliceRustFunction(source, "find_developer_cli_binary"),
-    /resolve_operator_binary\(DEVELOPER_CLI_BIN_ENV/u,
-  );
-
-  // An environment variable, not a stored setting: a Finder-launched app
-  // inherits no environment, so this is unreachable for an ordinary user by
-  // construction, and there is no UI anyone could be talked into enabling.
-  assert.doesNotMatch(source, /developer_cli.*keychain/iu);
 });
 
 test("a stored setting works without an environment variable", () => {
@@ -151,54 +142,78 @@ test("nothing anywhere resolves an executable through PATH", () => {
   );
 });
 
-// --- The shape of the command that is actually run --------------------------
+// --- The CLI is gone, and stays gone ---------------------------------------
 
-test("the CLI is invoked in an order that does not swallow the prompt", () => {
-  // `--allowedTools` and `--add-dir` each take a list, so they keep consuming
-  // arguments until one begins with a dash. Leaving either last eats the
-  // prompt as another value, and the CLI exits saying no prompt was given --
-  // which reads as an empty prompt rather than as an ordering problem. Proven
-  // against the real CLI before this test was written.
-  const rust = readFileSync(
-    path.join(workspaceRoot, "apps", "desktop", "src-tauri", "src", "lib.rs"),
-    "utf8",
-  );
-
-  const listFlags = ['"--allowedTools"', '"--add-dir"'];
-  const promptAt = rust.indexOf('.arg("--print").arg(prompt)');
-  assert.ok(promptAt > 0, "the prompt is no longer the trailing argument");
-
-  for (const flag of listFlags) {
-    const flagAt = rust.indexOf(flag);
-    assert.ok(flagAt > 0, `${flag} is not passed`);
-    assert.ok(
-      flagAt < promptAt,
-      `${flag} takes a list and must not be the last flag before the prompt`,
-    );
+test("guidance never spawns a command-line tool", () => {
+  // Vision used to start a coding agent per question: it read the screenshot
+  // off disk, cost six or seven seconds, had to be installed before Toki could
+  // see anything, and ran inside Toki's screen-recording grant because macOS
+  // attributes permissions to the process that launched it. Something other
+  // than Toki was holding Toki's most sensitive permission.
+  //
+  // Gemini replaced it: one HTTPS request, a schema the API enforces, and no
+  // second process. These assertions exist so it cannot come back by accident.
+  for (const gone of [
+    "find_developer_cli_binary",
+    "TOKI_DEVELOPER_CLI_BIN",
+    "run_command_with_timeout",
+    "--allowedTools",
+    "--permission-mode",
+    "--strict-mcp-config",
+  ]) {
+    assert.ok(!source.includes(gone), `${gone} belongs to the removed CLI path`);
   }
+
+  // Nothing is spawned to answer a question about the screen. What remains is
+  // the Swift helpers that read it, each at an absolute system path, and one
+  // copy of Toki itself started to ask macOS a permission question a running
+  // process is not allowed to ask twice.
+  const spawned = [...source.matchAll(/Command::new\(([^)]*)\)/gu)].map((m) =>
+    m[1].trim(),
+  );
+
+  assert.deepEqual(
+    [...new Set(spawned)].sort(),
+    ['"/usr/bin/swift"', "&whisper_bin", "executable"].sort(),
+    "something new is being executed; say why here before allowing it",
+  );
+
+  // The one that is Toki: started only to ask, and it exits before any window
+  // is created.
+  const probe = source.slice(
+    source.indexOf("fn probe_permissions_in_child"),
+    source.indexOf("\n}", source.indexOf("fn probe_permissions_in_child")),
+  );
+  assert.match(probe, /current_exe\(\)/u);
+  assert.match(probe, /PERMISSION_PROBE_FLAG/u);
 });
 
-test("standard input is closed rather than inherited", () => {
-  // A CLI handed an open pipe waits to be given a prompt on it -- three
-  // seconds, on every single guidance request, before giving up. Nothing is
-  // ever sent that way; the prompt is an argument.
-  const rust = readFileSync(
-    path.join(workspaceRoot, "apps", "desktop", "src-tauri", "src", "lib.rs"),
-    "utf8",
-  );
-  assert.match(rust, /\.stdin\(Stdio::null\(\)\)/);
+test("the vision request goes out over HTTPS, with the key in a header", () => {
+  const runner = sliceRustFunction(source, "run_gemini_vision_request");
+
+  assert.match(runner, /x-goog-api-key/u);
+  // A key in a query string ends up in server logs, in proxies, and in
+  // anything that records where a request went.
+  assert.doesNotMatch(runner, /\?key=/u);
+  assert.match(runner, /generativelanguage\.googleapis\.com|GEMINI_ENDPOINT/u);
 });
 
-test("the CLI is given reading and nothing else", () => {
-  // It runs inside Toki's screen-recording and camera grants, because macOS
-  // attaches permissions to the process that launched it. Anything beyond
-  // opening the one screenshot would be lending those out.
-  const rust = readFileSync(
-    path.join(workspaceRoot, "apps", "desktop", "src-tauri", "src", "lib.rs"),
-    "utf8",
+test("the key is read from the Keychain, not from the environment alone", () => {
+  // The trap this codebase has fallen into twice: an app launched from Finder
+  // inherits no shell environment, so a variable that works from a terminal is
+  // absent for every ordinary user.
+  const resolver = sliceRustFunction(source, "resolve_gemini_api_key");
+
+  assert.match(resolver, /read_stored_gemini_api_key\(\)/u);
+  assert.ok(
+    resolver.indexOf("read_stored_gemini_api_key") <
+      resolver.indexOf("std::env::var"),
+    "the Keychain must be consulted before the environment",
   );
-  assert.match(rust, /\.arg\("--allowedTools"\)\s*\n\s*\.arg\("Read"\)/);
-  assert.match(rust, /\.arg\("--permission-mode"\)\s*\n\s*\.arg\("dontAsk"\)/);
+
+  // The whole reason for choosing this provider is that a key costs nothing,
+  // so the error says where to get one rather than just reporting its absence.
+  assert.match(resolver, /aistudio\.google\.com/u);
 });
 
 // Choosing a transcription backend from the environment repeated the root

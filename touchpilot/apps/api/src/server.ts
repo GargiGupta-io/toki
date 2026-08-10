@@ -8,7 +8,7 @@ import { createInMemoryRateLimiter } from "./rateLimit";
 import { createSupabaseSubscriptionStore } from "./subscriptions";
 import { createSupabaseUsageStore } from "./usage";
 import { createSupabaseBillingWriter } from "./billing";
-import { createOpenAiVisionProvider } from "./vision";
+import { createVisionProvider } from "./vision";
 
 /**
  * Node adapter for the handler.
@@ -53,7 +53,7 @@ const dependencies = {
   vision:
     config.provider.apiKey == null
       ? undefined
-      : createOpenAiVisionProvider({
+      : createVisionProvider({
           apiKey: config.provider.apiKey,
           model: config.provider.guidanceModel,
           baseUrl: config.provider.baseUrl,

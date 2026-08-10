@@ -3,7 +3,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -98,10 +98,60 @@ fn stop_voice_capture_session(session: VoiceCaptureSession) {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type")]
 enum OverlayCommandPayload {
+    #[serde(rename = "open-permission-notch")]
+    OpenPermissionNotch,
+    #[serde(rename = "introduce-creature")]
+    IntroduceCreature,
     #[serde(rename = "start-voice-listening")]
     StartVoiceListening { source: &'static str },
     #[serde(rename = "submit-voice-listening")]
     SubmitVoiceListening,
+    #[serde(rename = "stop-voice-listening")]
+    StopVoiceListening,
+    #[serde(rename = "start-circle-select")]
+    StartCircleSelect,
+    #[serde(rename = "end-circle-select")]
+    EndCircleSelect,
+}
+
+/// What holding the keys currently means.
+///
+/// Two things, on two chords, decided here so that neither can start the other.
+///
+/// They used to share one: holding the talk key began listening *and* armed a
+/// circle at the same time. Both then wanted the same movement to mean
+/// different things, and which one you got depended on whether the camera
+/// happened to be running -- so on a machine with a working camera the trackpad
+/// circle never armed at all. Holding the key, drawing a loop, and watching
+/// nothing happen is exactly what that produced.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShortcutMode {
+    Idle,
+    /// Right Option alone. Speak while it is held.
+    Voice,
+    /// Command with Right Option. Draw a loop around something.
+    Circle,
+}
+
+/// The mode a moment from now, given the keys and the mode now.
+///
+/// Circling latches until Option comes up. Somebody halfway round a loop may
+/// lift Command without meaning to end anything, and dropping them into voice
+/// mid-gesture would abandon the loop and start recording instead.
+///
+/// Voice does not latch the other way: adding Command turns a hold into a
+/// circle. The caller cancels the recording rather than submitting it, because
+/// pressing more keys is not somebody finishing a sentence.
+fn next_shortcut_mode(current: ShortcutMode, option_down: bool, command_down: bool) -> ShortcutMode {
+    if !option_down {
+        return ShortcutMode::Idle;
+    }
+
+    if command_down || current == ShortcutMode::Circle {
+        return ShortcutMode::Circle;
+    }
+
+    ShortcutMode::Voice
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -260,20 +310,9 @@ struct VoiceTranscriptionResponse {
     channels: u16,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CodexVisionRequest {
-    image_base64: String,
-    image_format: String,
-    prompt: String,
-    output_schema: String,
-    model: Option<String>,
-    timeout_ms: Option<u64>,
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CodexVisionResponse {
+struct VisionResponse {
     raw_answer: String,
     provider_name: String,
     duration_ms: u128,
@@ -494,6 +533,195 @@ fn macos_request_listen_event_access() -> bool {
     unsafe { CGRequestListenEventAccess() != 0 }
 }
 
+/// Whether the camera or microphone has been allowed, without asking.
+///
+/// `authorizationStatusForMediaType:` answers one of four things, and the
+/// difference between two of them is the whole reason this exists: *not yet
+/// asked* can still be fixed by asking, while *denied* cannot -- macOS will not
+/// prompt a second time, and the only way through is System Settings. A flow
+/// that treats them alike either asks for something that will never appear, or
+/// sends somebody to Settings when a prompt would have done.
+#[cfg(target_os = "macos")]
+fn macos_media_authorization(video: bool) -> &'static str {
+    use std::ffi::c_void;
+    use std::os::raw::c_char;
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_getClass(name: *const c_char) -> *mut c_void;
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_msgSend();
+    }
+
+    #[link(name = "AVFoundation", kind = "framework")]
+    extern "C" {
+        static AVMediaTypeVideo: *const c_void;
+        static AVMediaTypeAudio: *const c_void;
+    }
+
+    type SendStatus =
+        unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_void) -> isize;
+
+    unsafe {
+        let class = objc_getClass(c"AVCaptureDevice".as_ptr());
+        if class.is_null() {
+            return "unknown";
+        }
+
+        let media_type = if video { AVMediaTypeVideo } else { AVMediaTypeAudio };
+        let send: SendStatus = std::mem::transmute(objc_msgSend as *const c_void);
+        let status = send(
+            class,
+            sel_registerName(c"authorizationStatusForMediaType:".as_ptr()),
+            media_type,
+        );
+
+        match status {
+            0 => "not_determined",
+            // Restricted means a policy forbids it -- parental controls, MDM.
+            // Nothing the person can do here, so it is reported as denied
+            // rather than offered as something to grant.
+            1 | 2 => "denied",
+            3 => "granted",
+            _ => "unknown",
+        }
+    }
+}
+
+/// Ask macOS to add Toki to the Accessibility list, with its prompt.
+///
+/// Without this an application never appears in that list at all, so telling
+/// somebody to "enable Toki under Accessibility" shows them a list Toki is not
+/// in. The call is what puts it there; the prompt is what explains why.
+#[cfg(target_os = "macos")]
+fn macos_request_accessibility_access() -> bool {
+    use std::ffi::c_void;
+    use std::os::raw::c_uchar;
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        static kCFAllocatorDefault: *const c_void;
+        static kCFBooleanTrue: *const c_void;
+        static kCFTypeDictionaryKeyCallBacks: c_void;
+        static kCFTypeDictionaryValueCallBacks: c_void;
+        fn CFDictionaryCreate(
+            allocator: *const c_void,
+            keys: *const *const c_void,
+            values: *const *const c_void,
+            num_values: isize,
+            key_callbacks: *const c_void,
+            value_callbacks: *const c_void,
+        ) -> *const c_void;
+        fn CFRelease(cf: *const c_void);
+    }
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        static kAXTrustedCheckOptionPrompt: *const c_void;
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> c_uchar;
+    }
+
+    unsafe {
+        let keys = [kAXTrustedCheckOptionPrompt];
+        let values = [kCFBooleanTrue];
+        let options = CFDictionaryCreate(
+            kCFAllocatorDefault,
+            keys.as_ptr(),
+            values.as_ptr(),
+            1,
+            &kCFTypeDictionaryKeyCallBacks as *const c_void,
+            &kCFTypeDictionaryValueCallBacks as *const c_void,
+        );
+
+        if options.is_null() {
+            return macos_accessibility_is_trusted();
+        }
+
+        let trusted = AXIsProcessTrustedWithOptions(options) != 0;
+        CFRelease(options);
+        trusted
+    }
+}
+
+/// Every permission Toki needs, in one answer.
+///
+/// One call rather than five, because the first-run flow shows them as a list
+/// and a list assembled from five round trips flickers as each one lands.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PermissionSnapshot {
+    camera: String,
+    microphone: String,
+    screen_recording: String,
+    accessibility: String,
+    input_monitoring: String,
+}
+
+#[tauri::command]
+fn permission_snapshot() -> PermissionSnapshot {
+    #[cfg(target_os = "macos")]
+    {
+        // Screen recording, accessibility and input monitoring have no
+        // "not yet asked" state to read: the system only answers yes or no.
+        // Reported as not_determined when false so the flow offers to ask
+        // rather than sending somebody straight to Settings.
+        let granted = |ok: bool| {
+            if ok { "granted".to_string() } else { "not_determined".to_string() }
+        };
+
+        PermissionSnapshot {
+            camera: macos_media_authorization(true).to_string(),
+            microphone: macos_media_authorization(false).to_string(),
+            screen_recording: granted(macos_screen_capture_is_trusted()),
+            accessibility: granted(macos_accessibility_is_trusted()),
+            input_monitoring: granted(macos_listen_event_is_trusted()),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let unknown = || "unknown".to_string();
+        PermissionSnapshot {
+            camera: unknown(),
+            microphone: unknown(),
+            screen_recording: unknown(),
+            accessibility: unknown(),
+            input_monitoring: unknown(),
+        }
+    }
+}
+
+/// Trigger the system prompt for one permission.
+///
+/// Camera and microphone are absent on purpose. Their prompt is raised by
+/// actually opening the device, which the window already does through
+/// getUserMedia -- asking here as well would show two dialogs for one thing.
+#[tauri::command]
+fn request_permission(kind: String) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        match kind.as_str() {
+            "screen_recording" => Ok(if macos_screen_capture_is_trusted() {
+                true
+            } else {
+                macos_request_screen_capture_access()
+            }),
+            "input_monitoring" => Ok(if macos_listen_event_is_trusted() {
+                true
+            } else {
+                macos_request_listen_event_access()
+            }),
+            "accessibility" => Ok(macos_request_accessibility_access()),
+            other => Err(format!("{other} cannot be requested directly.")),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = kind;
+        Ok(false)
+    }
+}
+
 fn is_right_option_pressed(flags: u64, right_key_state: bool) -> bool {
     // IOLLEvent.h exposes independent device bits for the left and right Alt/Option keys.
     // Keep the key-state check as a second signal for keyboards that omit device flags.
@@ -568,6 +796,23 @@ mod native_cursor {
         };
 
         super::is_right_option_pressed(flags, right_key_state)
+    }
+
+    /// Whether Command is held, either side.
+    ///
+    /// Unlike Option, there is no reason to insist on the right-hand key. Right
+    /// Option is specific because the left one types characters -- ø, ∆, and
+    /// the rest -- so claiming it would break somebody's keyboard. Command
+    /// modifies rather than types, and the chord is already anchored to the
+    /// right-hand Option.
+    pub fn command_down() -> bool {
+        const K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: i32 = 0;
+        const NX_COMMAND_MASK: u64 = 0x0010_0000;
+
+        let flags =
+            unsafe { CGEventSourceFlagsState(K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE) };
+
+        flags & NX_COMMAND_MASK != 0
     }
 }
 
@@ -1955,6 +2200,74 @@ fn quit_toki(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// Quit and come back.
+///
+/// Screen recording is the one permission macOS decides per process: once a
+/// process has been refused, granting it changes nothing until that process is
+/// gone. Telling somebody to quit and reopen an app with no Dock icon is asking
+/// them to go and find the menu bar; doing it for them is one button.
+/// Hand the first run over to the notch.
+///
+/// Called once, when the introduction finishes. Everything after it -- the
+/// permissions -- belongs in the panel rather than in a window, so this asks
+/// the overlay to open it and then the window goes away. Routed through the
+/// overlay because the overlay owns the panel's mode; showing the window from
+/// here would fight whatever it decided a frame later.
+#[tauri::command]
+fn open_top_utility_for_permissions(app: tauri::AppHandle) {
+    emit_overlay_command(&app, OverlayCommandPayload::OpenPermissionNotch);
+}
+
+/// Grant the last thing the introduction asked for.
+///
+/// The creature appears in the middle of the display and travels to the notch.
+/// Pressing "Give me a home" used to swap one card for another, so the sentence
+/// was a caption rather than something that happened.
+#[tauri::command]
+fn introduce_creature(app: tauri::AppHandle) {
+    emit_overlay_command(&app, OverlayCommandPayload::IntroduceCreature);
+}
+
+#[tauri::command]
+fn restart_toki(app: tauri::AppHandle) {
+    app.restart();
+}
+
+/// What macOS would tell a process that is asking for the first time.
+///
+/// Three of these permissions are answered **once per process** and never
+/// revised: screen recording and input monitoring both go through the
+/// `CGPreflight...` family, and accessibility behaves the same way in practice.
+/// A Toki refused at launch is stuck with that refusal, so switching it on in
+/// System Settings looks exactly like doing nothing -- the panel keeps asking
+/// for a permission the list plainly shows as allowed, and the Allow button
+/// spends eight seconds polling a cached no before giving up.
+///
+/// This was found for screen recording and fixed there alone, which was too
+/// narrow: the very next step in the flow, input monitoring, has exactly the
+/// same behaviour and was left with exactly the same dead button.
+///
+/// Returns null when the probe could not run. Reporting the stale in-process
+/// answer is honest; claiming a restart would fix it is not.
+#[tauri::command]
+async fn permissions_live() -> Option<PermissionSnapshot> {
+    tauri::async_runtime::spawn_blocking(probe_permissions_in_child)
+        .await
+        .unwrap_or(None)
+}
+
+fn probe_permissions_in_child() -> Option<PermissionSnapshot> {
+    let executable = std::env::current_exe().ok()?;
+
+    let output = Command::new(executable)
+        .arg(PERMISSION_PROBE_FLAG)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+
+    serde_json::from_slice(&output.stdout).ok()
+}
+
 #[tauri::command]
 fn top_utility_notch_inset(window: tauri::WebviewWindow) -> f64 {
     #[cfg(target_os = "macos")]
@@ -2019,11 +2332,41 @@ fn position_top_utility<R: tauri::Runtime>(
         .map_err(|error| error.to_string())
 }
 
+/// Whether the panel is showing something that must not be interrupted.
+///
+/// The introduction and the permission asks both live in the panel, and both
+/// send somebody somewhere else in the middle: to a browser to sign in, to
+/// Apple's dialog, to System Settings. The panel closes when the cursor leaves
+/// the top of the screen, which is exactly what leaving to do those things
+/// looks like.
+///
+/// So signing in worked and then there was nothing on screen. It read as sign-in
+/// having failed, and the natural next move -- signing in again -- looked like
+/// it failed too.
+///
+/// Held here rather than in the panel because the *overlay* is what closes it,
+/// and the two are separate windows that cannot see each other's state. One
+/// flag on this side stops every route at once, including the leave timer.
+static ONBOARDING_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+fn set_onboarding_active(active: bool) {
+    ONBOARDING_ACTIVE.store(active, Ordering::SeqCst);
+}
+
 fn apply_top_utility_mode<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
     mode: &str,
     focus: bool,
 ) -> Result<(), String> {
+    // Not while somebody is part-way through being introduced or granting a
+    // permission. Every other route into this function is somebody choosing to
+    // close the panel; this one is a timer noticing that the cursor went to
+    // the browser they were just sent to.
+    if mode != "expanded" && ONBOARDING_ACTIVE.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
     let payload = TopUtilityModePayload {
         mode: mode.to_string(),
         focused: mode == "expanded" && focus,
@@ -2067,7 +2410,15 @@ fn apply_top_utility_mode<R: tauri::Runtime>(
             position_top_utility(
                 window,
                 TOP_UTILITY_EXPANDED_WIDTH,
-                TOP_UTILITY_EXPANDED_HEIGHT + notch,
+                // No notch added here, unlike the peek above.
+                //
+                // The expanded panel measures itself and asks for a height
+                // through `set_top_utility_height`, and that measurement runs
+                // over the header, whose top padding already carries the
+                // housing inset. Adding it again left the window taller than
+                // its contents by exactly the notch, which showed as dead
+                // black space below the buttons.
+                TOP_UTILITY_EXPANDED_HEIGHT,
             )?;
             window
                 .set_focusable(true)
@@ -2193,15 +2544,11 @@ fn capture_screenshot() -> Result<ScreenshotCapture, String> {
     result
 }
 
-/// Absolute path to a guidance CLI, for development only.
+/// Absolute path to a local Whisper build, for development only.
 ///
 /// Deliberately an environment variable rather than a stored setting: a
 /// Finder-launched app inherits no environment, so this cannot be switched on
 /// by an ordinary user, and there is no UI anyone could be talked into using.
-const DEVELOPER_CLI_BIN_ENV: &str = "TOKI_DEVELOPER_CLI_BIN";
-
-/// Absolute path to a local Whisper build, for development only. Same rules as
-/// `DEVELOPER_CLI_BIN_ENV`.
 const WHISPER_BIN_ENV: &str = "WHISPER_CPP_BIN";
 
 /// Absolute path to the Whisper model file. Resolved the same way as the binary
@@ -2614,30 +2961,62 @@ fn start_native_voice_key_monitor(app: tauri::AppHandle) {
     }
 
     thread::spawn(move || {
-        let mut was_down = false;
+        let mut mode = ShortcutMode::Idle;
 
         loop {
             thread::sleep(Duration::from_millis(NATIVE_VOICE_KEY_POLL_MS));
 
-            let is_down = native_cursor::right_option_down();
+            let next = next_shortcut_mode(
+                mode,
+                native_cursor::right_option_down(),
+                native_cursor::command_down(),
+            );
 
-            if is_down && !was_down {
-                if !VOICE_SHORTCUT_HELD.swap(true, Ordering::SeqCst) {
-                    eprintln!("toki voice shortcut: Right Option pressed");
-                    emit_overlay_command(
-                        &app,
-                        OverlayCommandPayload::StartVoiceListening { source: "hotkey" },
-                    );
+            if next == mode {
+                continue;
+            }
+
+            // Leaving whatever was happening, before starting anything else.
+            match mode {
+                ShortcutMode::Voice => {
+                    VOICE_SHORTCUT_HELD.store(false, Ordering::SeqCst);
+
+                    if next == ShortcutMode::Circle {
+                        // Not submitted. Reaching for a second key is not
+                        // somebody finishing a sentence, and sending whatever
+                        // was said in the meantime would act on half a thought.
+                        eprintln!("toki shortcut: Command added, listening cancelled");
+                        emit_overlay_command(&app, OverlayCommandPayload::StopVoiceListening);
+                    } else {
+                        eprintln!("toki shortcut: Right Option released");
+                        emit_overlay_command(&app, OverlayCommandPayload::SubmitVoiceListening);
+                    }
                 }
+                ShortcutMode::Circle => {
+                    eprintln!("toki shortcut: circle finished");
+                    emit_overlay_command(&app, OverlayCommandPayload::EndCircleSelect);
+                }
+                ShortcutMode::Idle => {}
             }
 
-            if !is_down && was_down {
-                VOICE_SHORTCUT_HELD.store(false, Ordering::SeqCst);
-                eprintln!("toki voice shortcut: Right Option released");
-                emit_overlay_command(&app, OverlayCommandPayload::SubmitVoiceListening);
+            match next {
+                ShortcutMode::Voice => {
+                    if !VOICE_SHORTCUT_HELD.swap(true, Ordering::SeqCst) {
+                        eprintln!("toki shortcut: Right Option pressed");
+                        emit_overlay_command(
+                            &app,
+                            OverlayCommandPayload::StartVoiceListening { source: "hotkey" },
+                        );
+                    }
+                }
+                ShortcutMode::Circle => {
+                    eprintln!("toki shortcut: Command + Right Option, circling");
+                    emit_overlay_command(&app, OverlayCommandPayload::StartCircleSelect);
+                }
+                ShortcutMode::Idle => {}
             }
 
-            was_down = is_down;
+            mode = next;
         }
     });
 }
@@ -2958,208 +3337,300 @@ fn resolve_operator_binary(env_name: &str, purpose: &str) -> Result<PathBuf, Str
     Ok(candidate)
 }
 
-/// The developer CLI has no field in the interface, on purpose -- it is a
-/// development stand-in for the hosted service, not something a user sets up.
-/// So the message must not send anyone looking for one.
-fn find_developer_cli_binary() -> Result<PathBuf, String> {
-    resolve_operator_binary(DEVELOPER_CLI_BIN_ENV, "CLI guidance").map_err(|error| {
-        format!("{error} It is a development-only path; set {DEVELOPER_CLI_BIN_ENV} and launch Toki from a terminal.")
+/// Looking at the screen, through Gemini.
+///
+/// This replaces starting a coding agent to read a screenshot off disk. That
+/// worked and cost six or seven seconds a step, which is a person standing
+/// still waiting to be told what to click; it also had to be installed, and it
+/// had to be lent Toki's screen-recording grant to do its job.
+///
+/// In Rust rather than in the webview, for two reasons. The window's security
+/// policy only permits it to talk to this process, so it cannot reach Google at
+/// all -- and it should not hold the key, because everything the webview knows
+/// can reach a log line, an error string, or a diagnostics export.
+const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+
+/// Chosen by measurement, not by tier name.
+///
+/// The obvious default from memory, `gemini-2.0-flash`, has been shut down: it
+/// answers 404, which reads as a bad key rather than as a retired model.
+///
+/// Between the two live candidates, measured on a real screenshot with known
+/// button positions: `gemini-3.6-flash` took 2.6s to 21s and exhausted the free
+/// tier's per-minute quota after three questions. `gemini-3.5-flash-lite` took
+/// 1.3s to 2.0s, located every control to within a pixel, and classified the
+/// destructive action correctly every time.
+///
+/// Lite is a little quicker to call something risky than it needs to be -- one
+/// run in five asked for confirmation on a harmless export. That is the safe
+/// direction to be wrong in, and the wrong direction never appeared.
+const GEMINI_DEFAULT_MODEL: &str = "gemini-3.5-flash-lite";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiVisionRequest {
+    image_base64: String,
+    image_format: String,
+    prompt: String,
+    output_schema: String,
+    model: Option<String>,
+    timeout_ms: Option<u64>,
+}
+
+/// Strip a JSON Schema down to what Gemini accepts.
+///
+/// It takes an OpenAPI subset, not full JSON Schema. `$schema`,
+/// `additionalProperties`, `minimum` and friends are rejected outright rather
+/// than ignored, so leaving them in turns a working schema into a 400 over a
+/// field nobody was relying on.
+///
+/// Worth the conversion rather than asking in prose: a shape the API enforces
+/// cannot drift, and every guidance failure this app has had to debug came from
+/// a model returning the right answer in the wrong shape.
+fn to_gemini_schema(schema: &serde_json::Value) -> Option<serde_json::Value> {
+    let object = schema.as_object()?;
+
+    /*
+     * "This or null", written as a choice rather than as a list of types.
+     *
+     * Gemini has no union. It spells optional-object as a flag on the object,
+     * so an `anyOf` has to be collapsed into its one real branch plus
+     * `nullable`.
+     *
+     * Missing this does not fail loudly. It returns an empty schema for
+     * whichever field uses `anyOf`, which in Toki's contract is `target` -- the
+     * only field that matters. Everything else stays enforced, so risk and
+     * confidence arrive well formed while the coordinates come back as
+     * `centerX` one call, `box` the next, and absent the call after that. It
+     * reads as the model being unreliable rather than as never having been
+     * told.
+     */
+    if let Some(branches) = object
+        .get("anyOf")
+        .or_else(|| object.get("oneOf"))
+        .and_then(|value| value.as_array())
+    {
+        let real: Vec<&serde_json::Value> = branches
+            .iter()
+            .filter(|branch| branch["type"].as_str() != Some("null"))
+            .collect();
+        let nullable = real.len() < branches.len();
+
+        // More than one real branch cannot be expressed. Dropping the
+        // constraint is safer than picking a branch and forbidding a valid
+        // answer.
+        if real.len() != 1 {
+            return None;
+        }
+
+        let mut collapsed = to_gemini_schema(real[0])?;
+
+        if nullable {
+            if let Some(map) = collapsed.as_object_mut() {
+                map.insert("nullable".to_string(), serde_json::Value::Bool(true));
+            }
+        }
+
+        return Some(collapsed);
+    }
+
+    let mut out = serde_json::Map::new();
+
+    for key in ["type", "description", "enum", "nullable", "format"] {
+        if let Some(value) = object.get(key) {
+            out.insert(key.to_string(), value.clone());
+        }
+    }
+
+    // Gemini spells "object or null" as a flag, not as a list of types.
+    if let Some(types) = object.get("type").and_then(|value| value.as_array()) {
+        let first = types
+            .iter()
+            .find(|entry| entry.as_str() != Some("null"))
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::String("string".to_string()));
+        out.insert("type".to_string(), first);
+
+        if types.iter().any(|entry| entry.as_str() == Some("null")) {
+            out.insert("nullable".to_string(), serde_json::Value::Bool(true));
+        }
+    }
+
+    if let Some(properties) = object.get("properties").and_then(|value| value.as_object()) {
+        let converted: serde_json::Map<String, serde_json::Value> = properties
+            .iter()
+            .filter_map(|(name, value)| {
+                to_gemini_schema(value).map(|converted| (name.clone(), converted))
+            })
+            .collect();
+        out.insert(
+            "properties".to_string(),
+            serde_json::Value::Object(converted),
+        );
+    }
+
+    if let Some(items) = object.get("items") {
+        if let Some(converted) = to_gemini_schema(items) {
+            out.insert("items".to_string(), converted);
+        }
+    }
+
+    if let Some(required) = object.get("required").and_then(|value| value.as_array()) {
+        out.insert(
+            "required".to_string(),
+            serde_json::Value::Array(required.clone()),
+        );
+    }
+
+    Some(serde_json::Value::Object(out))
+}
+
+fn run_gemini_vision_request(
+    request: GeminiVisionRequest,
+) -> Result<VisionResponse, String> {
+    if !matches!(request.image_format.as_str(), "png" | "jpeg") {
+        return Err("Gemini vision image format must be png or jpeg.".to_string());
+    }
+    if request.prompt.trim().is_empty() {
+        return Err("Gemini vision prompt is empty.".to_string());
+    }
+
+    let key = resolve_gemini_api_key()?;
+    let model = request
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(GEMINI_DEFAULT_MODEL)
+        .to_string();
+
+    // A schema that will not parse is dropped rather than sent. Gemini rejects
+    // a malformed one outright, and losing the shape constraint is a worse
+    // answer than losing the whole request.
+    let schema = serde_json::from_str::<serde_json::Value>(request.output_schema.trim())
+        .ok()
+        .as_ref()
+        .and_then(to_gemini_schema);
+
+    let mut generation_config = serde_json::json!({
+        "temperature": 0,
+        "responseMimeType": "application/json",
+        /*
+         * As little deliberation as the model allows.
+         *
+         * Measured on a real screenshot at the default setting: 4.5s, 6.5s and
+         * 13.2s for three questions. Somebody is stood still in front of their
+         * own screen for all of that, waiting to be told where to click, and
+         * the 13 second case is worse than the CLI this replaced.
+         *
+         * The task does not need deliberation. It is "point at the control that
+         * matches this sentence", which is recognition, not reasoning. Thinking
+         * cannot be switched off entirely on these models; minimal is the floor.
+         */
+        "thinkingConfig": { "thinkingLevel": "minimal" },
+    });
+
+    if let Some(schema) = schema {
+        generation_config["responseSchema"] = schema;
+    }
+
+    let body = serde_json::json!({
+        "contents": [{
+            "parts": [
+                { "text": request.prompt },
+                {
+                    "inline_data": {
+                        "mime_type": if request.image_format == "jpeg" {
+                            "image/jpeg"
+                        } else {
+                            "image/png"
+                        },
+                        "data": request.image_base64,
+                    }
+                }
+            ]
+        }],
+        "generationConfig": generation_config,
+    });
+
+    let timeout = Duration::from_millis(request.timeout_ms.unwrap_or(25_000).clamp(5_000, 60_000));
+    let started = Instant::now();
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|error| format!("Could not start the Gemini client: {error}"))?;
+
+    let response = client
+        .post(format!("{GEMINI_ENDPOINT}/{model}:generateContent"))
+        // In a header, not the query string. A key in a URL ends up in server
+        // logs, in proxies, and in anything that records where a request went.
+        .header("x-goog-api-key", key)
+        .json(&body)
+        .send()
+        .map_err(|error| format!("Could not reach Gemini: {error}"))?;
+
+    let status = response.status();
+
+    if !status.is_success() {
+        // The free tier allows only a few questions a minute, and running into
+        // that is a wait rather than a fault. Reported as "unavailable" it
+        // sends somebody to check a key that is working perfectly well.
+        if status.as_u16() == 429 {
+            return Err(
+                "That was too many questions at once for the free tier. Give it a \
+                 minute and ask again."
+                    .to_string(),
+            );
+        }
+
+        let detail = response.text().unwrap_or_default();
+        let detail: String = detail.chars().take(200).collect();
+
+        // 404 here means a retired model, not a bad key, and saying "Gemini
+        // refused" without the number sends somebody to check their key.
+        return Err(format!("Gemini returned {status}: {detail}"));
+    }
+
+    let payload: serde_json::Value = response
+        .json()
+        .map_err(|error| format!("Gemini sent something unreadable: {error}"))?;
+
+    let text = payload["candidates"][0]["content"]["parts"]
+        .as_array()
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| part["text"].as_str())
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+
+    if text.trim().is_empty() {
+        // A blocked or empty candidate. Handing "" to a parser produces
+        // whatever the parser makes of it, which is never the real reason.
+        let reason = payload["candidates"][0]["finishReason"]
+            .as_str()
+            .or_else(|| payload["promptFeedback"]["blockReason"].as_str())
+            .unwrap_or("no content");
+
+        return Err(format!("Gemini returned nothing ({reason})."));
+    }
+
+    Ok(VisionResponse {
+        raw_answer: text,
+        provider_name: format!("gemini:{model}"),
+        duration_ms: started.elapsed().as_millis(),
     })
 }
 
-fn truncate_process_detail(value: &str) -> String {
-    const LIMIT: usize = 1_200;
-    let value = value.trim();
-    if value.chars().count() <= LIMIT {
-        value.to_string()
-    } else {
-        let truncated: String = value.chars().take(LIMIT).collect();
-        format!("{truncated}...")
-    }
-}
-
-fn run_command_with_timeout(
-    command: &mut Command,
-    timeout: Duration,
-    stdout_path: &PathBuf,
-    stderr_path: &PathBuf,
-) -> Result<(ExitStatus, String, String), String> {
-    let stdout_file = fs::File::create(stdout_path)
-        .map_err(|error| format!("failed to capture CLI output: {error}"))?;
-    let stderr_file = fs::File::create(stderr_path)
-        .map_err(|error| format!("failed to capture CLI errors: {error}"))?;
-    command
-        .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file))
-        // Closed, not inherited. A CLI that reads a prompt from standard input
-        // waits for one when it is handed an open pipe -- three seconds of it,
-        // on every guidance request, before giving up and carrying on. Nothing
-        // is ever sent this way; the prompt is an argument.
-        .stdin(Stdio::null());
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("failed to start the guidance CLI: {error}"))?;
-    let started = Instant::now();
-
-    let status = loop {
-        match child
-            .try_wait()
-            .map_err(|error| format!("failed while waiting for Codex CLI: {error}"))?
-        {
-            Some(status) => break status,
-            None if started.elapsed() >= timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "Codex vision timed out after {}s.",
-                    timeout.as_secs()
-                ));
-            }
-            None => thread::sleep(Duration::from_millis(50)),
-        }
-    };
-
-    let stdout = fs::read_to_string(stdout_path)
-        .map_err(|error| format!("failed to read Codex response: {error}"))?;
-    let stderr = fs::read_to_string(stderr_path)
-        .map_err(|error| format!("failed to read Codex diagnostics: {error}"))?;
-    Ok((status, stdout, stderr))
-}
-
-fn run_codex_vision_request(request: CodexVisionRequest) -> Result<CodexVisionResponse, String> {
-    if !matches!(request.image_format.as_str(), "png" | "jpeg") {
-        return Err("Codex vision image format must be png or jpeg.".to_string());
-    }
-    if request.prompt.trim().is_empty() {
-        return Err("Codex vision prompt is empty.".to_string());
-    }
-    if request.output_schema.trim().is_empty() {
-        return Err("Codex vision output schema is empty.".to_string());
-    }
-
-    let image_bytes = general_purpose::STANDARD
-        .decode(&request.image_base64)
-        .map_err(|error| format!("Codex vision image payload is not valid base64: {error}"))?;
-    if image_bytes.is_empty() || image_bytes.len() > 12_000_000 {
-        return Err("Codex vision image payload size is invalid.".to_string());
-    }
-
-    let request_id = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let work_dir = std::env::temp_dir().join(format!("toki-codex-guidance-{request_id}"));
-    fs::create_dir(&work_dir)
-        .map_err(|error| format!("failed to create Codex guidance workspace: {error}"))?;
-
-    let image_extension = if request.image_format == "jpeg" {
-        "jpg"
-    } else {
-        "png"
-    };
-    let image_path = work_dir.join(format!("screen.{image_extension}"));
-    let stdout_path = work_dir.join("stdout.txt");
-    let stderr_path = work_dir.join("stderr.txt");
-
-    let result = (|| {
-        fs::write(&image_path, image_bytes)
-            .map_err(|error| format!("failed to write Codex screenshot: {error}"))?;
-        let cli_bin = find_developer_cli_binary()?;
-        let timeout =
-            Duration::from_millis(request.timeout_ms.unwrap_or(25_000).clamp(5_000, 60_000));
-
-        // The CLI has no flag for attaching an image and none for constraining
-        // the reply to a schema, so the prompt carries both: the image as a
-        // path for the CLI's own file-reading tool to open, and the schema
-        // inline. That is also how the hosted provider does it, for the same
-        // reason -- an answer the client cannot parse is worth nothing.
-        let prompt = format!(
-            "Read the image at {}.\n\n{}\n\nReturn only a JSON object matching \
-             this schema. No prose, no explanation, no markdown fence.\n\n{}",
-            image_path.display(),
-            request.prompt.trim(),
-            request.output_schema.trim(),
-        );
-
-        // Argument order matters here, and not for style.
-        //
-        // `--allowedTools` and `--add-dir` each take a *list*, so they keep
-        // consuming arguments until something that starts with a dash stops
-        // them. Leaving either of them last swallows the prompt as one more
-        // value, and the CLI then exits saying no prompt was given -- which
-        // reads as the prompt being empty rather than as an argument order
-        // problem. The list-taking flags therefore go first, and the prompt
-        // comes last, behind flags that take exactly one value.
-        let mut command = Command::new(cli_bin);
-        command
-            // Reading one file is the entire capability this needs. The CLI
-            // inherits Toki's screen-recording and camera grants when Toki
-            // launches it, so anything broader would be lending them out.
-            .arg("--allowedTools")
-            .arg("Read")
-            // Confine it to the throwaway directory holding the screenshot.
-            .arg("--add-dir")
-            .arg(&work_dir)
-            .arg("--output-format")
-            .arg("text")
-            // Never stop to ask a human. The default mode pauses on an
-            // unapproved tool, which here is a request that hangs until the
-            // timeout kills it -- and nobody is watching to answer.
-            .arg("--permission-mode")
-            .arg("dontAsk")
-            .current_dir(&work_dir);
-
-        let model = request
-            .model
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        if let Some(model) = model {
-            command.arg("--model").arg(model);
-        }
-
-        // Last two, in this order: the flag that turns on one-shot mode, then
-        // the prompt as the trailing positional argument.
-        command.arg("--print").arg(prompt);
-
-        let started = Instant::now();
-        let (status, stdout, stderr) =
-            run_command_with_timeout(&mut command, timeout, &stdout_path, &stderr_path)?;
-        if !status.success() {
-            let detail = truncate_process_detail(&stderr);
-            return Err(if detail.is_empty() {
-                format!("Codex CLI exited with status {status}.")
-            } else {
-                format!("Codex CLI exited with status {status}: {detail}")
-            });
-        }
-
-        let raw_answer = stdout.trim().to_string();
-        if raw_answer.is_empty() {
-            return Err("Codex CLI returned an empty vision response.".to_string());
-        }
-
-        Ok(CodexVisionResponse {
-            raw_answer,
-            provider_name: model
-                .map(|value| format!("codex-subscription:{value}"))
-                .unwrap_or_else(|| "codex-subscription".to_string()),
-            duration_ms: started.elapsed().as_millis(),
-        })
-    })();
-
-    let _ = fs::remove_dir_all(&work_dir);
-    result
-}
-
 #[tauri::command]
-async fn request_codex_vision_guidance(
-    request: CodexVisionRequest,
-) -> Result<CodexVisionResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || run_codex_vision_request(request))
+async fn request_gemini_vision_guidance(
+    request: GeminiVisionRequest,
+) -> Result<VisionResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || run_gemini_vision_request(request))
         .await
-        .map_err(|error| format!("Codex vision worker failed: {error}"))?
+        .map_err(|error| format!("Gemini vision worker failed: {error}"))?
 }
 
 /// Keychain coordinates for the user's API key.
@@ -3351,6 +3822,129 @@ fn clear_openai_api_key() -> Result<OpenAiKeyStatus, String> {
     }
 }
 
+const GEMINI_KEYCHAIN_ACCOUNT: &str = "gemini-api-key";
+
+#[cfg(target_os = "macos")]
+fn read_stored_gemini_api_key() -> Option<String> {
+    cached_keychain_read(GEMINI_KEYCHAIN_ACCOUNT)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_stored_gemini_api_key() -> Option<String> {
+    None
+}
+
+/// The key a guidance request should use.
+///
+/// Keychain first, environment second, for the reason the OpenAI key has the
+/// same order: an app launched from Finder inherits no shell environment, so a
+/// variable that works from a terminal is absent for every ordinary user.
+///
+/// The message names the free tier deliberately. "No vision credentials" is
+/// true and useless, and the entire reason for choosing this provider is that
+/// a key costs nothing -- so the error says where to get one.
+fn resolve_gemini_api_key() -> Result<String, String> {
+    if let Some(key) = read_stored_gemini_api_key() {
+        return Ok(key);
+    }
+
+    ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
+        .into_iter()
+        .find_map(|name| {
+            std::env::var(name)
+                .ok()
+                .map(|key| key.trim().to_string())
+                .filter(|key| !key.is_empty())
+        })
+        .ok_or_else(|| {
+            "No Gemini API key is stored. Create one free at aistudio.google.com/apikey, \
+             then add it in Toki's settings."
+                .to_string()
+        })
+}
+
+fn build_gemini_key_status() -> OpenAiKeyStatus {
+    if let Some(key) = read_stored_gemini_api_key() {
+        return OpenAiKeyStatus {
+            stored: true,
+            available: true,
+            source: "keychain",
+            hint: openai_key_hint(&key),
+        };
+    }
+
+    match ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
+        .into_iter()
+        .find_map(|name| {
+            std::env::var(name)
+                .ok()
+                .map(|key| key.trim().to_string())
+                .filter(|key| !key.is_empty())
+        }) {
+        Some(key) => OpenAiKeyStatus {
+            stored: false,
+            available: true,
+            source: "environment",
+            hint: openai_key_hint(&key),
+        },
+        None => OpenAiKeyStatus {
+            stored: false,
+            available: false,
+            source: "none",
+            hint: None,
+        },
+    }
+}
+
+#[tauri::command]
+fn gemini_api_key_status() -> OpenAiKeyStatus {
+    build_gemini_key_status()
+}
+
+#[tauri::command]
+fn set_gemini_api_key(key: String) -> Result<OpenAiKeyStatus, String> {
+    let trimmed = key.trim();
+
+    if trimmed.is_empty() {
+        return Err("An API key is required.".to_string());
+    }
+
+    // A length floor catches the common paste accidents -- a truncated
+    // selection, or the label rather than the value. Deliberately no prefix
+    // check: rejecting an unfamiliar but valid format is worse than letting
+    // Google say no.
+    if trimmed.len() < 20 {
+        return Err("That does not look like a complete API key.".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        cached_keychain_write(GEMINI_KEYCHAIN_ACCOUNT, Some(trimmed.to_string()))
+            .map_err(|error| format!("Could not save the API key: {error}"))?;
+        Ok(build_gemini_key_status())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Storing an API key is only supported on macOS.".to_string())
+    }
+}
+
+#[tauri::command]
+fn clear_gemini_api_key() -> Result<OpenAiKeyStatus, String> {
+    #[cfg(target_os = "macos")]
+    {
+        cached_keychain_write(GEMINI_KEYCHAIN_ACCOUNT, None)
+            .map_err(|error| format!("Could not remove the API key: {error}"))?;
+        Ok(build_gemini_key_status())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(build_gemini_key_status())
+    }
+}
+
 /// Where the signed-in session lives.
 ///
 /// The refresh token is a long-lived credential: anyone holding it can mint
@@ -3452,15 +4046,70 @@ fn load_vault() -> std::collections::BTreeMap<String, String> {
     migrated
 }
 
+/// What macOS calls this item when it has to ask about it.
+///
+/// The permission dialog quotes the item's *label*. With none set the system
+/// falls back to the service name, so the question read "Toki wants to access
+/// key app.toki.desktop in your keychain" -- which names an identifier rather
+/// than a thing, and reads to anyone who is not a developer like something
+/// opaque rummaging around. The wording of the dialog is Apple's and cannot be
+/// changed; the noun in the middle of it is ours.
+///
+/// Toki holds camera, microphone, and screen recording at once. It is exactly
+/// the application that cannot afford a moment of looking like it is doing
+/// something it will not name.
+#[cfg(target_os = "macos")]
+const VAULT_LABEL: &str = "Toki sign-in and settings";
+
+#[cfg(target_os = "macos")]
+fn write_vault_item(payload: &str) -> Result<(), security_framework::base::Error> {
+    let mut options =
+        security_framework::passwords_options::PasswordOptions::new_generic_password(
+            OPENAI_KEYCHAIN_SERVICE,
+            VAULT_ACCOUNT,
+        );
+    options.set_label(VAULT_LABEL);
+
+    security_framework::passwords::set_generic_password_options(payload.as_bytes(), options)
+}
+
+/// Store the vault, replacing the item outright if it cannot be updated in place.
+///
+/// Giving the item a label made every write to it fail, on any machine where the
+/// item already existed without one.
+///
+/// The write is a `SecItemAdd`, and when the item is already there that returns
+/// "duplicate", so the library retries as a `SecItemUpdate`. Duplicate detection
+/// matches a generic password on its service and account and ignores the label;
+/// the update query does not. So the add refused because the item existed, and
+/// the update found nothing because the stored label was the old default. Every
+/// write after that returned "the specified item could not be found" -- sign-in,
+/// sign-out, settings, the API key -- and the failure surfaced wherever the user
+/// happened to be, which is how it showed up as a guidance error.
+///
+/// Removing the item and writing it again fixes the label permanently. It is
+/// safe to do here and nowhere else: the caller holds the whole vault in memory
+/// and passes it in, so the delete cannot lose a value the retry will not
+/// restore. Only reached after a failure, so an ordinary write is untouched.
+///
+/// The first error is what gets reported if the retry also fails, since that is
+/// the one describing the actual problem.
 #[cfg(target_os = "macos")]
 fn save_vault(
     map: &std::collections::BTreeMap<String, String>,
 ) -> Result<(), security_framework::base::Error> {
-    security_framework::passwords::set_generic_password(
+    let payload = serde_json::to_string(map).unwrap_or_else(|_| "{}".to_string());
+
+    let Err(first_error) = write_vault_item(&payload) else {
+        return Ok(());
+    };
+
+    let _ = security_framework::passwords::delete_generic_password(
         OPENAI_KEYCHAIN_SERVICE,
         VAULT_ACCOUNT,
-        serde_json::to_string(map).unwrap_or_else(|_| "{}".to_string()).as_bytes(),
-    )
+    );
+
+    write_vault_item(&payload).map_err(|_| first_error)
 }
 
 /// Read a value, loading the vault at most once per launch.
@@ -4002,7 +4651,63 @@ fn set_overlay_surface_mode(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// The flag that turns this binary into a one-shot permission question.
+///
+/// Checked before anything else starts: no window, no tray icon, no Tauri.
+const PERMISSION_PROBE_FLAG: &str = "--probe-permissions";
+
+/// Ask Toki whether it can actually see, from outside Toki.
+///
+/// The check script used to look the key up itself, with `security
+/// find-generic-password`. That reads a *standalone* keychain item, and Toki
+/// does not keep its settings that way -- everything lives in one vault blob,
+/// looked up by name inside it. So a key added from a terminal was perfectly
+/// real, perfectly readable, and completely invisible to the app: the check
+/// reported READY while Toki reported no key at all.
+///
+/// Asking the app removes the possibility of the two disagreeing, and no secret
+/// has to leave it to answer.
+const GEMINI_PROBE_FLAG: &str = "--probe-gemini";
+
+/// Ask macOS, from a process that has not asked before.
+///
+/// macOS answers an application's screen-recording question **once per
+/// process** and the answer never changes while that process lives. Toki asks
+/// at launch, is told no, and is then stuck with that no -- so when somebody
+/// switches the toggle on in System Settings, the running Toki cannot see it.
+/// It re-checks, is handed the same stale no, concludes nothing happened, and
+/// asks again. That is the loop: the switch visibly on, the panel still asking,
+/// still counting one of five.
+///
+/// A process that has never asked gets a fresh answer. So Toki starts a second
+/// copy of itself, which asks, prints, and exits before any window exists. It
+/// is the same executable inside the same bundle, so macOS attributes the
+/// question to Toki and answers about Toki.
+///
+/// Nothing appears on screen and it takes milliseconds.
 pub fn run() {
+    if std::env::args().any(|argument| argument == GEMINI_PROBE_FLAG) {
+        match resolve_gemini_api_key() {
+            Ok(key) => {
+                let hint: String = key.chars().rev().take(4).collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                println!("ready …{hint}");
+            }
+            Err(error) => println!("blocked {error}"),
+        }
+        return;
+    }
+
+    if std::env::args().any(|argument| argument == PERMISSION_PROBE_FLAG) {
+        println!(
+            "{}",
+            serde_json::to_string(&permission_snapshot()).unwrap_or_default()
+        );
+        return;
+    }
+
     let native_click_monitor_state = Arc::new(NativeClickMonitorState::default());
 
     tauri::Builder::default()
@@ -4031,6 +4736,7 @@ pub fn run() {
                     eprintln!("failed to prepare Toki overlay: {error}");
                 }
             }
+
 
             if let Some(settings) = app.get_webview_window("settings") {
                 let _ = settings.set_title(" ");
@@ -4150,6 +4856,12 @@ pub fn run() {
             frontmost_window_bounds,
             screen_capture_access_status,
             request_screen_capture_access,
+            permission_snapshot,
+            restart_toki,
+            permissions_live,
+            introduce_creature,
+            open_top_utility_for_permissions,
+            request_permission,
             hide_settings_window,
             macos_overlay_window_status,
             native_click_monitor_set_armed,
@@ -4158,8 +4870,9 @@ pub fn run() {
             native_voice_capture_reset,
             native_voice_capture_start,
             native_voice_capture_stop,
-            request_codex_vision_guidance,
+            request_gemini_vision_guidance,
             set_overlay_surface_mode,
+            set_onboarding_active,
             set_top_utility_mode,
             top_utility_notch_inset,
             quit_toki,
@@ -4173,6 +4886,9 @@ pub fn run() {
             set_operator_setting,
             set_openai_api_key,
             clear_openai_api_key,
+            gemini_api_key_status,
+            set_gemini_api_key,
+            clear_gemini_api_key,
             read_auth_session,
             store_auth_session,
             clear_auth_session,
@@ -4207,7 +4923,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_right_option_pressed, metadata_from_screenshot, require_macos_screen_capture_trust,
+        is_right_option_pressed, metadata_from_screenshot, next_shortcut_mode,
+        require_macos_screen_capture_trust, to_gemini_schema, ShortcutMode,
     };
     use toki_capture::{
         ActiveWindowContext, CaptureSource, CursorContext, DisplayContext, ScreenshotCapture,
@@ -4259,6 +4976,140 @@ mod tests {
         let error = require_macos_screen_capture_trust(false).unwrap_err();
         assert!(error.contains("Screen Recording is not trusted"));
         assert!(error.contains("quit and relaunch"));
+    }
+
+    /// The converter is the reason a working schema either constrains the
+    /// answer or silently does not, and the failure mode is invisible: Gemini
+    /// accepts an empty schema and answers however it likes.
+    #[test]
+    fn an_any_of_target_keeps_its_required_fields() {
+        // Toki's contract writes "an object or null" as an anyOf. Without a
+        // branch for it this returned an empty schema for `target` -- the one
+        // field that matters -- while enforcing every other field perfectly.
+        // Coordinates then arrived as centerX one call, box the next, and
+        // absent the call after that, which read as an unreliable model rather
+        // than as one that had never been told.
+        let converted = to_gemini_schema(&serde_json::json!({
+            "type": "object",
+            "required": ["target"],
+            "properties": {
+                "target": {
+                    "anyOf": [
+                        { "type": "null" },
+                        {
+                            "type": "object",
+                            "required": ["centerX", "centerY", "label"],
+                            "properties": {
+                                "centerX": { "type": "number" },
+                                "centerY": { "type": "number" },
+                                "label": { "type": "string" }
+                            }
+                        }
+                    ]
+                }
+            }
+        }))
+        .expect("the schema converts");
+
+        let target = &converted["properties"]["target"];
+
+        assert_eq!(target["type"], "object");
+        assert_eq!(target["required"], serde_json::json!(["centerX", "centerY", "label"]));
+        // "or null" survives as the flag Gemini actually understands.
+        assert_eq!(target["nullable"], serde_json::json!(true));
+        assert_eq!(target["properties"]["centerX"]["type"], "number");
+    }
+
+    #[test]
+    fn a_choice_gemini_cannot_express_drops_the_constraint() {
+        // Picking a branch would forbid an answer the contract permits, which
+        // is worse than not constraining it at all.
+        assert!(to_gemini_schema(&serde_json::json!({
+            "anyOf": [{ "type": "string" }, { "type": "number" }]
+        }))
+        .is_none());
+    }
+
+    #[test]
+    fn what_gemini_rejects_outright_is_stripped() {
+        // It takes an OpenAPI subset. `$schema` and `additionalProperties` are
+        // refused rather than ignored, so leaving them in turns a working
+        // schema into a 400 over a field nobody was relying on.
+        let converted = to_gemini_schema(&serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+                "steps": { "type": "array", "items": { "type": "string" } }
+            }
+        }))
+        .expect("the schema converts");
+
+        assert!(converted.get("$schema").is_none());
+        assert!(converted.get("additionalProperties").is_none());
+        assert!(converted["properties"]["confidence"].get("minimum").is_none());
+
+        // What carries meaning survives.
+        assert_eq!(converted["properties"]["confidence"]["type"], "number");
+        assert_eq!(converted["properties"]["steps"]["items"]["type"], "string");
+    }
+
+    /// Two things on two chords, so that neither can start the other.
+    ///
+    /// They shared one key: holding it began listening *and* armed a circle,
+    /// then the same movement had to mean different things and which one you
+    /// got depended on whether a camera happened to be running.
+    #[test]
+    fn option_alone_talks_and_command_option_circles() {
+        assert_eq!(
+            next_shortcut_mode(ShortcutMode::Idle, true, false),
+            ShortcutMode::Voice
+        );
+        assert_eq!(
+            next_shortcut_mode(ShortcutMode::Idle, true, true),
+            ShortcutMode::Circle
+        );
+    }
+
+    #[test]
+    fn releasing_option_ends_whatever_was_happening() {
+        // Command alone means nothing. It is a modifier every application uses.
+        assert_eq!(
+            next_shortcut_mode(ShortcutMode::Voice, false, false),
+            ShortcutMode::Idle
+        );
+        assert_eq!(
+            next_shortcut_mode(ShortcutMode::Circle, false, true),
+            ShortcutMode::Idle
+        );
+        assert_eq!(
+            next_shortcut_mode(ShortcutMode::Idle, false, true),
+            ShortcutMode::Idle
+        );
+    }
+
+    #[test]
+    fn adding_command_turns_a_hold_into_a_circle() {
+        // Both key orders have to work. Somebody who presses Option first and
+        // then reaches for Command meant to circle, and the caller cancels the
+        // recording rather than submitting it -- reaching for a second key is
+        // not somebody finishing a sentence.
+        assert_eq!(
+            next_shortcut_mode(ShortcutMode::Voice, true, true),
+            ShortcutMode::Circle
+        );
+    }
+
+    #[test]
+    fn a_circle_survives_command_coming_up_mid_loop() {
+        // Latched until Option is released. Somebody halfway round may lift
+        // Command without meaning to end anything, and dropping them into voice
+        // there would abandon the loop and start recording instead.
+        assert_eq!(
+            next_shortcut_mode(ShortcutMode::Circle, true, false),
+            ShortcutMode::Circle
+        );
     }
 
     #[test]

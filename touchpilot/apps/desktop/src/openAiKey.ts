@@ -66,3 +66,43 @@ export function describeOpenAiKeyStatus(status: OpenAiKeyStatus): string {
 
   return "No key saved. Voice needs an OpenAI API key to turn speech into text.";
 }
+
+/**
+ * The key that lets Toki look at the screen.
+ *
+ * Same store, same shape, different account. It replaced a developer CLI that
+ * had to be installed before Toki could see anything -- and that ran inside
+ * Toki's screen-recording grant, because macOS attributes permissions to the
+ * process that launched it.
+ */
+export function getGeminiKeyStatus(): Promise<OpenAiKeyStatus> {
+  return invoke<OpenAiKeyStatus>("gemini_api_key_status");
+}
+
+export function setGeminiKey(key: string): Promise<OpenAiKeyStatus> {
+  return invoke<OpenAiKeyStatus>("set_gemini_api_key", { key });
+}
+
+export function clearGeminiKey(): Promise<OpenAiKeyStatus> {
+  return invoke<OpenAiKeyStatus>("clear_gemini_api_key");
+}
+
+/**
+ * The free tier is the point, so the message says so.
+ *
+ * "No vision credentials" was the old wording. It is true, and it leaves
+ * somebody assuming there is a bill attached to fixing it.
+ */
+export function describeGeminiKeyStatus(status: OpenAiKeyStatus): string {
+  if (status.source === "keychain") {
+    return `Saved to your Keychain${status.hint ? ` (${status.hint})` : ""}. I can see your screen.`;
+  }
+
+  if (status.source === "environment") {
+    return `Using GEMINI_API_KEY from the environment${
+      status.hint ? ` (${status.hint})` : ""
+    }. That only works when Toki is launched from a terminal — save a key here to use it normally.`;
+  }
+
+  return "No key saved. Get one free at aistudio.google.com/apikey — it costs nothing and takes a minute.";
+}

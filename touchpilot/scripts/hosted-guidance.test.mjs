@@ -384,3 +384,100 @@ test("a host that is still waking is retried once, and nothing else is", async (
   assert.equal(calls, 1, "a 402 must not be retried");
   assert.equal(reply.kind, "upgrade_required");
 });
+
+/*
+ * Whose key pays for a screenshot.
+ *
+ * Nobody installing Toki should be asked for an API key. The credential lives
+ * in the service, the service pays, and the free allowance and subscription
+ * gate are what bound the bill -- which is why this service exists at all.
+ *
+ * The desktop briefly grew a "Gemini API key" field in its settings. That was a
+ * development convenience that quietly became the user-facing answer, and it is
+ * the wrong shape for the product: it asks every user to go and get a key
+ * before Toki can see anything.
+ */
+
+test("the settings window never asks anybody for a model key", async () => {
+  const { readFileSync } = await import("node:fs");
+  const settings = readFileSync(
+    new URL("../apps/desktop/src/TokiSettingsWindow.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(settings, /Gemini API key/u);
+  assert.doesNotMatch(settings, /Seeing your screen/u);
+
+  // The OpenAI key stays: that one is for local transcription, which runs on
+  // the user's own machine and is theirs to pay for or not.
+  assert.match(settings, /OpenAI API key/u);
+});
+
+test("the provider follows the model name, not a separate switch", async () => {
+  // A flag can disagree with the model it points at, and a misconfiguration
+  // that still starts is worse than one that does not -- the same reasoning
+  // that makes live mode derive from whether a credential exists.
+  const { createVisionProvider } = await import("../apps/api/src/vision.ts");
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(String(url));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: "{}" }] } }],
+        choices: [{ message: { content: "{}" } }],
+      }),
+    };
+  };
+
+  const gemini = createVisionProvider({
+    apiKey: "k",
+    model: "gemini-3.5-flash-lite",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
+    fetchImpl,
+  });
+  await gemini({ prompt: "find it", imageBase64: "aaaa", imageFormat: "png" });
+  assert.match(seen[0], /generateContent$/u);
+
+  const openai = createVisionProvider({
+    apiKey: "k",
+    model: "gpt-4o",
+    baseUrl: "https://api.openai.com/v1",
+    fetchImpl,
+  });
+  await openai({ prompt: "find it", imageBase64: "aaaa", imageFormat: "png" });
+  assert.match(seen[1], /chat\/completions$/u);
+});
+
+test("the service defaults to the provider that is free today", async () => {
+  // Gemini while Toki is being proved and given away; OpenAI when there are
+  // credits. That move is a model name and a base URL, and nothing else.
+  const { loadServiceConfig } = await import("../apps/api/src/config.ts");
+  const config = loadServiceConfig({ TOKI_PROVIDER_API_KEY: "k" });
+
+  assert.match(config.provider.guidanceModel, /^gemini/u);
+  assert.match(config.provider.baseUrl, /generativelanguage/u);
+  assert.equal(config.mode, "live");
+
+  // And an operator can move it without touching code.
+  const moved = loadServiceConfig({
+    TOKI_PROVIDER_API_KEY: "k",
+    TOKI_GUIDANCE_MODEL: "gpt-4o",
+    TOKI_PROVIDER_BASE_URL: "https://api.openai.com/v1",
+  });
+  assert.equal(moved.provider.guidanceModel, "gpt-4o");
+});
+
+test("the key never travels to the desktop", async () => {
+  const { readFileSync } = await import("node:fs");
+  // The whole point. Anything shipped inside a distributed app can be read out
+  // of it, so a key in the binary is a key every user has -- and the bill would
+  // arrive here anyway.
+  const handler = readFileSync(
+    new URL("../apps/api/src/handler.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(handler, /apiKey.*json\(|json\(.*apiKey/u);
+});

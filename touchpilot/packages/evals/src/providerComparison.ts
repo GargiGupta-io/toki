@@ -13,7 +13,7 @@ import { scoreTargetMatch } from "./targetScoring";
 export type ProviderComparisonMode =
   | "mock"
   | "freellmapi-dev"
-  | "codex-subscription"
+  | "gemini"
   | "unavailable";
 
 export type ProviderComparisonStatus = "passed" | "failed" | "skipped";

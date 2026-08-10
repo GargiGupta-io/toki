@@ -76,9 +76,28 @@ export function loadServiceConfig(
     port: readNumber(env.PORT, 8787),
     provider: {
       apiKey: hasKey ? apiKey : null,
-      guidanceModel: env.TOKI_GUIDANCE_MODEL ?? "gpt-4o",
+      /*
+       * Gemini, for now.
+       *
+       * The bill for every screenshot arrives here rather than with the user,
+       * which is the entire reason this service exists -- so the cheapest model
+       * that answers correctly is the right one, and a free tier is what lets
+       * Toki be given away while it is being proved.
+       *
+       * Measured on a real screenshot with known button positions: flash-lite
+       * located every control to within a pixel in about 1.5 seconds, where the
+       * larger flash model took up to 21 and exhausted its daily free quota in
+       * three questions.
+       *
+       * The request shape follows from this name -- see `createVisionProvider`
+       * -- so moving to OpenAI when there are credits is setting this and the
+       * base URL, and nothing else.
+       */
+      guidanceModel: env.TOKI_GUIDANCE_MODEL ?? "gemini-3.5-flash-lite",
       transcriptionModel: env.TOKI_TRANSCRIPTION_MODEL ?? "gpt-4o-transcribe",
-      baseUrl: env.TOKI_PROVIDER_BASE_URL ?? "https://api.openai.com/v1",
+      baseUrl:
+        env.TOKI_PROVIDER_BASE_URL ??
+        "https://generativelanguage.googleapis.com/v1beta/models",
     },
     stripe: readStripeConfig(env),
     limits: {

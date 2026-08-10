@@ -11,9 +11,28 @@ const MAX_PROVIDER_RAW_TEXT_CHARS = 2000;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 90_000;
 const MIN_TARGET_SIZE_CSS_PX = 4;
 const MAX_SCREEN_CANDIDATES = 20;
+/*
+ * Chosen by measurement, not by tier name.
+ *
+ * The obvious default from memory, `gemini-2.0-flash`, is shut down: it answers
+ * 404, which reads as a bad key rather than a retired model.
+ *
+ * Between the two live candidates, measured on a real screenshot with known
+ * button positions: `gemini-3.6-flash` took 2.6s to 21s and exhausted the free
+ * tier's per-minute quota after three questions. `gemini-3.5-flash-lite` took
+ * 1.3s to 2.0s, located every control to within a pixel, and classified the
+ * destructive action correctly every time.
+ *
+ * Lite is a little quicker to call something risky than it needs to be -- one
+ * run in five asked for confirmation on a harmless export. That is the safe
+ * direction to be wrong in, and the wrong direction never appeared.
+ */
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 const SUPPORTED_GUIDANCE_PROVIDERS = new Set([
   "unavailable",
   "freellmapi-dev",
+  "gemini-dev",
 ]);
 const VALID_GUIDANCE_MODES = new Set(["guide", "answer", "clarify"]);
 const VALID_RISK_CLASSES = new Set([
@@ -174,6 +193,15 @@ export function resolveGuidanceProviderConfig(env = process.env) {
       ).trim(),
       model: String(env.TOKI_FREELLMAPI_MODEL ?? DEFAULT_FREELLMAPI_MODEL).trim(),
       apiKey: String(env.TOKI_FREELLMAPI_API_KEY ?? "").trim(),
+    };
+  }
+
+  if (provider === "gemini-dev") {
+    return {
+      provider,
+      providerName: "gemini-dev",
+      apiKey: String(env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY ?? "").trim(),
+      model: String(env.TOKI_GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL).trim(),
     };
   }
 
@@ -867,6 +895,288 @@ export async function requestFreeLlmApiGuidance(
   }
 }
 
+/**
+ * Guidance from the Claude CLI already installed on this machine.
+ *
+ * Vision costs money, and there is no budget for it here, so development had
+ * nothing to look at screenshots with -- the service answered "no vision
+ * credentials configured" and every real command stopped there. A Claude Code
+ * subscription is already paid for and includes the CLI, so this spends nothing
+ * further.
+ *
+ * It runs in this script and never in the app. macOS attributes permissions to
+ * the responsible process, so a binary launched by Toki would inherit Toki's
+ * camera, microphone, and screen recording grants -- which is why lib.rs is
+ * forbidden from executing anything it had to go looking for. Here the CLI is
+ * started by a developer, from their own terminal, in a script that holds none
+ * of those grants. The desktop app's only involvement is an HTTP request to
+ * localhost, exactly as with the other dev provider.
+ *
+ * The screenshot goes to a file because the CLI reads images from disk. It is
+ * written with an unpredictable name inside the system temp directory and
+ * removed in a finally, so a crashed request cannot leave a picture of
+ * somebody's screen lying around under a name another process could guess.
+ */
+/*
+ * The routes the desktop app actually calls.
+ *
+ * There are two protocols here. The older one is a single POST to
+ * /api/guidance/smoke carrying the whole guidance request, and it is what the
+ * smoke scripts drive. The app itself speaks the newer one, which is the shape
+ * of the real service: it treats the configured endpoint as an origin and posts
+ * to /account and /vision beneath it. Pointing the app at the smoke path just
+ * produced "route not found", because the path was never used -- only the host.
+ *
+ * Serving the newer shape too is what makes this a stand-in for the service
+ * rather than a separate thing that happens to answer: the same request the app
+ * would send to production, answered locally.
+ */
+/**
+ * Strip a JSON Schema down to what Gemini accepts.
+ *
+ * It takes an OpenAPI subset, not full JSON Schema: `$schema`, `additionalProperties`,
+ * `minimum`, `maximum` and friends are rejected outright rather than ignored,
+ * which turns a working schema into a 400 for a field nobody was relying on.
+ */
+export function toGeminiSchema(schema) {
+  if (schema == null || typeof schema !== "object") {
+    return undefined;
+  }
+
+  /*
+   * "This or null", written as a choice rather than as a list of types.
+   *
+   * Gemini has no union. It spells optional-object as a flag on the object, so
+   * an `anyOf` has to be collapsed into the one real branch plus `nullable`.
+   *
+   * Missing this did not fail loudly -- it silently returned an empty schema
+   * for whichever field used `anyOf`, which in Toki's contract is `target`:
+   * the only field that matters. Every other field stayed enforced, so risk
+   * and confidence were always well formed while the coordinates arrived as
+   * `centerX` one call, `box` the next, and absent the call after that. It
+   * read as the model being unreliable rather than as never having been told.
+   */
+  const branches = Array.isArray(schema.anyOf)
+    ? schema.anyOf
+    : Array.isArray(schema.oneOf)
+      ? schema.oneOf
+      : null;
+
+  if (branches) {
+    const real = branches.filter((branch) => branch?.type !== "null");
+    const nullable = real.length < branches.length;
+
+    // More than one real branch cannot be expressed. Dropping the constraint
+    // is safer than picking a branch and forbidding a valid answer.
+    if (real.length !== 1) {
+      return undefined;
+    }
+
+    const collapsed = toGeminiSchema(real[0]);
+
+    return collapsed && nullable ? { ...collapsed, nullable: true } : collapsed;
+  }
+
+  const allowed = ["type", "description", "enum", "nullable", "format"];
+  const out = {};
+
+  for (const key of allowed) {
+    if (schema[key] !== undefined) {
+      out[key] = schema[key];
+    }
+  }
+
+  // Gemini spells the union of "object or null" as a flag, not as a type array.
+  if (Array.isArray(schema.type)) {
+    out.type = schema.type.find((entry) => entry !== "null") ?? "string";
+    if (schema.type.includes("null")) {
+      out.nullable = true;
+    }
+  }
+
+  if (schema.properties) {
+    out.properties = Object.fromEntries(
+      Object.entries(schema.properties).map(([name, value]) => [
+        name,
+        toGeminiSchema(value),
+      ]),
+    );
+  }
+
+  if (schema.items) {
+    out.items = toGeminiSchema(schema.items);
+  }
+
+  if (Array.isArray(schema.required)) {
+    out.required = schema.required;
+  }
+
+  return out;
+}
+
+/**
+ * Guidance from Gemini, on the free tier.
+ *
+ * Fast where the local CLI cannot be: this is one request rather than starting
+ * a whole agent, so a step costs a second or two instead of six or seven, and
+ * that difference is a person standing still waiting to be told what to click.
+ *
+ * It also takes a response schema, which is the more interesting part. The CLI
+ * had to be *asked* for a shape and repeatedly returned a different one --
+ * `reason` inside `target`, `confidence` missing, `risk` answered as "low" --
+ * and each misplacement was a correct answer thrown away by a different gate.
+ * Here the shape is enforced by the API rather than requested in prose.
+ */
+export async function requestGeminiGuidance(body, providerConfig, options = {}) {
+  const fetcher = options.fetchImpl ?? fetch;
+
+  if (providerConfig.apiKey.length === 0) {
+    return {
+      ok: false,
+      error:
+        "No Gemini key. Create one free at aistudio.google.com/apikey, then start the server with GEMINI_API_KEY set.",
+    };
+  }
+
+  const schema = toGeminiSchema(body.outputSchema);
+  const request = {
+    contents: [
+      {
+        parts: [
+          { text: body.prompt },
+          {
+            inline_data: {
+              mime_type: body.imageFormat === "jpeg" ? "image/jpeg" : "image/png",
+              data: body.imageBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+      /*
+       * As little deliberation as the model allows.
+       *
+       * Measured on a real screenshot at the default setting: 4.5s, 6.5s and
+       * 13.2s for three questions -- a person stood in front of their own
+       * screen for all of it, and the slowest case worse than the CLI this
+       * replaced. The task is recognition, not reasoning: point at the control
+       * that matches this sentence. Thinking cannot be turned off on these
+       * models; minimal is the floor.
+       */
+      thinkingConfig: { thinkingLevel: "minimal" },
+      ...(schema ? { responseSchema: schema } : {}),
+    },
+  };
+
+  try {
+    const response = await fetcher(
+      `${GEMINI_ENDPOINT}/${providerConfig.model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          // In the header, not the query string: a key in a URL ends up in
+          // logs, in proxies, and in anything that records where a request went.
+          "x-goog-api-key": providerConfig.apiKey,
+        },
+        body: JSON.stringify(request),
+      },
+    );
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+
+      // The free tier allows only a few questions a minute, and running into
+      // that is a wait rather than a fault. Reporting it as "guidance
+      // unavailable" sends somebody to check their key, which is fine.
+      if (response.status === 429) {
+        return {
+          ok: false,
+          error:
+            "That was too many questions at once for the free tier. Give it a minute and ask again.",
+        };
+      }
+
+      return {
+        ok: false,
+        error: `Gemini returned ${response.status} ${response.statusText}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+      };
+    }
+
+    const payload = await response.json();
+    const text = payload?.candidates?.[0]?.content?.parts
+      ?.map((part) => part?.text ?? "")
+      .join("")
+      .trim();
+
+    if (!text) {
+      // A blocked or empty candidate. Saying so beats handing "" to a parser
+      // and reporting whatever it makes of it.
+      const reason =
+        payload?.candidates?.[0]?.finishReason ??
+        payload?.promptFeedback?.blockReason ??
+        "no content";
+      return { ok: false, error: `Gemini returned nothing (${reason})` };
+    }
+
+    return { ok: true, text };
+  } catch (error) {
+    return { ok: false, error: formatProviderError(error) };
+  }
+}
+
+export async function handleHostedVisionRequest(body, providerConfig, options = {}) {
+  if (typeof body?.prompt !== "string" || body.prompt.trim().length === 0) {
+    return { status: 400, body: { error: "prompt is required" } };
+  }
+
+  if (typeof body?.imageBase64 !== "string" || body.imageBase64.length === 0) {
+    return { status: 400, body: { error: "imageBase64 is required" } };
+  }
+
+  const answer = await requestGeminiGuidance(body, providerConfig, {
+    fetchImpl: options.fetchImpl,
+  });
+
+  if (!answer.ok) {
+    // 200 with an error, not 500. The desktop reads a non-200 as the service
+    // being unreachable; this one answered, and what it has to say is why it
+    // could not help.
+    return {
+      status: 200,
+      body: { error: answer.error, providerName: providerConfig.providerName },
+    };
+  }
+
+  return {
+    status: 200,
+    body: { rawAnswer: answer.text, providerName: providerConfig.providerName },
+  };
+}
+
+/*
+ * A developer's account, always entitled.
+ *
+ * The real service reads this from Stripe. Locally there is no subscription to
+ * read and no payment to take, and a dev build that refused to run because it
+ * could not confirm a plan would be checking something nobody is charging for.
+ * Not reachable from a production build: it only answers on localhost, and only
+ * while somebody has deliberately started this script.
+ */
+export function developerAccountState() {
+  return {
+    email: "developer@localhost",
+    tier: "pro",
+    status: "active",
+    currentPeriodEnd: null,
+    entitled: true,
+    hasBillingAccount: false,
+  };
+}
+
 export async function handleGuidanceSmokeRequest(request, response, options = {}) {
   const providerConfig = resolveGuidanceProviderConfig(options.env);
 
@@ -920,6 +1230,52 @@ export async function handleGuidanceSmokeRequest(request, response, options = {}
     }
   }
 
+  if (request.method === "POST" && request.url === "/account") {
+    sendJson(response, 200, developerAccountState());
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/vision") {
+    let visionBody;
+
+    try {
+      visionBody = JSON.parse(await readRequestBody(request));
+    } catch (error) {
+      sendJson(response, 400, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    if (providerConfig.provider !== "gemini-dev") {
+      sendJson(response, 200, {
+        error:
+          providerConfig.error ??
+          `provider "${providerConfig.provider}" does not serve /vision; start with npm run guidance:smoke:gemini`,
+        providerName: providerConfig.providerName,
+      });
+      return;
+    }
+
+    const reply = await handleHostedVisionRequest(visionBody, providerConfig, {
+      fetchImpl: options.fetchImpl,
+      env: options.env,
+    });
+
+    // The answer itself, not just its length. When the model declines to look
+    // at the screenshot it says so in here, and a character count does not.
+    console.log(
+      `[vision] image=${Math.round((visionBody.imageBase64?.length ?? 0) / 1365)}KB ${
+        reply.body.rawAnswer
+          ? `answer=${truncateProviderRawText(reply.body.rawAnswer)}`
+          : `error=${reply.body.error}`
+      }`,
+    );
+
+    sendJson(response, reply.status, reply.body);
+    return;
+  }
+
   if (request.method !== "POST" || request.url !== "/api/guidance/smoke") {
     sendJson(response, 404, {
       mode: "unavailable",
@@ -959,10 +1315,14 @@ export async function handleGuidanceSmokeRequest(request, response, options = {}
   );
 
   if (providerConfig.provider === "freellmapi-dev") {
-    const providerResponse = await requestFreeLlmApiGuidance(body, providerConfig, {
-      fetchImpl: options.fetchImpl,
-      env: options.env,
-    });
+    const providerResponse = await requestFreeLlmApiGuidance(
+      body,
+      providerConfig,
+      {
+        fetchImpl: options.fetchImpl,
+        env: options.env,
+      },
+    );
 
     console.log(
       `[response] mode=${providerResponse.mode} provider=${providerResponse.providerName ?? "unknown"} target=${providerResponse.result?.step?.target?.label ?? "none"} error=${providerResponse.error ?? "none"}`,

@@ -82,12 +82,24 @@ export async function requestHostedVisionGuidance(
       mode: "unavailable",
       error: reply.error,
       providerName: providerFallbackName,
+      /*
+       * Whether asking somebody else is worth trying.
+       *
+       * The three failures are not the same. Being signed out or unsubscribed
+       * is the service saying *no* -- routing around that would be handing out
+       * what somebody has not paid for. `error` is the service saying it
+       * *cannot*, which is a different sentence, and the honest response is to
+       * fall back rather than to report that Toki cannot see.
+       */
+      canFallBack: reply.kind === "error",
     };
   } catch (error) {
     return {
       mode: "unavailable",
       error: error instanceof Error ? error.message : String(error),
       providerName: providerFallbackName,
+      // The service could not be reached at all. Nothing was refused.
+      canFallBack: true,
     };
   }
 }

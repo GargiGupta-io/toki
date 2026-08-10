@@ -5,8 +5,11 @@ import {
   handleGuidanceSmokeRequest,
   resetBrowserCandidateBridge,
   normalizeProviderGuidanceResponse,
+  developerAccountState,
+  handleHostedVisionRequest,
   requestFreeLlmApiGuidance,
   resolveGuidanceProviderConfig,
+  toGeminiSchema,
   validateProviderGuidanceResult,
   validateGuidanceProviderRequest,
 } from "./guidance-smoke-server.mjs";
@@ -567,4 +570,333 @@ test("guidance smoke server calls configured FreeLLMAPI dev adapter", async () =
   assert.equal(body.providerName, "freellmapi-dev");
   assert.equal(body.validation.valid, true);
   assert.equal(body.result.step.target.label, "Message input box");
+});
+
+/*
+ * A stand-in for the Claude CLI.
+ *
+ * The real one is a network call on somebody's subscription, so the tests never
+ * reach it: they assert on how its output is read and how its failures are
+ * reported, which is where the mistakes live.
+ */
+test("the app's /account route reports an entitled developer", async () => {
+  const response = createResponse();
+
+  await handleGuidanceSmokeRequest(createRequest("POST", "/account"), response, {
+    env: { TOKI_GUIDANCE_PROVIDER: "gemini-dev", GEMINI_API_KEY: "k" },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().entitled, true);
+  assert.equal(developerAccountState().tier, "pro");
+});
+
+/*
+ * Gemini, in place of the local CLI.
+ *
+ * The CLI answers correctly and slowly: it starts a whole agent, reads the
+ * screenshot off disk, and costs six or seven seconds a step -- which is a
+ * person standing still waiting to be told what to click. It also has to be
+ * installed, and it has to be lent Toki's screen-recording grant to do its job.
+ *
+ * Gemini is one request, on a free tier, and takes the output schema as a
+ * response schema rather than as a paragraph of please. That last part is the
+ * reason to prefer it: the shape is enforced instead of requested.
+ */
+
+function fakeGemini(response) {
+  const calls = [];
+
+  return {
+    calls,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), init, body: JSON.parse(init.body) });
+      return response;
+    },
+  };
+}
+
+function geminiOk(text) {
+  return {
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    json: async () => ({
+      candidates: [{ content: { parts: [{ text }] } }],
+    }),
+  };
+}
+
+const geminiConfig = {
+  provider: "gemini-dev",
+  providerName: "gemini-dev",
+  apiKey: "test-key",
+  model: "gemini-3.6-flash",
+};
+
+test("choosing Gemini asks Gemini, and never starts the CLI", async () => {
+  // The handler used to name the CLI directly, so the provider setting picked
+  // a label and the request went the same place either way. Choosing Gemini
+  // did nothing at all, which is indistinguishable from Gemini being slow.
+  const { fetchImpl, calls } = fakeGemini(geminiOk('{"target":null}'));
+
+  const reply = await handleHostedVisionRequest(
+    { prompt: "Find it.", imageBase64: "iVBORw0KGgo=", imageFormat: "png" },
+    geminiConfig,
+    { fetchImpl, spawnImpl: () => assert.fail("the CLI must not be started") },
+  );
+
+  assert.equal(reply.status, 200);
+  assert.equal(reply.body.rawAnswer, '{"target":null}');
+  assert.equal(reply.body.providerName, "gemini-dev");
+  assert.equal(calls.length, 1);
+});
+
+test("the schema is enforced by the API, not asked for in prose", async () => {
+  const { fetchImpl, calls } = fakeGemini(geminiOk("{}"));
+
+  await handleHostedVisionRequest(
+    {
+      prompt: "Find the create playlist control.",
+      imageBase64: "iVBORw0KGgo=",
+      imageFormat: "png",
+      outputSchema: {
+        type: "object",
+        required: ["target", "confidence"],
+        properties: { risk: { type: "string", enum: ["safe_navigation", "delete"] } },
+      },
+    },
+    geminiConfig,
+    { fetchImpl },
+  );
+
+  const { body } = calls[0];
+  const schema = body.generationConfig.responseSchema;
+
+  assert.deepEqual(schema.required, ["target", "confidence"]);
+  assert.deepEqual(schema.properties.risk.enum, ["safe_navigation", "delete"]);
+  assert.equal(body.generationConfig.responseMimeType, "application/json");
+
+  // The ask is still the ask. Appending the schema in words as well would be
+  // spending tokens to repeat something already binding.
+  const prompt = body.contents[0].parts[0].text;
+  assert.match(prompt, /Find the create playlist control\./u);
+  assert.doesNotMatch(prompt, /Return only a JSON object matching this schema/u);
+});
+
+test("the key travels in a header, never in the URL", async () => {
+  // A key in a query string ends up in server logs, in proxies, and in
+  // anything that records where a request went.
+  const { fetchImpl, calls } = fakeGemini(geminiOk("{}"));
+
+  await handleHostedVisionRequest(
+    { prompt: "Find it.", imageBase64: "iVBORw0KGgo=", imageFormat: "png" },
+    geminiConfig,
+    { fetchImpl },
+  );
+
+  assert.doesNotMatch(calls[0].url, /test-key/u);
+  assert.equal(calls[0].init.headers["x-goog-api-key"], "test-key");
+  assert.match(calls[0].url, /gemini-3\.6-flash/u, "the configured model is used");
+});
+
+test("the screenshot goes as an image, with the format it actually is", async () => {
+  const { fetchImpl, calls } = fakeGemini(geminiOk("{}"));
+
+  await handleHostedVisionRequest(
+    { prompt: "Find it.", imageBase64: "/9j/4AAQ", imageFormat: "jpeg" },
+    geminiConfig,
+    { fetchImpl },
+  );
+
+  const image = calls[0].body.contents[0].parts[1].inline_data;
+  assert.equal(image.mime_type, "image/jpeg");
+  assert.equal(image.data, "/9j/4AAQ");
+});
+
+test("no key says where to get one, free", async () => {
+  // "No vision credentials" is true and useless. The whole reason for choosing
+  // this provider is that a key costs nothing, so the message says so.
+  const reply = await handleHostedVisionRequest(
+    { prompt: "Find it.", imageBase64: "iVBORw0KGgo=", imageFormat: "png" },
+    { ...geminiConfig, apiKey: "" },
+    { fetchImpl: () => assert.fail("must not call Google without a key") },
+  );
+
+  assert.equal(reply.status, 200);
+  assert.match(reply.body.error, /free/iu);
+  assert.match(reply.body.error, /aistudio\.google\.com/u);
+});
+
+test("a refusal from Google is reported as a refusal", async () => {
+  // Not as an empty answer. A retired model returns 404 here, and reading that
+  // as "the model had nothing to say" sends somebody looking at their key.
+  const { fetchImpl } = fakeGemini({
+    ok: false,
+    status: 404,
+    statusText: "Not Found",
+    text: async () => "models/gemini-2.0-flash is not found",
+  });
+
+  const reply = await handleHostedVisionRequest(
+    { prompt: "Find it.", imageBase64: "iVBORw0KGgo=", imageFormat: "png" },
+    geminiConfig,
+    { fetchImpl },
+  );
+
+  assert.equal(reply.status, 200);
+  assert.match(reply.body.error, /404/u);
+  assert.match(reply.body.error, /is not found/u);
+});
+
+test("a blocked screenshot says it was blocked", async () => {
+  // Somebody's screen can contain anything. An empty string handed to a parser
+  // becomes whatever the parser makes of it, which is never the real reason.
+  const { fetchImpl } = fakeGemini({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    json: async () => ({ candidates: [{ finishReason: "SAFETY", content: {} }] }),
+  });
+
+  const reply = await handleHostedVisionRequest(
+    { prompt: "Find it.", imageBase64: "iVBORw0KGgo=", imageFormat: "png" },
+    geminiConfig,
+    { fetchImpl },
+  );
+
+  assert.match(reply.body.error, /SAFETY/u);
+});
+
+test("the schema is stripped to what Gemini accepts", () => {
+  // It takes an OpenAPI subset, not full JSON Schema. `$schema` and
+  // `additionalProperties` are rejected outright rather than ignored, which
+  // turns a working schema into a 400 over a field nobody was relying on.
+  const converted = toGeminiSchema({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    additionalProperties: false,
+    required: ["confidence"],
+    properties: {
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      target: {
+        type: ["object", "null"],
+        properties: { label: { type: "string" } },
+      },
+      steps: { type: "array", items: { type: "string" } },
+    },
+  });
+
+  assert.equal(converted.$schema, undefined);
+  assert.equal(converted.additionalProperties, undefined);
+  assert.equal(converted.properties.confidence.minimum, undefined);
+
+  // "object or null" is a flag here, not a type array.
+  assert.equal(converted.properties.target.type, "object");
+  assert.equal(converted.properties.target.nullable, true);
+
+  // What carries meaning survives.
+  assert.deepEqual(converted.required, ["confidence"]);
+  assert.equal(converted.properties.steps.items.type, "string");
+});
+
+test("gemini-dev is a provider the server will start as", () => {
+  const config = resolveGuidanceProviderConfig({
+    TOKI_GUIDANCE_PROVIDER: "gemini-dev",
+    GEMINI_API_KEY: "from-env",
+  });
+
+  assert.equal(config.provider, "gemini-dev");
+  assert.equal(config.apiKey, "from-env");
+  // Chosen by measurement rather than remembered. The previous default is shut
+  // down, and a retired default fails as if the key were wrong.
+  assert.equal(config.model, "gemini-3.5-flash-lite");
+});
+
+test("an anyOf target keeps its required fields", () => {
+  // The bug this exists for was silent and expensive. Toki's contract writes
+  // "an object or null" as an anyOf, and the converter had no branch for it --
+  // so it returned an empty schema for `target`, the one field that matters,
+  // while enforcing every other field perfectly.
+  //
+  // The symptom was the model looking unreliable: coordinates arrived as
+  // centerX one call, box the next, and absent the call after that. It had
+  // never been told.
+  const converted = toGeminiSchema({
+    type: "object",
+    required: ["target"],
+    properties: {
+      target: {
+        anyOf: [
+          { type: "null" },
+          {
+            type: "object",
+            required: ["centerX", "centerY", "label"],
+            properties: {
+              centerX: { type: "number" },
+              centerY: { type: "number" },
+              label: { type: "string" },
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  const target = converted.properties.target;
+
+  assert.deepEqual(target.required, ["centerX", "centerY", "label"]);
+  assert.equal(target.type, "object");
+  // "or null" survives as the flag Gemini actually understands.
+  assert.equal(target.nullable, true);
+  assert.equal(target.properties.centerX.type, "number");
+});
+
+test("a choice Gemini cannot express drops the constraint rather than guessing", () => {
+  // Picking one branch would forbid an answer the contract permits, which is
+  // worse than not constraining it.
+  assert.equal(
+    toGeminiSchema({ anyOf: [{ type: "string" }, { type: "number" }] }),
+    undefined,
+  );
+});
+
+test("hitting the free tier's limit is described as a wait, not a fault", async () => {
+  // It sends somebody to check a key that is working perfectly well. The free
+  // tier allows only a few questions a minute, which is easy to reach.
+  const { fetchImpl } = fakeGemini({
+    ok: false,
+    status: 429,
+    statusText: "Too Many Requests",
+    text: async () => "quota exceeded",
+  });
+
+  const reply = await handleHostedVisionRequest(
+    { prompt: "Find it.", imageBase64: "iVBORw0KGgo=", imageFormat: "png" },
+    geminiConfig,
+    { fetchImpl },
+  );
+
+  assert.match(reply.body.error, /minute/u);
+  assert.doesNotMatch(reply.body.error, /429/u);
+});
+
+test("the model is asked to deliberate as little as it is allowed to", () => {
+  // Measured at the default setting on a real screenshot: 2.6s to 21s per
+  // question, with a person stood in front of their own screen for all of it.
+  // The task is recognition, not reasoning.
+  const { fetchImpl, calls } = fakeGemini(geminiOk("{}"));
+
+  return handleHostedVisionRequest(
+    { prompt: "Find it.", imageBase64: "iVBORw0KGgo=", imageFormat: "png" },
+    geminiConfig,
+    { fetchImpl },
+  ).then(() => {
+    // The nesting matters: sent flat, the API rejects the whole request with
+    // "Unknown name thinkingLevel" and no guidance happens at all.
+    assert.equal(
+      calls[0].body.generationConfig.thinkingConfig.thinkingLevel,
+      "minimal",
+    );
+  });
 });

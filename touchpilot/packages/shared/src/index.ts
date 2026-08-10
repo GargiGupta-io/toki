@@ -46,6 +46,16 @@ export type ScreenCandidate = TargetBox & {
   rank?: {
     position?: number;
     score: number;
+    /**
+     * How much of the score came from matching the request, rather than from
+     * being a plausible-looking control.
+     *
+     * Kept apart because the two answer different questions, and only the
+     * second one -- "is this anything to do with what was asked" -- justifies a
+     * place in a list of twenty. When every candidate scores the same, the
+     * ordering is arbitrary, and something other than arbitrary has to decide.
+     */
+    relevance?: number;
     reasons: string[];
   };
   metadata?: Record<string, string | number | boolean | null>;
@@ -365,7 +375,7 @@ export type GuidanceTrace = {
 export type GuidanceProviderMode =
   | "mock"
   | "real"
-  | "codex-subscription"
+  | "gemini"
   | "unavailable";
 
 export type GuidanceProviderRequest = GuidanceRequest;
@@ -377,6 +387,17 @@ export type GuidanceProviderResponse = {
   error?: string;
   validation?: GuidanceValidationResult;
   providerName?: string;
+  /**
+   * Whether this failure is worth asking somebody else about.
+   *
+   * "I will not" and "I cannot" are different sentences. A service refusing
+   * because somebody is signed out or unsubscribed is a decision, and routing
+   * around it would hand out what has not been paid for. A service that cannot
+   * answer -- misconfigured, unreachable, out of credentials -- has not decided
+   * anything, and reporting "Toki cannot see your screen" while a working key
+   * sits unused is simply wrong.
+   */
+  canFallBack?: boolean;
   debug?: {
     providerOutput?: RawProviderOutputTrace;
     targetVerification?: TargetVerificationTrace;
