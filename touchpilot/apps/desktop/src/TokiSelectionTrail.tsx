@@ -44,10 +44,11 @@ export function TokiSelectionTrail({
   stroke: CircleStrokeState | null;
   viewport: ViewportMetrics;
   /**
-   * Where the blob actually is, after its spring.
+   * Where the blob actually is, after its spring, measured at its centre.
    *
-   * The fluid is pushed from here as well as from the samples, so the wake
-   * comes off the creature instead of running alongside it.
+   * The only thing the fluid is fed from. It must be the centre and not the
+   * corner, or the wake runs half a blob up and to the left of the thing
+   * making it.
    */
   head: { x: number; y: number } | null;
   /** The creature's colour, so the trail is plainly the same thing. */
@@ -127,52 +128,47 @@ export function TokiSelectionTrail({
   }, [colour]);
 
   /*
-   * Feed the fluid whatever is new since the last render.
+   * A stroke beginning or ending resets where the fluid was last fed from.
    *
-   * By index rather than by time, so every sample is pushed exactly once: a
-   * slow hand does not pile colour into one spot, and a fast one does not skip
-   * the middle of its own arc.
+   * No colour is pushed here. This effect only keeps track of which stroke is
+   * being drawn, so that the end of one is not joined to the start of the next
+   * by a line across the screen.
    */
   useEffect(() => {
-    const trail = trailRef.current;
-
-    // An abandoned stroke is one Toki gave up on. Continuing to push colour
-    // for it would leave a wake behind a gesture that is no longer happening.
-    if (trail == null || stroke == null || stroke.phase === "abandoned") {
+    if (stroke == null || stroke.phase === "abandoned" || stroke.points.length === 0) {
+      lastPushRef.current = null;
+      consumedRef.current = 0;
       return;
     }
 
     if (stroke.points.length < consumedRef.current) {
-      // A new stroke. Start counting again.
-      consumedRef.current = 0;
+      // A new stroke reusing the same object.
       lastPushRef.current = null;
     }
 
-    for (let index = consumedRef.current; index < stroke.points.length; index += 1) {
-      const at = placeStrokePoint(stroke.points[index], viewport);
-      const previous = lastPushRef.current;
-
-      if (previous != null) {
-        // Laid continuously between samples. The cursor is read every fifty
-        // milliseconds, which at any real speed is tens of pixels apart, and
-        // pushing only at those positions leaves a row of separate dots.
-        trail.pushSegment(previous, at);
-      }
-
-      lastPushRef.current = at;
-    }
-
     consumedRef.current = stroke.points.length;
-    ensureRunning();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stroke, viewport]);
+  }, [stroke]);
 
   /*
-   * The wake comes off the creature, not off the raw sample.
+   * One path, and it is the creature's.
    *
-   * The blob lags the pointer on purpose -- it is on a spring -- so pushing
-   * only at recorded positions left the fluid running beside it rather than out
-   * of it.
+   * The fluid used to be fed from two places: the raw samples as they arrived,
+   * and the blob's own position every frame. They are not the same curve. The
+   * blob is on a spring, so it lags the samples by a few tens of pixels, and
+   * the two were also offset from each other by half a blob because one was
+   * measured from a corner and the other from a centre.
+   *
+   * Sharing one "last fed from" mark between them meant the fluid was driven
+   * forwards to the newest sample, then backwards to the lagging blob, then
+   * forwards again -- twenty times a second. Colour went down over the same
+   * stretch two and three times in alternating directions, which is what made
+   * the stroke a chain of bright lumps rather than a ribbon. No amount of
+   * spacing the splats evenly along that path could have helped, because the
+   * path itself was going back and forth.
+   *
+   * The samples are not lost by dropping them: the spring follows them, so
+   * everywhere the pointer went, the blob goes too, a moment later. And the
+   * wake now comes out of the creature exactly, rather than running beside it.
    */
   useEffect(() => {
     const trail = trailRef.current;

@@ -107,13 +107,20 @@ test("the wake comes off the blob, not off the newest sample", () => {
   // beside the creature rather than out of it, on exactly the fast movement
   // where the gap is most visible.
   const trail = readFileSync(path.join(desktop, "TokiSelectionTrail.tsx"), "utf8");
-  const fromHead = trail.slice(trail.indexOf("The wake comes off the creature"));
-  assert.match(fromHead.slice(0, 900), /trail\.pushSegment\(previous, head\)/u);
+
+  assert.equal(
+    (trail.match(/trail\.pushSegment\(/gu) ?? []).length,
+    1,
+    "the fluid has one source",
+  );
+  assert.match(trail, /trail\.pushSegment\(previous, head\)/u);
 
   const app = readFileSync(path.join(desktop, "App.tsx"), "utf8");
   // One spring, shared. Two components each running their own would drift.
   assert.equal((app.match(/usePuckSpring\(/gu) ?? []).length, 1);
-  assert.match(app, /head=\{sprungPointerShadow\}/u);
+  // Handed over as a centre. It used to be passed straight through as the
+  // blob's top-left, which put the whole wake half a blob up and to the left.
+  assert.match(app, /sprungPointerShadow\.x \+ pointerShadowGeometry\.width \/ 2/u);
   assert.match(app, /pointerShadow=\{sprungPointerShadow \?\? pointerShadow\}/u);
 
   // Whichever pointer is driving, not only the hand. Springing the gesture

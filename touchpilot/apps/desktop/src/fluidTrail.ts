@@ -219,7 +219,21 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
  * which is the failure this whole approach replaced. Paired with the fade
  * above; see the measurements there.
  */
-const DYE_STRENGTH = 0.36;
+/**
+ * How much colour each splat carries.
+ *
+ * Doubled from 0.36 when the trail stopped being fed from two paths at once.
+ * The old arrangement pushed dye twice per frame -- once towards the newest
+ * sample, once back towards the lagging blob -- so removing the second feed
+ * halved the colour along with the lumps, and the ribbon came out washed out.
+ *
+ * Measured rather than guessed: a synthetic stroke rendered headlessly at 1,
+ * 1.5, 2, 2.5 and 3 times the old dose gave peak brightnesses of 225, 330,
+ * 431, 485 and 539 out of a possible 765, with clipping setting in past 2.
+ * Two is the brightest the core gets while still being a colour rather than a
+ * white hole.
+ */
+const DYE_STRENGTH = 0.72;
 
 export function createFluidTrail(
   canvas: HTMLCanvasElement,

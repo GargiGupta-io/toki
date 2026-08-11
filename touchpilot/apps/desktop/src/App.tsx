@@ -6587,7 +6587,17 @@ function OverlayWindowApp() {
             : alwaysOnGestureRuntime.circleStroke
         }
         viewport={viewport}
-        head={sprungPointerShadow}
+        // The blob's centre, not its corner. The trail is fed from this and
+        // nothing else, so an offset here puts the whole wake half a blob up
+        // and to the left of the thing that is supposed to be making it.
+        head={
+          sprungPointerShadow == null
+            ? null
+            : {
+                x: sprungPointerShadow.x + pointerShadowGeometry.width / 2,
+                y: sprungPointerShadow.y + pointerShadowGeometry.height / 2,
+              }
+        }
         // The creature's own colour, including whatever was chosen when Toki
         // was first met. A trail in a different colour is a second thing on
         // screen rather than a wake off the first.

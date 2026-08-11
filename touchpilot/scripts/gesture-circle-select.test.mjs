@@ -381,11 +381,16 @@ test("the simulation stops when the fluid has settled", () => {
 });
 
 test("the wake comes off the creature, not off the raw sample", () => {
-  // The blob lags the pointer on purpose -- it is on a spring -- so pushing
-  // only at recorded positions left the fluid running beside it rather than
-  // out of it.
-  const fromHead = trail.slice(trail.indexOf("The wake comes off the creature"));
-  assert.match(fromHead.slice(0, 900), /trail\.pushSegment\(previous, head\)/u);
+  // The blob lags the pointer on purpose -- it is on a spring -- so pushing at
+  // recorded positions left the fluid running beside it rather than out of it.
+  //
+  // Anchored on the call rather than on the comment above it. This used to find
+  // its way to the assertion by searching for a sentence in a comment, so
+  // rewording the comment failed the test while the behaviour was untouched.
+  const feeds = trail.match(/trail\.pushSegment\(/gu) ?? [];
+
+  assert.equal(feeds.length, 1, "one source, or the two fight over the path");
+  assert.match(trail, /trail\.pushSegment\(previous, head\)/u);
 });
 
 test("the trail is placed exactly where the blob is placed", () => {

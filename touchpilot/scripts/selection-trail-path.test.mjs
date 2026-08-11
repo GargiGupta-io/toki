@@ -139,7 +139,9 @@ test("colour is laid continuously between samples, not as dots", () => {
   );
 
   assert.match(source, /pushSegment/u);
-  assert.match(component, /trail\.pushSegment\(previous, at\)/u);
+  // `previous, head` rather than `previous, at`: the samples are no longer fed
+  // to the fluid directly. See "the fluid is fed from one path" below.
+  assert.match(component, /trail\.pushSegment\(previous, head\)/u);
 
   /*
    * Both colour and momentum are spent per pixel of path.
@@ -213,4 +215,53 @@ test("the ribbon is the width of the creature that draws it", () => {
   // Any other width reads as arbitrary.
   assert.ok(fluidTrailPolicy.splatRadius <= 0.012);
   assert.ok(fluidTrailPolicy.splatRadius >= 0.008);
+});
+
+test("the fluid is fed from one path, and it is the creature's", () => {
+  /*
+   * The trail came out as a chain of bright lumps, and the spacing of the
+   * splats was not why.
+   *
+   * Two effects fed the simulation and shared one "last fed from" mark: the raw
+   * samples as they arrived, and the blob's own position every frame. Those are
+   * different curves -- the blob is on a spring so it lags by tens of pixels,
+   * and the two were also offset by half a blob because one was measured from a
+   * corner and the other from a centre. The fluid was therefore driven forward
+   * to the newest sample, back to the lagging blob, and forward again, twenty
+   * times a second, laying colour over the same stretch two and three times in
+   * alternating directions.
+   *
+   * No amount of spacing splats evenly could fix a path that goes back and
+   * forth, which is why the first attempt at this changed nothing.
+   */
+  const component = readFileSync(
+    new URL("../apps/desktop/src/TokiSelectionTrail.tsx", import.meta.url),
+    "utf8",
+  );
+
+  const feeds = component.match(/trail\.pushSegment\(/gu) ?? [];
+  assert.equal(
+    feeds.length,
+    1,
+    `the fluid must have exactly one source; found ${feeds.length}`,
+  );
+
+  assert.match(
+    component,
+    /trail\.pushSegment\(previous, head\)/u,
+    "and that source is the blob, so the wake comes out of the creature",
+  );
+});
+
+test("the head is handed over as a centre, not a corner", () => {
+  // Half a blob of offset between the feed and the thing drawing it puts the
+  // whole wake up and to the left of the creature.
+  const app = readFileSync(
+    new URL("../apps/desktop/src/App.tsx", import.meta.url),
+    "utf8",
+  );
+
+  const head = app.slice(app.indexOf("head={"), app.indexOf("head={") + 400);
+  assert.match(head, /pointerShadowGeometry\.width \/ 2/u);
+  assert.match(head, /pointerShadowGeometry\.height \/ 2/u);
 });
