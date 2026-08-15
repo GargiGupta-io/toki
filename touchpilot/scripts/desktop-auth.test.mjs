@@ -75,7 +75,18 @@ test("the authorize URL asks for s256, not plain", () => {
 
   assert.equal(url.searchParams.get("code_challenge_method"), "s256");
   assert.equal(url.searchParams.get("code_challenge"), "abc");
-  assert.equal(url.searchParams.get("redirect_to"), "toki://auth/callback");
+  /*
+   * The browser lands on a page, and the page hands over to toki://.
+   *
+   * Redirecting the browser straight into the custom scheme left the tab
+   * spinning on a navigation that never completes, so sign-in looked broken
+   * after it had worked. The app itself still accepts only toki://auth/callback
+   * -- the assertions below -- which the page forwards verbatim.
+   */
+  assert.equal(
+    url.searchParams.get("redirect_to"),
+    "https://gettoki.pages.dev/auth/callback",
+  );
   assert.equal(
     url.searchParams.get("code_verifier"),
     null,

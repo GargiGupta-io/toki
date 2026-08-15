@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Welcome to Toki</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="../favicon.png" type="image/png" />
+    <link rel="stylesheet" href="../style.css" />
+    <style>
+      /* One centred card. This page exists for about four seconds. */
+      .callback-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .callback-card {
+        background: var(--card, #fdf9f7);
+        border-radius: 18px;
+        padding: 44px 48px;
+        max-width: 430px;
+        text-align: center;
+        box-shadow: 0 1px 2px rgba(31, 22, 20, 0.06), 0 12px 40px rgba(31, 22, 20, 0.08);
+      }
+
+      .callback-card img {
+        width: 56px;
+        height: 56px;
+        margin-bottom: 18px;
+      }
+
+      .callback-card h1 {
+        font-size: 26px;
+        margin: 0 0 10px;
+      }
+
+      .callback-card p {
+        margin: 0 0 22px;
+        line-height: 1.5;
+      }
+
+      .callback-open {
+        display: inline-block;
+        padding: 12px 26px;
+        border-radius: 999px;
+        background: var(--accent, #c2401f);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .callback-hint {
+        margin-top: 18px;
+        font-size: 14px;
+        opacity: 0.65;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="callback-wrap">
+      <div class="callback-card">
+        <img src="../icon.png" alt="" width="508" height="508" />
+        <h1 id="headline">Welcome to Toki</h1>
+        <p id="detail">You're signed in. Handing you back to the app&hellip;</p>
+        <a class="callback-open" id="open" href="toki://auth/callback">Open Toki</a>
+        <p class="callback-hint" id="hint">You can close this tab once Toki opens.</p>
+      </div>
+    </div>
+
+    <script>
+      /*
+       * The end of sign-in, with an ending.
+       *
+       * Sign-in used to finish on a redirect straight into toki://, which the
+       * app receives -- but the browser tab is left "loading" a navigation
+       * that by design never completes, and some browsers hand the link to
+       * the app without ever saying so. People watched a spinner and
+       * concluded sign-in was broken while it had already worked.
+       *
+       * So the flow lands here instead: a page that ends, says what happened,
+       * and forwards the callback. The automatic attempt covers the common
+       * case; the button is the guarantee, because a real click is a user
+       * gesture and no browser swallows those.
+       *
+       * Everything after "callback" is passed through untouched. The code in
+       * it is useless without the verifier, which never leaves the app.
+       */
+      (function () {
+        var query = new URLSearchParams(window.location.search);
+        var target =
+          "toki://auth/callback" + window.location.search + window.location.hash;
+
+        var error = query.get("error_description") || query.get("error");
+        if (error) {
+          document.getElementById("headline").textContent = "Sign-in didn't finish";
+          document.getElementById("detail").textContent =
+            error + " — you can try again from Toki's gear panel.";
+          document.getElementById("open").style.display = "none";
+          document.getElementById("hint").textContent = "";
+          return;
+        }
+
+        document.getElementById("open").setAttribute("href", target);
+        window.location.replace(target);
+      })();
+    </script>
+  </body>
+</html>

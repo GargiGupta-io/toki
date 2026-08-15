@@ -17,7 +17,21 @@
  * process. Skipping this is *the* classic desktop OAuth mistake.
  */
 
-export const authRedirectUri = "toki://auth/callback";
+/**
+ * Where the browser lands when sign-in completes: a page, not a scheme.
+ *
+ * This pointed straight at `toki://auth/callback`, and the app did receive it
+ * -- but a browser handed a custom scheme in the middle of a redirect chain
+ * shows no page, sometimes no prompt, and leaves the tab spinning on a
+ * navigation that by design never finishes. People watched the spinner and
+ * concluded sign-in was broken while it had already worked.
+ *
+ * The page ends the flow visibly and forwards the callback to `toki://` --
+ * automatically, plus a button, because a real click is a user gesture no
+ * browser swallows. The app still listens only for `toki://auth/callback`;
+ * what changed is who says goodbye to the browser.
+ */
+export const authRedirectUri = "https://gettoki.pages.dev/auth/callback";
 
 export type PkcePair = {
   /** Kept in memory only, and only until the code is redeemed. */
