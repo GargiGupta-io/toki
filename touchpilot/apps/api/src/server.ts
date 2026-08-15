@@ -8,6 +8,7 @@ import { createInMemoryRateLimiter } from "./rateLimit";
 import { createSupabaseSubscriptionStore } from "./subscriptions";
 import { createSupabaseUsageStore } from "./usage";
 import { createSupabaseBillingWriter } from "./billing";
+import { createTranscriptionProvider } from "./transcription";
 import { createVisionProvider } from "./vision";
 
 /**
@@ -58,6 +59,22 @@ const dependencies = {
           model: config.provider.guidanceModel,
           baseUrl: config.provider.baseUrl,
         }),
+  transcribe: (() => {
+    if (config.provider.apiKey == null) {
+      return undefined;
+    }
+
+    const provider = createTranscriptionProvider({
+      apiKey: config.provider.apiKey,
+      model: config.provider.transcriptionModel,
+      baseUrl: config.provider.baseUrl,
+    });
+
+    return provider == null
+      ? undefined
+      : (audioBase64: string, format: string) =>
+          provider({ audioBase64, format });
+  })(),
   rateLimiter: createInMemoryRateLimiter(config.limits.requestsPerMinute),
 };
 

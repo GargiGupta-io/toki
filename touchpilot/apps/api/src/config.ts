@@ -94,7 +94,12 @@ export function loadServiceConfig(
        * base URL, and nothing else.
        */
       guidanceModel: env.TOKI_GUIDANCE_MODEL ?? "gemini-3.5-flash-lite",
-      transcriptionModel: env.TOKI_TRANSCRIPTION_MODEL ?? "gpt-4o-transcribe",
+      // The same model that looks at screens. Gemini takes audio the way it
+      // takes an image, so one free key covers both senses -- which is what
+      // lets a fresh install speak without setting anything up. The old
+      // default named an OpenAI model no code here could call, so the health
+      // line advertised speech the service could not do.
+      transcriptionModel: env.TOKI_TRANSCRIPTION_MODEL ?? "gemini-3.5-flash-lite",
       baseUrl:
         env.TOKI_PROVIDER_BASE_URL ??
         "https://generativelanguage.googleapis.com/v1beta/models",
@@ -161,7 +166,19 @@ function readStripeConfig(
 
 export function describeServiceMode(config: ServiceConfig): string {
   if (config.mode === "live") {
-    return `live, using ${config.provider.guidanceModel} for guidance and ${config.provider.transcriptionModel} for speech`;
+    /*
+     * Only claim speech when the configured model has a request shape.
+     *
+     * This line said "using gpt-4o-transcribe for speech" for weeks while no
+     * transcription code existed at all, and the lie was read as truth every
+     * time someone checked /health. What a status line reports has to be
+     * derived from what would actually run.
+     */
+    const speech = config.provider.transcriptionModel.startsWith("gemini")
+      ? `and ${config.provider.transcriptionModel} for speech`
+      : `— speech is not wired for ${config.provider.transcriptionModel}`;
+
+    return `live, using ${config.provider.guidanceModel} for guidance ${speech}`;
   }
 
   return "fixture mode: no provider credentials are configured, so responses are placeholders";
