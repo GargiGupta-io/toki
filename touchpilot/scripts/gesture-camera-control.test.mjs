@@ -324,7 +324,10 @@ test("completed voice notices expire back to a hidden inactive notch", () => {
     settleTransientVoiceTopStatus(noSpeech, "command_ready"),
     noSpeech,
   );
-  assert.match(appSource, /TOP_UTILITY_RESULT_NOTICE_MS/);
+  // The duration comes from the status, because "here is what I heard" and
+  // "try again" earn different lengths of the screen's attention. The split
+  // itself is pinned in top-utility-placement.test.mjs.
+  assert.match(appSource, /transientVoiceNoticeDurationMs\(expectedStatus\)/);
   assert.match(appSource, /settleTransientVoiceTopStatus/);
 });
 

@@ -262,3 +262,57 @@ test("every route into the expanded panel makes its window key", () => {
     );
   }
 });
+
+/*
+ * How long the panel's transient notices last, and why there are two answers.
+ *
+ * Observed on a real machine, from the diagnostics the app itself exported: an
+ * Option press lasting 126ms at 03:01:45, "I didn't catch that. Hold Option
+ * and speak again." recorded at :45.391, and the whole thing settled back to
+ * idle at :48.397 -- three seconds. The person looked down at their keyboard,
+ * looked back up, and asked why the notch was not there. The one notice whose
+ * entire job is to ask for another attempt was the one that vanished before it
+ * could.
+ */
+
+import {
+  settleTransientVoiceTopStatus,
+  transientVoiceNoticeDurationMs,
+  TOP_UTILITY_RESULT_NOTICE_MS,
+  TOP_UTILITY_RETRY_NOTICE_MS,
+} from "../apps/desktop/src/topUtility.ts";
+
+test("a request to try again outlives a glance away", () => {
+  // Eight seconds, matching a guidance failure, because both are Toki asking
+  // the person to act -- which takes as long as a person takes.
+  assert.equal(transientVoiceNoticeDurationMs("no_speech"), TOP_UTILITY_RETRY_NOTICE_MS);
+  assert.ok(TOP_UTILITY_RETRY_NOTICE_MS >= 8_000);
+});
+
+test("a successful readout still leaves quickly", () => {
+  // "Here is what I heard" confirms something that already worked. Keeping it
+  // up longer would hang a panel over somebody's work to say nothing new.
+  assert.equal(
+    transientVoiceNoticeDurationMs("command_ready"),
+    TOP_UTILITY_RESULT_NOTICE_MS,
+  );
+  assert.ok(TOP_UTILITY_RESULT_NOTICE_MS <= 3_000);
+});
+
+test("settling clears only the status it was armed for", () => {
+  // The timer is set when a transient status appears. If a new capture starts
+  // meanwhile, the stale timer must not wipe the new state.
+  const noSpeech = {
+    enabled: false,
+    permission: "granted",
+    status: "no_speech",
+    error: "I didn't catch that. Hold Option and speak again.",
+  };
+
+  const listening = { ...noSpeech, status: "listening" };
+  assert.equal(settleTransientVoiceTopStatus(listening, "no_speech"), listening);
+
+  const settled = settleTransientVoiceTopStatus(noSpeech, "no_speech");
+  assert.equal(settled.status, "idle");
+  assert.equal(settled.error, undefined);
+});

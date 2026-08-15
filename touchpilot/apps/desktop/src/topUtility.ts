@@ -36,6 +36,37 @@ export const TOP_UTILITY_LEAVE_DELAY_MS = 360;
 export const TOP_UTILITY_RESULT_NOTICE_MS = 3_000;
 
 /**
+ * How long a notice that asks for another attempt stays up.
+ *
+ * "Here is what I heard" and "I didn't catch that, hold Option and speak
+ * again" used to share the three seconds above, and they are not the same kind
+ * of sentence. A readout confirms something that already worked; glancing at it
+ * is optional. The retry notice is the only evidence anything happened at all
+ * -- somebody taps Option, looks down at the keyboard, looks back up, and the
+ * panel has already cleaned itself away. What they experience is a product
+ * that did nothing, on the one interaction where it most needs to answer.
+ *
+ * Eight seconds, matching what a guidance failure gets, because they are the
+ * same situation: Toki asking the person to act, which takes as long as a
+ * person takes.
+ */
+export const TOP_UTILITY_RETRY_NOTICE_MS = 8_000;
+
+/**
+ * How long a transient voice status may hold the panel open.
+ *
+ * The split exists because the two transient statuses ask different things of
+ * the person reading them -- see the constants above.
+ */
+export function transientVoiceNoticeDurationMs(
+  status: VoiceRuntimeStatus,
+): number {
+  return status === "no_speech"
+    ? TOP_UTILITY_RETRY_NOTICE_MS
+    : TOP_UTILITY_RESULT_NOTICE_MS;
+}
+
+/**
  * How long the open panel waits before collapsing itself.
  *
  * Long enough to read the two lines it shows and reach a control, short enough

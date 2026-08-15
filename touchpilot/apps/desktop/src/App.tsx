@@ -246,7 +246,7 @@ import {
   isInsideExpandedTopUtility,
   isTopUtilityRevealPoint,
   settleTransientVoiceTopStatus,
-  TOP_UTILITY_RESULT_NOTICE_MS,
+  transientVoiceNoticeDurationMs,
   TOP_UTILITY_IDLE_COLLAPSE_MS,
   TOP_UTILITY_LEAVE_DELAY_MS,
   TOP_UTILITY_REVEAL_DWELL_MS,
@@ -3669,7 +3669,7 @@ function OverlayWindowApp() {
 
       voiceRuntimeRef.current = settledVoiceRuntime;
       setVoiceRuntime(settledVoiceRuntime);
-    }, TOP_UTILITY_RESULT_NOTICE_MS);
+    }, transientVoiceNoticeDurationMs(expectedStatus));
 
     return () => {
       window.clearTimeout(timeout);
