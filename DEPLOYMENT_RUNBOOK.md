@@ -95,7 +95,7 @@ reads it rather than being clicked together by hand.
    | `STRIPE_SECRET_KEY` | Moves money |
    | `STRIPE_PRICE_ID` | |
    | `STRIPE_WEBHOOK_SECRET` | Set after step 5 |
-   | `TOKI_PROVIDER_API_KEY` | OpenAI. Leave blank until there are credits |
+   | `TOKI_PROVIDER_API_KEY` | The Gemini key (free at aistudio.google.com/apikey). Setting it flips the service from fixture to live; blank keeps placeholders |
 
 4. Deploy. The first build takes a few minutes; it builds the Docker image.
 5. Register the webhook: Stripe → Developers → Webhooks → Add endpoint, at

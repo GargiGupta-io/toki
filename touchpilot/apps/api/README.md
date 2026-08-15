@@ -47,9 +47,9 @@ would send users clicking arbitrary coordinates on their own screen.
 
 | Variable | Meaning |
 |---|---|
-| `TOKI_PROVIDER_API_KEY` | Model provider credential. **Absent today.** Setting it switches the service to live mode. |
-| `TOKI_PROVIDER_BASE_URL` | Provider endpoint. Defaults to OpenAI. |
-| `TOKI_GUIDANCE_MODEL` | Vision model for guidance. |
+| `TOKI_PROVIDER_API_KEY` | Model provider credential — a Gemini key, free at aistudio.google.com/apikey. Setting it switches the service to live mode. |
+| `TOKI_PROVIDER_BASE_URL` | Provider endpoint. Defaults to Gemini. Change only together with the model: the request shape follows the model name. |
+| `TOKI_GUIDANCE_MODEL` | Vision model for guidance. Defaults to `gemini-3.5-flash-lite`, chosen by measurement — see config.ts. |
 | `TOKI_TRANSCRIPTION_MODEL` | Speech-to-text model. |
 | `TOKI_DEV_LICENCE_KEYS` | Comma-separated keys the stub store accepts. Development only. |
 | `TOKI_REQUESTS_PER_MINUTE` | Per-licence rate limit. Defaults to 20. |
