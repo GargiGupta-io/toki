@@ -101,6 +101,15 @@ if gh release view "v$version" --repo "$REPO" >/dev/null 2>&1; then
   gh release upload "v$version" \
     "$work_dir/$asset_name" "$work_dir/latest.json" "$dmg" \
     --repo "$REPO" --clobber
+
+  # The first run of this script leaves a draft, so the second run with
+  # --publish lands here -- and uploading assets to a draft is not publishing
+  # it. This branch used to fall through to the "Published" message with the
+  # draft still a draft: the one script whose job is to say what shipped,
+  # saying it about something that had not.
+  if [[ "$PUBLISH" == "1" ]]; then
+    gh release edit "v$version" --draft=false --latest --repo "$REPO"
+  fi
 else
   draft_flag="--draft"
   if [[ "$PUBLISH" == "1" ]]; then
