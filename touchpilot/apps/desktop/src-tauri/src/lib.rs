@@ -3485,6 +3485,65 @@ fn to_gemini_schema(schema: &serde_json::Value) -> Option<serde_json::Value> {
     Some(serde_json::Value::Object(out))
 }
 
+/// How long to wait before asking a second time.
+///
+/// Long enough that a radio which is mid-handover has finished, short enough
+/// that nobody perceives it as a pause on top of the answer itself.
+const GEMINI_TRANSPORT_RETRY_DELAY: Duration = Duration::from_millis(250);
+
+/// What actually went wrong, rather than which address it went wrong at.
+///
+/// A request that fails to send reports itself as "error sending request for
+/// url (https://...)" -- the whole endpoint, which is the one part nobody
+/// needs, and long enough that a notch showing the message cut the sentence off
+/// before it reached anything useful. Worse, that text is identical whether the
+/// name did not resolve, the connection was refused, the network vanished
+/// mid-request, or it simply took too long. Four different problems, four
+/// different things to do about them, one indistinguishable sentence.
+///
+/// The reason is there; it is one level down, in the cause, and printing the
+/// error prints only the outermost layer. So this asks the error what kind it
+/// is first, and otherwise reaches for the deepest cause it can rather than the
+/// shallowest.
+///
+/// Shared by every outbound request rather than written per call site, because
+/// the next one to fail will be a different one.
+/// Whether asking again is worth somebody's time.
+///
+/// Everything except a timeout is: a refused connection, a name that did not
+/// resolve, a socket the network closed underneath the request. None of those
+/// mean the question was wrong, and a second attempt a moment later usually
+/// carries it.
+///
+/// A timeout is the exception. The wait has already happened, and repeating it
+/// spends the same wait again on the same stuck request.
+fn should_retry_send(error: &reqwest::Error) -> bool {
+    !error.is_timeout()
+}
+
+fn describe_send_failure(what: &str, error: &reqwest::Error) -> String {
+    if error.is_timeout() {
+        return format!("{what} took too long to answer.");
+    }
+
+    if error.is_connect() {
+        return format!("Could not connect to {what}. Check the network.");
+    }
+
+    let mut deepest: Option<String> = None;
+    let mut cause = std::error::Error::source(error);
+
+    while let Some(current) = cause {
+        deepest = Some(current.to_string());
+        cause = current.source();
+    }
+
+    match deepest {
+        Some(reason) => format!("Could not reach {what}: {reason}."),
+        None => format!("Could not reach {what}."),
+    }
+}
+
 fn run_gemini_vision_request(
     request: GeminiVisionRequest,
 ) -> Result<VisionResponse, String> {
@@ -3561,14 +3620,43 @@ fn run_gemini_vision_request(
         .build()
         .map_err(|error| format!("Could not start the Gemini client: {error}"))?;
 
-    let response = client
-        .post(format!("{GEMINI_ENDPOINT}/{model}:generateContent"))
-        // In a header, not the query string. A key in a URL ends up in server
-        // logs, in proxies, and in anything that records where a request went.
-        .header("x-goog-api-key", key)
-        .json(&body)
-        .send()
-        .map_err(|error| format!("Could not reach Gemini: {error}"))?;
+    let url = format!("{GEMINI_ENDPOINT}/{model}:generateContent");
+    let send = || {
+        client
+            .post(&url)
+            // In a header, not the query string. A key in a URL ends up in
+            // server logs, in proxies, and in anything that records where a
+            // request went.
+            .header("x-goog-api-key", key.as_str())
+            .json(&body)
+            .send()
+    };
+
+    /*
+     * One retry, and only for a connection that never carried the question.
+     *
+     * A send that fails before the request is on the wire is not a bad key, a
+     * wrong model or a badly formed schema -- it is a network changing
+     * underneath the app, a Wi-Fi radio waking, or a connection the operating
+     * system closed while it was idle. All of those succeed immediately on a
+     * second attempt, and the alternative is telling somebody stood in front of
+     * their own screen that guidance is unavailable because of a blip they
+     * never saw.
+     *
+     * Deliberately not retried after a timeout. The budget is already spent, so
+     * asking again means standing there for a second full timeout to be told
+     * the same thing.
+     */
+    let response = match send() {
+        Ok(response) => response,
+        Err(error) if !should_retry_send(&error) => {
+            return Err(describe_send_failure("Gemini", &error));
+        }
+        Err(_) => {
+            thread::sleep(GEMINI_TRANSPORT_RETRY_DELAY);
+            send().map_err(|error| describe_send_failure("Gemini", &error))?
+        }
+    };
 
     let status = response.status();
 
@@ -4236,7 +4324,7 @@ async fn auth_token_request(
             .header("apikey", anon_key)
             .json(&payload)
             .send()
-            .map_err(|error| format!("Sign-in could not reach the server: {error}"))?;
+            .map_err(|error| describe_send_failure("the sign-in server", &error))?;
 
         // The body is returned whatever the status, because the failure detail
         // the user needs ("this link expired") lives in it. The caller decides
@@ -4301,7 +4389,7 @@ async fn toki_api_request(
             .bearer_auth(access_token)
             .json(&body)
             .send()
-            .map_err(|error| format!("Toki could not reach the guidance service: {error}"))?;
+            .map_err(|error| describe_send_failure("the guidance service", &error))?;
 
         let status = response.status().as_u16();
         // A body that is not JSON still has to produce something the caller can
@@ -4348,7 +4436,7 @@ fn transcribe_voice_capture_with_openai(
         .bearer_auth(api_key)
         .multipart(form)
         .send()
-        .map_err(|error| format!("transcription request failed: {error}"))?;
+        .map_err(|error| describe_send_failure("the transcription service", &error))?;
     let status = response.status();
     let body = response
         .text()
@@ -4923,13 +5011,111 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_right_option_pressed, metadata_from_screenshot, next_shortcut_mode,
-        require_macos_screen_capture_trust, to_gemini_schema, ShortcutMode,
+        describe_send_failure, is_right_option_pressed, metadata_from_screenshot,
+        next_shortcut_mode, require_macos_screen_capture_trust, should_retry_send, to_gemini_schema,
+        ShortcutMode,
     };
+    use std::io::Read as _;
+    use std::net::{TcpListener, TcpStream};
+    use std::time::Duration;
     use toki_capture::{
         ActiveWindowContext, CaptureSource, CursorContext, DisplayContext, ScreenshotCapture,
         ScreenshotFormat,
     };
+
+    /*
+     * Two real failures, made locally.
+     *
+     * These use a socket on this machine rather than the internet, so they
+     * behave the same on a laptop with no network as on a build machine, and
+     * they produce genuine `reqwest` errors -- which cannot be constructed by
+     * hand, and whose classification is the entire thing under test.
+     */
+
+    /// A port nobody is listening on: the connection is refused immediately.
+    fn refused_connection_error() -> reqwest::Error {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let port = listener.local_addr().expect("an address").port();
+        drop(listener);
+
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("a client")
+            .get(format!("http://127.0.0.1:{port}/"))
+            .send()
+            .expect_err("nothing is listening there")
+    }
+
+    /// A server that accepts and then says nothing: the request runs out of
+    /// time having reached somewhere perfectly well.
+    fn timed_out_error() -> reqwest::Error {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let port = listener.local_addr().expect("an address").port();
+
+        std::thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+                let mut sink = [0_u8; 512];
+                let _ = socket.read(&mut sink);
+                std::thread::sleep(Duration::from_secs(3));
+                drop::<TcpStream>(socket);
+            }
+        });
+
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(250))
+            .build()
+            .expect("a client")
+            .get(format!("http://127.0.0.1:{port}/"))
+            .send()
+            .expect_err("it never answers")
+    }
+
+    /// The message somebody reads is the whole value of a failure they cannot
+    /// otherwise see. Toki writes it into a notch a few words wide, and what
+    /// was there before spent all of that width on the endpoint address.
+    #[test]
+    fn a_failure_to_send_names_the_cause_rather_than_the_address() {
+        let message = describe_send_failure("Gemini", &refused_connection_error());
+
+        assert!(
+            !message.contains("error sending request"),
+            "the library's own wording says nothing: {message}"
+        );
+        assert!(
+            !message.contains("http://"),
+            "the address is not what somebody needs to know: {message}"
+        );
+        assert!(message.contains("Gemini"), "it says what was unreachable");
+        assert!(
+            message.len() < 90,
+            "it has to fit where it is shown: {} characters",
+            message.len()
+        );
+    }
+
+    /// Reaching nothing and waiting too long are different problems with
+    /// different answers -- check the network, or simply ask again. Reported
+    /// identically, as they were, both send somebody to check a key that is
+    /// working perfectly.
+    #[test]
+    fn running_out_of_time_reads_differently_from_never_connecting() {
+        let refused = describe_send_failure("Gemini", &refused_connection_error());
+        let slow = describe_send_failure("Gemini", &timed_out_error());
+
+        assert_ne!(refused, slow);
+        assert!(slow.contains("too long"), "{slow}");
+        assert!(refused.contains("network"), "{refused}");
+    }
+
+    /// The retry exists for a connection that never carried the question. A
+    /// timeout has already spent the wait, and asking again spends it twice to
+    /// arrive at the same sentence.
+    #[test]
+    fn only_a_failure_to_connect_is_worth_asking_again() {
+        assert!(should_retry_send(&refused_connection_error()));
+        assert!(!should_retry_send(&timed_out_error()));
+    }
 
     #[test]
     fn snapshot_metadata_uses_the_exact_screenshot_context() {
