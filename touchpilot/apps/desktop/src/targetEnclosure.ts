@@ -3,6 +3,7 @@
 // Not open source: no redistribution, derivative works, or presenting as your own.
 
 import type { ScreenCandidate, TargetBox } from "@toki/shared";
+import { isInteractiveRole, isTextRole } from "./uiRoleInteractivity";
 
 /**
  * Drawing the box around the thing you actually click.
@@ -74,22 +75,6 @@ export const targetEnclosurePolicy = Object.freeze({
   minimumGrowthRatio: 1.35,
 });
 
-/**
- * Roles that are a thing you click.
- *
- * Recognised text and the model's own invented box are deliberately absent:
- * neither is evidence that anything at those coordinates is interactive.
- */
-const clickableRoles: ReadonlySet<ScreenCandidate["role"]> = new Set([
-  "accessibility_element",
-  "dom_button",
-  "dom_link",
-  "dom_input",
-  "dom_select",
-  "dom_textarea",
-  "dom_candidate",
-]);
-
 function area(box: { width: number; height: number }): number {
   return Math.max(0, box.width) * Math.max(0, box.height);
 }
@@ -141,7 +126,7 @@ export function snapTargetToEnclosingControl(
   let best: ScreenCandidate | null = null;
 
   for (const candidate of candidates) {
-    if (!clickableRoles.has(candidate.role)) {
+    if (!isInteractiveRole(candidate.role)) {
       continue;
     }
 
@@ -190,4 +175,74 @@ export function snapTargetToEnclosingControl(
     },
     grewTo: best,
   };
+}
+
+/**
+ * Whether the box landed on words rather than on a control.
+ *
+ * Asked to open Xcode's Issue Navigator, Toki boxed three lines of a build
+ * error and said, confidently, to click them. The operating system had already
+ * published that element as static text, and the control that actually opens
+ * the navigator was four rows above it -- also published, also collected, also
+ * ignored.
+ *
+ * Pointing at text is a particular kind of wrong. Somebody follows the
+ * instruction, clicks, nothing happens, and there is nothing to learn from
+ * that: the target looked exactly like a correct one. Saying "I can't see it"
+ * is worse in appearance and better in every other way, because it comes with
+ * the alternatives -- and the control that was wanted is usually among them.
+ *
+ * Three conditions, all required:
+ *
+ * **The tree was actually read.** Without accessibility evidence there is no
+ * authority for calling anything text, and recognised words are not authority:
+ * a button's caption is text too.
+ *
+ * **Something says these coordinates are text.** Not "near text" -- the box
+ * sits inside an element the tree calls static text.
+ *
+ * **And nothing says they are a control.** A caption inside a clickable row is
+ * a caption on a button, which is the ordinary case and must survive. Checked
+ * without the size limits used for growing a box, because the question here is
+ * only whether a control is there at all.
+ */
+export function isTargetOnStaticText(
+  target: TargetBox,
+  candidates: readonly ScreenCandidate[] | undefined,
+  policy = targetEnclosurePolicy,
+): boolean {
+  if (candidates == null || candidates.length === 0) {
+    return false;
+  }
+
+  const hasAccessibilityEvidence = candidates.some(
+    (candidate) => candidate.source === "accessibility",
+  );
+
+  if (!hasAccessibilityEvidence) {
+    return false;
+  }
+
+  const slack = policy.containmentSlackPx;
+  let onText = false;
+
+  for (const candidate of candidates) {
+    if (candidate.width <= 0 || candidate.height <= 0) {
+      continue;
+    }
+
+    if (!contains(candidate, target, slack)) {
+      continue;
+    }
+
+    if (isInteractiveRole(candidate.role)) {
+      return false;
+    }
+
+    if (isTextRole(candidate.role) && candidate.source === "accessibility") {
+      onText = true;
+    }
+  }
+
+  return onText;
 }

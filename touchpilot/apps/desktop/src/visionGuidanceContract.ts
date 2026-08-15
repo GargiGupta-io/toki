@@ -18,7 +18,8 @@ import {
   mapProviderTargetToDisplay,
 } from "./coordinateTransforms";
 import { getGuidanceLocalizationObjective } from "./guidanceTaskPlanning";
-import { snapTargetToEnclosingControl } from "./targetEnclosure";
+import { isTargetOnStaticText, snapTargetToEnclosingControl } from "./targetEnclosure";
+import { classifyCandidateRole, isInteractiveRole } from "./uiRoleInteractivity";
 
 export type VisionTarget = {
   candidateId?: string;
@@ -182,9 +183,77 @@ function getTopCandidateSummary(request: GuidanceRequest) {
         imageBox == null
           ? "outside provided image"
           : `image ${imageBox.x},${imageBox.y},${imageBox.width}x${imageBox.height}`;
-      return `${index + 1}. id ${JSON.stringify(candidate.id)}: "${candidate.label}" ${candidate.role}/${candidate.source ?? "unknown"} at ${imageBoxText} (${score})`;
+      /*
+       * Said in words the model will act on, not only as a role name.
+       *
+       * `AXStaticText` and `AXRadioButton` were both being handed over as
+       * opaque strings, and a model given "here is some evidence" reasonably
+       * treats every line of it as a thing it may point at. Naming the one
+       * distinction that decides whether a click does anything costs a few
+       * characters per line.
+       */
+      const kind = classifyCandidateRole(candidate.role);
+      const kindText =
+        kind === "interactive"
+          ? "CLICKABLE"
+          : kind === "text"
+            ? "TEXT ONLY - never a target"
+            : kind === "container"
+              ? "container"
+              : "unknown";
+      return `${index + 1}. id ${JSON.stringify(candidate.id)}: "${candidate.label}" [${kindText}] ${candidate.role}/${candidate.source ?? "unknown"} at ${imageBoxText} (${score})`;
     })
     .join("\n");
+}
+
+/**
+ * The best controls Toki can see, when it has had to refuse.
+ *
+ * Built from the evidence already collected rather than from a second question
+ * to the model, because this runs at the moment an answer has been thrown away
+ * and asking again would double what somebody is waiting for.
+ *
+ * Only candidates that earned their rank by matching the request are offered.
+ * Everything on screen scores about the same as a plausible control, so without
+ * that filter this becomes a list of whatever happened to sort first -- which
+ * is not a suggestion, it is noise with numbers in front of it.
+ */
+function suggestInteractiveCandidates(
+  request: GuidanceRequest,
+  limit = 3,
+): GuidanceSuggestion[] {
+  const seen = new Set<string>();
+  const offers: GuidanceSuggestion[] = [];
+
+  for (const candidate of request.screen.candidates ?? []) {
+    if ((candidate.rank?.relevance ?? 0) <= 0 || !isInteractiveRole(candidate.role)) {
+      continue;
+    }
+
+    const key = candidate.label.trim().toLowerCase();
+
+    if (key.length === 0 || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    offers.push({
+      target: {
+        candidateId: candidate.id,
+        label: candidate.label,
+        x: candidate.x,
+        y: candidate.y,
+        width: candidate.width,
+        height: candidate.height,
+      },
+    });
+
+    if (offers.length >= limit) {
+      break;
+    }
+  }
+
+  return offers;
 }
 
 export function parseVisionTargetResponse(text: string): VisionTargetResponse {
@@ -493,6 +562,20 @@ export function createVisionLocalizationPrompt(request: GuidanceRequest) {
     "Use centerX and centerY for the exact click point at the center of the intended control.",
     "Use width and height for a tight clickable box around that center point.",
     "For icon controls, return a small box around the icon center, not the surrounding row, label, artwork, or nearby text.",
+    /*
+     * The two rules that would have prevented the worst answer this has given.
+     *
+     * Asked to open Xcode's Issue Navigator -- a panel that was already open --
+     * it returned a box around three lines of the build error inside that
+     * panel. Both mistakes at once: it pointed at prose, and it pointed at the
+     * contents of the thing rather than at the control that opens it.
+     *
+     * Written as prohibitions with examples because "locate the control" is
+     * already implied by every other line here, and was not enough.
+     */
+    "NEVER target static text: error messages, log or console output, code, headings, paragraph text, status lines, or a label sitting beside a control. These do nothing when clicked. If what was asked for appears on screen only as text, return target as null.",
+    "To open, show, switch to or go to a panel, view, navigator, inspector, sidebar, tab or section, target the control that switches to it -- the tab, toolbar icon or menu item -- and never the area it displays or anything inside that area.",
+    "A candidate marked TEXT ONLY must never be chosen, and must never be the basis for coordinates. Candidates marked CLICKABLE are the ones worth pointing at.",
     "Prefer controls inside the active application content over system UI or unrelated windows.",
     "The label must name the actual control and must never be blank or generic.",
     "",
@@ -596,6 +679,37 @@ export function createVisionGuidanceResponse(
       providerOutput,
       vision: mapped?.debug,
     };
+
+    /*
+     * A box on words is not a place to click.
+     *
+     * The failure this exists for: "open the issue navigator", answered with a
+     * box around three lines of a build error, while the button that opens it
+     * sat four rows above -- published by the accessibility tree, collected as
+     * evidence, and outranked by an error message that happened to contain the
+     * same words.
+     *
+     * Refused rather than corrected, because there is nothing here to correct
+     * to. What can be done is hand back the controls that did match, which is
+     * usually where the right one was all along.
+     */
+    if (target != null && isTargetOnStaticText(target, request.screen.candidates)) {
+      const heard = request.goal?.trim();
+      const asked = heard ? `"${heard}"` : "that";
+      const offers =
+        suggestions.length > 0 ? suggestions : suggestInteractiveCandidates(request);
+
+      return {
+        mode: "unavailable",
+        error:
+          offers.length > 0
+            ? `I could only find ${asked} as text, not as a control. Did you mean one of these?`
+            : `I could only find ${asked} written on screen, not as something to click.`,
+        providerName,
+        suggestions: offers.length > 0 ? offers : undefined,
+        debug,
+      };
+    }
 
     if (target != null && isLikelySystemMenuTarget(target, request)) {
       return {

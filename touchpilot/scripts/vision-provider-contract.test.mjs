@@ -679,3 +679,182 @@ test("the schema asks for alternatives, so a model cannot quietly skip them", ()
   assert.ok(VISION_TARGET_OUTPUT_SCHEMA.required.includes("alternatives"));
   assert.equal(VISION_TARGET_OUTPUT_SCHEMA.properties.alternatives.type, "array");
 });
+
+/*
+ * Pointing at prose.
+ *
+ * Xcode, two build errors showing, the Issue Navigator already open. Asked to
+ * open that navigator, Toki boxed three lines of one of the errors and said to
+ * click them. macOS publishes that element as `AXStaticText`; the control that
+ * opens the navigator is an `AXRadioButton` four rows above it, and was in the
+ * evidence at the time.
+ *
+ * A wrong target that looks right is the worst answer this can give. Somebody
+ * follows it, clicks, nothing happens, and there is nothing in that to learn
+ * from.
+ *
+ * Geometry taken from the running application; display was 1512x982.
+ */
+
+function createXcodeRequest() {
+  return {
+    goal: "open the issue navigator",
+    localization: {
+      planId: "plan-x",
+      originalGoal: "open the issue navigator",
+      currentStepId: "step-1",
+      currentStepIndex: 0,
+      totalSteps: 1,
+      objective: "open the issue navigator",
+    },
+    screen: {
+      display: { id: "display-1", width: 1512, height: 982, scaleFactor: 2 },
+      screenshot: {
+        source: "full_screen",
+        display: { id: "display-1", width: 1512, height: 982, scaleFactor: 2 },
+        capturedAt: "2026-08-15T19:36:00.000Z",
+        format: "png",
+        byteLength: 100,
+        imageWidth: 3024,
+        imageHeight: 1964,
+      },
+      /*
+       * Sized so that a coordinate in the image is the same number in display
+       * points: the crop is the whole capture, and the image is exactly half of
+       * it, which is the scale factor. The mapping is exercised properly in its
+       * own tests; here it would only obscure which box is being argued about.
+       */
+      screenshotPayload: {
+        encoding: "base64",
+        format: "jpeg",
+        byteLength: 158483,
+        imageWidth: 1512,
+        imageHeight: 982,
+        imageBase64: "aW1hZ2U=",
+        crop: {
+          source: "active_window",
+          appName: "Xcode",
+          title: "TrackWeight",
+          x: 0,
+          y: 0,
+          width: 3024,
+          height: 1964,
+        },
+      },
+      candidates: [
+        {
+          id: "ax-issue-navigator-12",
+          label: "Issue Navigator",
+          role: "AXOutline",
+          source: "accessibility",
+          x: 228,
+          y: 120,
+          width: 288,
+          height: 731,
+          rank: { score: 80, relevance: 40, reasons: ["label match"] },
+        },
+        {
+          id: "ax-no-account-16",
+          label:
+            'No Account for Team "9ZRLG6277G". Add a new account in Accounts settings or verify that your accounts have valid credentials.',
+          role: "AXStaticText",
+          source: "accessibility",
+          x: 290,
+          y: 145,
+          width: 208,
+          height: 50,
+          rank: { score: 20, relevance: 0, reasons: [] },
+        },
+        {
+          id: "ax-issues-4",
+          label: "Issues",
+          role: "AXRadioButton AXSegment",
+          source: "accessibility",
+          x: 354,
+          y: 85,
+          width: 28,
+          height: 28,
+          rank: { score: 70, relevance: 30, reasons: ["label match"] },
+        },
+      ],
+    },
+  };
+}
+
+/** What the model actually returned: coordinates inside the error message. */
+function answerPointingAtTheError() {
+  return JSON.stringify({
+    target: {
+      candidateId: "",
+      centerX: 394,
+      centerY: 170,
+      width: 70,
+      height: 40,
+      label:
+        'No Account for Team "9ZRLG6277G". Add a new account in Accounts settings or verify that your accounts have valid credentials.',
+    },
+    alternatives: [],
+    confidence: 0.88,
+    reason: "The issue text is visible in the navigator.",
+    risk: "account_change",
+  });
+}
+
+test("a confident box on an error message is refused rather than pointed at", () => {
+  const request = createXcodeRequest();
+  const response = createVisionGuidanceResponse(
+    answerPointingAtTheError(),
+    request,
+    "gemini",
+    "gemini",
+  );
+
+  assert.equal(response.mode, "unavailable");
+  assert.match(response.error ?? "", /as text, not as a control/);
+});
+
+test("refusing hands back the controls that did match", () => {
+  // The button that opens the navigator was in the evidence the whole time.
+  // Refusing without offering it would be correct and useless.
+  const response = createVisionGuidanceResponse(
+    answerPointingAtTheError(),
+    createXcodeRequest(),
+    "gemini",
+    "gemini",
+  );
+  const labels = (response.suggestions ?? []).map((item) => item.target.label);
+
+  assert.ok(labels.includes("Issues"), `offers were ${JSON.stringify(labels)}`);
+  assert.ok(
+    !labels.some((label) => label.startsWith("No Account")),
+    "the error message is not offered as somewhere to click",
+  );
+});
+
+test("a real control at the same confidence is still pointed at", () => {
+  // The refusal must be about what was targeted, not about being careful.
+  const response = createVisionGuidanceResponse(
+    JSON.stringify({
+      target: { candidateId: "ax-issues-4", label: "Issues" },
+      alternatives: [],
+      confidence: 0.88,
+      reason: "The Issues tab opens the issue navigator.",
+      risk: "safe_navigation",
+    }),
+    createXcodeRequest(),
+    "gemini",
+    "gemini",
+  );
+
+  assert.equal(response.mode, "gemini");
+  assert.equal(response.result?.step?.target.label, "Issues");
+});
+
+test("the model is told which evidence is clickable and which is only words", () => {
+  const prompt = createVisionLocalizationPrompt(createXcodeRequest());
+
+  assert.match(prompt, /"Issues" \[CLICKABLE\]/u);
+  assert.match(prompt, /\[TEXT ONLY - never a target\]/u);
+  assert.match(prompt, /NEVER target static text/u);
+  assert.match(prompt, /target the control that switches to it/u);
+});
