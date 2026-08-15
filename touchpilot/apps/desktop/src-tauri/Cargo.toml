@@ -1,6 +1,6 @@
 [package]
 name = "toki-desktop"
-version = "1.0.0"
+version = "1.1.0"
 description = "Toki desktop screen guidance shell"
 authors = ["GargiGupta-io"]
 edition = "2021"
