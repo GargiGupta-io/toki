@@ -5654,7 +5654,21 @@ function OverlayWindowApp() {
           byteLength: capture.byteLength,
         },
       });
-      const transcription = await transcribeNativeVoiceCapture(capture);
+      // The service is the fresh install's way of speaking. It is only
+      // offered as the fallback: an explicit local Whisper or saved key
+      // always wins, inside transcribeNativeVoiceCapture itself.
+      const speechApiClient = createTokiApiClient({
+        endpoint: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT,
+        session: authSessionRef.current,
+      });
+      const transcription = await transcribeNativeVoiceCapture(capture, {
+        hosted: speechApiClient.configured
+          ? { send: (body) => speechApiClient.transcription(body) }
+          : undefined,
+        whenSignedOut: import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT?.trim()
+          ? "Sign in from the gear panel to use voice, or set up Speech in Settings."
+          : undefined,
+      });
 
       if (transcription.status === "ready") {
         const traceId = createGuidanceTraceId();
@@ -7072,7 +7086,13 @@ function SettingsWindowApp() {
                 // you or not, so the only way to find out was to hold it,
                 // speak, and watch nothing happen.
                 transcription != null && transcription.provider == null
-                ? "No transcription set up yet — open Settings, then Speech."
+                ? firstRunAuth.status === "signed_in" &&
+                  Boolean(import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT?.trim())
+                  ? // Signed in, so speech rides the service. Nothing to set up.
+                    "Press and hold as a fallback."
+                  : import.meta.env.VITE_TOKI_GUIDANCE_ENDPOINT?.trim()
+                    ? "Sign in from the gear panel to use voice."
+                    : "No transcription set up yet — open Settings, then Speech."
                 : "Press and hold as a fallback."
           }
           cameraGesturesEnabled={gestureRuntime.camera.enabled}

@@ -9,6 +9,7 @@ import {
   readHostedVisionResponse,
   type HostedVisionReply,
 } from "./hostedVisionProvider";
+import type { HostedTranscriptionReply } from "./voiceTranscription";
 
 /**
  * The one way this app talks to its own service.
@@ -44,6 +45,11 @@ export type TokiApiClient = {
     imageFormat: "png" | "jpeg";
     outputSchema?: unknown;
   }): Promise<HostedVisionReply>;
+  /** Speech to text, through the same signed-in service as vision. */
+  transcription(body: {
+    audioBase64: string;
+    format: string;
+  }): Promise<HostedTranscriptionReply>;
   /** Reads the plan. Null while signed out or unreachable. */
   account(): Promise<AccountState | null>;
   /** Returns the Stripe page to open in the browser, or an error. */
@@ -130,6 +136,54 @@ export function createTokiApiClient({
         return reply == null
           ? signedOutReply
           : readHostedVisionResponse(reply.status, reply.body);
+      } catch (error) {
+        return {
+          kind: "error",
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+
+    async transcription(body) {
+      if (!configured) {
+        return {
+          kind: "error",
+          error: "This build has no service configured for speech.",
+        };
+      }
+
+      try {
+        const reply = await call("/transcription", body);
+
+        if (reply == null) {
+          return { kind: "signed_out", error: "Sign in to use voice." };
+        }
+
+        if (reply.status === 200 && typeof reply.body.text === "string") {
+          // A fixture deployment answers with a correctly shaped placeholder.
+          // Words the person never said must not be routed as a command.
+          if (reply.body.provider === "toki-api-fixture") {
+            return {
+              kind: "error",
+              error:
+                "The Toki service is not fully set up yet, so voice cannot be transcribed.",
+            };
+          }
+
+          return { kind: "ready", text: reply.body.text };
+        }
+
+        if (reply.status === 401) {
+          return { kind: "signed_out", error: "Sign in to use voice." };
+        }
+
+        return {
+          kind: "error",
+          error:
+            typeof reply.body.error === "string"
+              ? reply.body.error
+              : "Speech could not be transcribed.",
+        };
       } catch (error) {
         return {
           kind: "error",
